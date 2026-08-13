@@ -55,6 +55,14 @@ O Ollama é opcional e pode ser instalado posteriormente.
 
 Abra `http://localhost:5088`. A barra superior informa se as ferramentas foram detectadas.
 
+Para validar backend, frontend e a API local após uma atualização:
+
+```powershell
+.\scripts\verificar-projeto.ps1
+```
+
+O botão **Diagnóstico** mostra ferramentas instaladas, espaço em disco, uso do armazenamento, fila e alertas sem revelar credenciais.
+
 ## Modelos de transcrição
 
 - `base`: opção mais rápida para CPU.
