@@ -22,6 +22,8 @@ public sealed class VideoProject
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public int Attempt { get; set; }
+    public List<string> CompletedStages { get; set; } = [];
+    public string? LastCheckpoint { get; set; }
     public ProjectOptions Options { get; set; } = new();
     public List<TranscriptSegment> Transcript { get; set; } = [];
     public string? TranscriptSource { get; set; }
@@ -83,5 +85,6 @@ public sealed class UrlProjectRequest
 }
 public record ClipUpdate(double? Start, double? End, string? Title, string? CoverText, string? Caption, bool? Approved, string? CropFocus, string? SubtitleStyle, string? CoverAccent, string? CoverPosition, double? CoverTimestamp, string? EditedTranscript);
 public record SplitClipRequest(double At);
+public record RestartFromRequest(string Stage);
 public record ReanalyzeRequest(string? Topic, int? ClipCount, bool Render = false);
 public record ClipFeedbackRequest(string Feedback);

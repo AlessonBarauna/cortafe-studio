@@ -68,6 +68,13 @@ api.MapPost("/projects/{id}/retry", async (string id, ProjectStore store, Projec
     return Results.Accepted();
 });
 
+api.MapPost("/projects/{id}/restart-from", async (string id, RestartFromRequest request, ProjectStore store, ProjectQueue queue, MediaPipeline pipeline) =>
+{
+    var project = store.Get(id); if (project is null) return Results.NotFound();
+    try { await pipeline.ResetFromAsync(project, request.Stage); await queue.EnqueueAsync(id); return Results.Accepted($"/api/projects/{id}", project); }
+    catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+
 api.MapPut("/projects/{id}/clips/{clipId}", async (string id, string clipId, ClipUpdate update, ProjectStore store) =>
 {
     var updated = await store.UpdateAsync(id, p =>

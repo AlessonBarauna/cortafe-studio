@@ -11,37 +11,51 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
     {
         var dir = store.ProjectDirectory(p.Id);
         await Stage(p, ProjectStatus.Acquiring, 5, "Preparando a mídia");
-        if (p.SourceKind == SourceKind.YouTube)
+        var existingMedia = !string.IsNullOrWhiteSpace(p.LocalMedia) ? Path.Combine(dir, p.LocalMedia) : null;
+        if (p.SourceKind == SourceKind.YouTube && (existingMedia is null || !File.Exists(existingMedia)))
         {
             var template = Path.Combine(dir, "source.%(ext)s");
             var downloadArgs = tools.YouTubeArguments();
             downloadArgs.AddRange(["--no-playlist", "--ffmpeg-location", tools.Find("ffmpeg"), "--merge-output-format", "mp4", "-f", "bv*[height<=1080]+ba/b[height<=1080]", "-o", template, "--print", "after_move:filepath", p.Source]);
             await tools.RunAsync(tools.Find("yt-dlp"), downloadArgs, dir, ct);
             p.LocalMedia = Path.GetFileName(Directory.EnumerateFiles(dir, "source.*").First(f => Path.GetFileName(f) != "source.audio.wav"));
+            await Checkpoint(p, "media", "Mídia adquirida");
         }
         var media = Path.Combine(dir, p.LocalMedia ?? throw new InvalidOperationException("Arquivo de origem não encontrado."));
+        if (!File.Exists(media)) throw new InvalidOperationException("O arquivo de origem não está mais disponível.");
+        if (!p.CompletedStages.Contains("media")) await Checkpoint(p, "media", "Mídia disponível");
         p.Duration = await ProbeDuration(media, ct);
-        var hasManualCaptions = false;
-        if (p.SourceKind == SourceKind.YouTube)
+        var transcriptFile = Path.Combine(dir, "transcript.json");
+        if (p.Transcript.Count == 0 && File.Exists(transcriptFile))
+            p.Transcript = JsonSerializer.Deserialize<List<TranscriptSegment>>(await File.ReadAllTextAsync(transcriptFile, ct), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+        var transcriptReady = p.Transcript.Count > 0;
+        var hasManualCaptions = transcriptReady;
+        if (!transcriptReady && p.SourceKind == SourceKind.YouTube)
         {
             await Stage(p, ProjectStatus.Transcribing, 18, "Verificando legendas existentes no YouTube");
             hasManualCaptions = await TryLoadYouTubeCaptionsAsync(p, allowAutomatic: false, ct);
         }
-        if (!hasManualCaptions)
+        if (!hasManualCaptions && !transcriptReady)
         {
             await Stage(p, ProjectStatus.Transcribing, 20, "Extraindo áudio");
             var audio = Path.Combine(dir, "source.audio.wav");
-            await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-i", media, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", audio], dir, ct);
+            if (!File.Exists(audio) || new FileInfo(audio).Length < 1024)
+            {
+                await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-i", media, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", audio], dir, ct);
+                await Checkpoint(p, "audio", "Áudio extraído");
+            }
             await Stage(p, ProjectStatus.Transcribing, 35, "Transcrevendo com IA local");
-            var transcriptFile = Path.Combine(dir, "transcript.json");
             await tools.RunAsync(tools.Find("python"), [Path.Combine(tools.Root, "scripts", "transcribe.py"), audio, transcriptFile, p.Options.WhisperModel], dir, ct);
             p.Transcript = JsonSerializer.Deserialize<List<TranscriptSegment>>(await File.ReadAllTextAsync(transcriptFile, ct), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
             p.TranscriptSource = $"Faster-Whisper ({p.Options.WhisperModel})";
             if (p.SourceKind == SourceKind.YouTube && (p.Options.ContentType == "louvor" || p.Transcript.Sum(x => x.Text.Length) < 120))
                 await TryLoadYouTubeCaptionsAsync(p, allowAutomatic: true, ct);
         }
+        if (p.Transcript.Count == 0) throw new InvalidOperationException("A transcrição não produziu conteúdo utilizável.");
+        await Checkpoint(p, "transcript", "Transcrição disponível");
         await Stage(p, ProjectStatus.Analyzing, 72, "Encontrando momentos de impacto");
         p.Clips = editorial.Analyze(p.Transcript, p.Options);
+        await Checkpoint(p, "analysis", $"{p.Clips.Count} candidatos encontrados");
         await Stage(p, ProjectStatus.Analyzing, 82, $"Preparando {p.Clips.Count} candidatos");
         await Parallel.ForEachAsync(p.Clips, new ParallelOptions { MaxDegreeOfParallelism = 2, CancellationToken = ct }, async (clip, token) =>
         {
@@ -52,6 +66,20 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
     }
 
     private async Task Stage(VideoProject p, ProjectStatus status, int progress, string stage) { p.Status = status; p.Progress = progress; p.Stage = stage; await store.SaveAsync(p); }
+    private async Task Checkpoint(VideoProject p, string stage, string label) { if (!p.CompletedStages.Contains(stage)) p.CompletedStages.Add(stage); p.LastCheckpoint = stage; p.Stage = label; await store.SaveAsync(p); }
+
+    public async Task ResetFromAsync(VideoProject project, string stage)
+    {
+        var order = new[] { "media", "audio", "transcript", "analysis" };
+        var index = Array.IndexOf(order, stage); if (index < 0) throw new InvalidOperationException("Etapa inválida.");
+        var dir = store.ProjectDirectory(project.Id);
+        project.CompletedStages.RemoveAll(value => Array.IndexOf(order, value) >= index);
+        if (index <= 3) { project.Clips = []; foreach (var file in Directory.EnumerateFiles(dir, "cover-*.jpg").Concat(Directory.EnumerateFiles(dir, "clip-*.mp4")).Concat(Directory.EnumerateFiles(dir, "captions-*.ass"))) File.Delete(file); }
+        if (index <= 2) { project.Transcript = []; project.TranscriptSource = null; var transcript = Path.Combine(dir, "transcript.json"); if (File.Exists(transcript)) File.Delete(transcript); }
+        if (index <= 1) { var audio = Path.Combine(dir, "source.audio.wav"); if (File.Exists(audio)) File.Delete(audio); }
+        if (index == 0 && project.SourceKind == SourceKind.YouTube) { foreach (var file in Directory.EnumerateFiles(dir, "source.*").Where(file => !file.EndsWith("source.audio.wav"))) File.Delete(file); project.LocalMedia = null; }
+        project.LastCheckpoint = project.CompletedStages.LastOrDefault(); project.Status = ProjectStatus.Queued; project.Progress = 0; project.Error = null; project.Stage = $"Reprocessamento iniciado em {stage}"; await store.SaveAsync(project);
+    }
     private async Task<double> ProbeDuration(string media, CancellationToken ct)
     {
         var output = await tools.CaptureAsync(tools.Find("ffprobe"), ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", media], Path.GetDirectoryName(media), ct);
