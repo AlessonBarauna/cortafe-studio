@@ -11,7 +11,7 @@ async function diagnosticsCenter() {
   const host = document.querySelector('#diagnosticsView');
   try {
     const data = await api('/api/diagnostics');
-    const toolName = { ffmpeg: 'FFmpeg', ffprobe: 'FFprobe', ytDlp: 'yt-dlp', python: 'Python', ollama: 'Ollama', transcriber: 'Transcritor' };
+    const toolName = { ffmpeg: 'FFmpeg', ffprobe: 'FFprobe', ytDlp: 'yt-dlp', python: 'Python', node: 'Node.js para YouTube', ollama: 'Ollama', transcriber: 'Transcritor' };
     host.innerHTML = `<div class="diagnostic-grid">
       <article><span>PROJETOS</span><strong>${data.projects.total}</strong><p>${data.projects.ready} prontos · ${data.projects.processing} processando · ${data.projects.failed} com falha</p></article>
       <article><span>ARMAZENAMENTO</span><strong>${data.disk.freeGb} GB</strong><p>livres · ${data.disk.storageGb} GB usados pelo estúdio</p></article>

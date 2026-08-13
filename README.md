@@ -23,6 +23,7 @@ Estúdio local para transformar pregações, ministrações, podcasts e aulas em
 - Python 3.11 ou 3.12.
 - FFmpeg e FFprobe.
 - yt-dlp para links do YouTube.
+- Node.js 22 ou superior para resolver os desafios JavaScript atuais do YouTube.
 - Ollama opcional. Sem ele, títulos padrão continuam disponíveis.
 
 ## Instalação no Windows
