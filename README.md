@@ -85,7 +85,8 @@ O sistema destina-se a conteúdo próprio ou autorizado. Links privados, transmi
 
 - ASP.NET Core 8 Minimal API.
 - Worker nativo com `BackgroundService` e `Channel`.
-- Persistência local em JSON, sem servidor de banco.
+- Catálogo transacional em SQLite, com JSON por projeto mantido como backup portátil.
+- Limpeza de temporários, cálculo de espaço ocupado e arquivamento de projetos.
 - Frontend responsivo em HTML, JavaScript e Bootstrap 5.3 customizado.
 - FFmpeg/FFprobe para mídia e ASS para legendas.
 - Faster-Whisper para fala-texto.

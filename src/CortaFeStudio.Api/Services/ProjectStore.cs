@@ -1,5 +1,6 @@
 using System.Text.Json;
 using CortaFeStudio.Api.Models;
+using Microsoft.Data.Sqlite;
 
 namespace CortaFeStudio.Api.Services;
 
@@ -7,6 +8,7 @@ public sealed class ProjectStore
 {
     private readonly string _root;
     private readonly Dictionary<string, VideoProject> _projects = [];
+    private readonly string _database;
     private readonly SemaphoreSlim _lock = new(1, 1);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
@@ -14,11 +16,16 @@ public sealed class ProjectStore
     {
         _root = Path.Combine(env.ContentRootPath, "storage", "projects");
         Directory.CreateDirectory(_root);
+        _database = Path.Combine(env.ContentRootPath, "storage", "catalog.db");
+        InitializeDatabase();
         foreach (var file in Directory.EnumerateFiles(_root, "project.json", SearchOption.AllDirectories))
             try { var p = JsonSerializer.Deserialize<VideoProject>(File.ReadAllText(file), JsonOptions); if (p is not null) _projects[p.Id] = p; } catch { }
+        foreach (var project in LoadDatabase()) _projects[project.Id] = project;
+        foreach (var project in _projects.Values) UpsertDatabase(project);
     }
 
-    public IReadOnlyList<VideoProject> List() => _projects.Values.OrderByDescending(p => p.CreatedAt).ToList();
+    public IReadOnlyList<VideoProject> List() => _projects.Values.Where(p => !p.Archived).OrderByDescending(p => p.CreatedAt).ToList();
+    public IReadOnlyList<VideoProject> ListAll() => _projects.Values.OrderByDescending(p => p.CreatedAt).ToList();
     public VideoProject? Get(string id) => _projects.GetValueOrDefault(id);
     public string ProjectDirectory(string id) => Path.Combine(_root, id);
 
@@ -46,6 +53,27 @@ public sealed class ProjectStore
         var temporary = target + ".tmp";
         await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(p, JsonOptions));
         File.Move(temporary, target, true);
+        UpsertDatabase(p);
+    }
+    private void InitializeDatabase()
+    {
+        using var connection = new SqliteConnection($"Data Source={_database}"); connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, archived INTEGER NOT NULL DEFAULT 0); CREATE INDEX IF NOT EXISTS ix_projects_updated ON projects(updated_at DESC);";
+        command.ExecuteNonQuery();
+    }
+    private IEnumerable<VideoProject> LoadDatabase()
+    {
+        using var connection = new SqliteConnection($"Data Source={_database}"); connection.Open();
+        using var command = connection.CreateCommand(); command.CommandText = "SELECT json FROM projects";
+        using var reader = command.ExecuteReader();
+        while (reader.Read()) { VideoProject? project = null; try { project = JsonSerializer.Deserialize<VideoProject>(reader.GetString(0), JsonOptions); } catch { } if (project is not null) yield return project; }
+    }
+    private void UpsertDatabase(VideoProject project)
+    {
+        using var connection = new SqliteConnection($"Data Source={_database}"); connection.Open();
+        using var command = connection.CreateCommand(); command.CommandText = "INSERT INTO projects(id,json,created_at,updated_at,archived) VALUES($id,$json,$created,$updated,$archived) ON CONFLICT(id) DO UPDATE SET json=$json,updated_at=$updated,archived=$archived";
+        command.Parameters.AddWithValue("$id", project.Id); command.Parameters.AddWithValue("$json", JsonSerializer.Serialize(project, JsonOptions)); command.Parameters.AddWithValue("$created", project.CreatedAt.ToString("O")); command.Parameters.AddWithValue("$updated", project.UpdatedAt.ToString("O")); command.Parameters.AddWithValue("$archived", project.Archived ? 1 : 0); command.ExecuteNonQuery();
     }
     public string? ResolveAsset(string id, string path)
     {
