@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Http;
 namespace CortaFeStudio.Api.Models;
 
 public enum SourceKind { Upload, YouTube }
-public enum ProjectStatus { Queued, Acquiring, Transcribing, Analyzing, Ready, Failed }
+public enum ProjectStatus { Queued, Acquiring, Transcribing, Analyzing, Ready, Failed, Cancelled }
 
 public sealed class VideoProject
 {
@@ -93,3 +93,4 @@ public record RestartFromRequest(string Stage);
 public record CleanupProjectRequest(bool DeleteSource = false);
 public record ReanalyzeRequest(string? Topic, int? ClipCount, bool Render = false);
 public record ClipFeedbackRequest(string Feedback);
+public record BatchFeedbackRequest(List<string> ClipIds, string Feedback);
