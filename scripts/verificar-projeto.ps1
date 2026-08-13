@@ -4,6 +4,9 @@ $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Write-Host 'Compilando backend...'
 dotnet build (Join-Path $ProjectRoot 'CortaFeStudio.sln') -c Release --no-restore
 
+Write-Host 'Executando testes automatizados...'
+dotnet test (Join-Path $ProjectRoot 'CortaFeStudio.sln') -c Release --no-build
+
 Write-Host 'Validando JavaScript...'
 Get-ChildItem (Join-Path $ProjectRoot 'src\CortaFeStudio.Api\wwwroot') -Filter '*.js' | ForEach-Object {
   node --check $_.FullName
