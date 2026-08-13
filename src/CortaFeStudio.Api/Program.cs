@@ -26,6 +26,7 @@ builder.Services.AddSingleton<SocialService>();
 builder.Services.AddSingleton<DiagnosticsService>();
 builder.Services.AddSingleton<StorageService>();
 builder.Services.AddSingleton<FramingService>();
+builder.Services.AddSingleton<ClipExportService>();
 builder.Services.AddSingleton<LocalSecurityService>();
 builder.Services.AddHostedService<PublicationScheduler>();
 builder.Services.AddProblemDetails();
@@ -90,6 +91,11 @@ api.MapPost("/projects/{id}/retry", async (string id, ProjectStore store, Projec
     await store.UpdateAsync(id, p => { p.Status = ProjectStatus.Queued; p.Error = null; p.Progress = 0; });
     await queue.EnqueueAsync(id);
     return Results.Accepted();
+});
+api.MapPost("/projects/{id}/cancel", async (string id, ProjectStore store, ProjectQueue queue) =>
+{
+    var project = store.Get(id); if (project is null) return Results.NotFound();
+    queue.Cancel(id); project.Status = ProjectStatus.Cancelled; project.Stage = "Processamento cancelado"; project.Error = null; await store.SaveAsync(project); return Results.Ok(project);
 });
 
 api.MapPost("/projects/{id}/restart-from", async (string id, RestartFromRequest request, ProjectStore store, ProjectQueue queue, MediaPipeline pipeline) =>
@@ -203,6 +209,14 @@ api.MapPost("/projects/{id}/clips/{clipId}/feedback", async (string id, string c
     if (updated is not null && selected is not null) await learning.RecordAsync(updated, selected, request.Feedback);
     return updated is null ? Results.NotFound() : Results.Ok(updated);
 });
+api.MapPost("/projects/{id}/clips/feedback-batch", async (string id, BatchFeedbackRequest request, ProjectStore store, EditorialLearningService learning) =>
+{
+    if (request.Feedback is not ("approved" or "rejected")) return Results.BadRequest(new { error = "Feedback inválido." });
+    var project = store.Get(id); if (project is null) return Results.NotFound();
+    var selected = project.Clips.Where(clip => request.ClipIds.Contains(clip.Id)).ToList();
+    foreach (var clip in selected) { clip.Feedback = request.Feedback; clip.Approved = request.Feedback == "approved"; await learning.RecordAsync(project, clip, request.Feedback); }
+    await store.SaveAsync(project); return Results.Ok(project);
+});
 api.MapGet("/editorial/profile", (EditorialLearningService learning) => learning.Profile());
 api.MapDelete("/editorial/profile", async (EditorialLearningService learning) => { await learning.ResetAsync(); return Results.NoContent(); });
 
@@ -224,6 +238,12 @@ api.MapGet("/projects/{id}/assets/{**path}", (string id, string path, ProjectSto
 {
     var file = store.ResolveAsset(id, path);
     return file is null ? Results.NotFound() : Results.File(file, GetContentType(file), enableRangeProcessing: true);
+});
+api.MapGet("/projects/{id}/exports/clips.zip", async (string id, ProjectStore store, ClipExportService exports, CancellationToken ct) =>
+{
+    var project = store.Get(id); if (project is null) return Results.NotFound();
+    try { var file = await exports.CreateZipAsync(project, ct); return Results.File(file, "application/zip", $"{project.Name}-cortes.zip", enableRangeProcessing: true); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
 
 api.MapGet("/social/status", (SocialService social) => social.Status());
