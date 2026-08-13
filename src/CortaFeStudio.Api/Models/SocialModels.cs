@@ -33,4 +33,9 @@ public sealed class PublicationRecord
     public string Title { get; set; } = "";
     public string Description { get; set; } = "";
     public string Privacy { get; set; } = "private";
+    public string? UploadSessionUrl { get; set; }
+    public long UploadedBytes { get; set; }
+    public long TotalBytes { get; set; }
+    public int Progress { get; set; }
+    public string? PlatformStatus { get; set; }
 }

@@ -163,24 +163,40 @@ public sealed class SocialService
         using var client = _http.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", account.AccessToken);
         var title = request.Title[..Math.Min(100, request.Title.Length)];
-        var metadata = JsonSerializer.Serialize(new { snippet = new { title, description = request.Description, categoryId = "22" }, status = new { privacyStatus = request.Privacy, selfDeclaredMadeForKids = false, publishAt = request.PublishAt } });
-        using var initialize = new HttpRequestMessage(HttpMethod.Post, "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status");
-        initialize.Content = new StringContent(metadata, Encoding.UTF8, "application/json");
-        initialize.Headers.Add("X-Upload-Content-Type", "video/mp4");
-        initialize.Headers.Add("X-Upload-Content-Length", new FileInfo(path).Length.ToString());
-        using var initialized = await client.SendAsync(initialize);
-        var raw = await initialized.Content.ReadAsStringAsync();
-        if (!initialized.IsSuccessStatusCode) throw new InvalidOperationException(raw);
-        var location = initialized.Headers.Location ?? throw new InvalidOperationException("YouTube não retornou a URL de upload.");
-        await using var stream = File.OpenRead(path);
-        using var video = new StreamContent(stream);
-        video.Headers.ContentType = new MediaTypeHeaderValue("video/mp4");
-        using var uploaded = await client.PutAsync(location, video);
-        raw = await uploaded.Content.ReadAsStringAsync();
-        if (!uploaded.IsSuccessStatusCode) throw new InvalidOperationException(raw);
+        record.TotalBytes = new FileInfo(path).Length;
+        if (string.IsNullOrWhiteSpace(record.UploadSessionUrl))
+        {
+            var metadata = JsonSerializer.Serialize(new { snippet = new { title, description = request.Description, categoryId = "22" }, status = new { privacyStatus = request.Privacy, selfDeclaredMadeForKids = false } });
+            using var initialize = new HttpRequestMessage(HttpMethod.Post, "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status");
+            initialize.Content = new StringContent(metadata, Encoding.UTF8, "application/json"); initialize.Headers.Add("X-Upload-Content-Type", "video/mp4"); initialize.Headers.Add("X-Upload-Content-Length", record.TotalBytes.ToString());
+            using var initialized = await client.SendAsync(initialize); var responseText = await initialized.Content.ReadAsStringAsync(); if (!initialized.IsSuccessStatusCode) throw new InvalidOperationException(responseText);
+            record.UploadSessionUrl = (initialized.Headers.Location ?? throw new InvalidOperationException("YouTube não retornou a sessão retomável.")).ToString(); record.UploadedBytes = 0; await SaveAsync();
+        }
+        const int chunkSize = 8 * 1024 * 1024; string raw = "";
+        await using var stream = File.OpenRead(path); stream.Position = Math.Min(record.UploadedBytes, stream.Length);
+        while (stream.Position < stream.Length)
+        {
+            var start = stream.Position; var length = (int)Math.Min(chunkSize, stream.Length - start); var buffer = new byte[length]; var read = await stream.ReadAsync(buffer); if (read == 0) break;
+            using var message = new HttpRequestMessage(HttpMethod.Put, record.UploadSessionUrl); message.Content = new ByteArrayContent(buffer, 0, read); message.Content.Headers.ContentType = new MediaTypeHeaderValue("video/mp4"); message.Content.Headers.ContentRange = new ContentRangeHeaderValue(start, start + read - 1, stream.Length);
+            using var uploaded = await client.SendAsync(message); raw = await uploaded.Content.ReadAsStringAsync();
+            if ((int)uploaded.StatusCode == 308 || uploaded.IsSuccessStatusCode) { record.UploadedBytes = start + read; record.Progress = (int)Math.Round(record.UploadedBytes * 100d / record.TotalBytes); record.UpdatedAt = DateTimeOffset.UtcNow; await SaveAsync(); }
+            if ((int)uploaded.StatusCode == 308) continue;
+            if (!uploaded.IsSuccessStatusCode) throw new InvalidOperationException(raw);
+            break;
+        }
         using var doc = JsonDocument.Parse(raw);
         record.ExternalId = doc.RootElement.GetProperty("id").GetString();
-        record.ExternalUrl = $"https://youtu.be/{record.ExternalId}";
+        record.ExternalUrl = $"https://youtu.be/{record.ExternalId}"; record.Progress = 100; record.PlatformStatus = "processing"; record.UploadSessionUrl = null;
+    }
+
+    public async Task<PublicationRecord> RefreshStatusAsync(string id)
+    {
+        var record = _history.FirstOrDefault(item => item.Id == id) ?? throw new InvalidOperationException("Publicação não encontrada.");
+        if (record.Platform != SocialPlatform.YouTube || string.IsNullOrWhiteSpace(record.ExternalId)) return record;
+        var account = RequireConnected(SocialPlatform.YouTube); using var client = _http.CreateClient(); client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", account.AccessToken);
+        using var document = JsonDocument.Parse(await client.GetStringAsync($"https://www.googleapis.com/youtube/v3/videos?part=processingDetails,statistics&id={record.ExternalId}"));
+        var items = document.RootElement.GetProperty("items"); if (items.GetArrayLength() > 0) record.PlatformStatus = items[0].TryGetProperty("processingDetails", out var details) && details.TryGetProperty("processingStatus", out var status) ? status.GetString() : "available";
+        record.UpdatedAt = DateTimeOffset.UtcNow; await SaveAsync(); return record;
     }
 
     private async Task PublishInstagramAsync(string projectId, ClipCandidate clip, PublishRequest request, PublicationRecord record)

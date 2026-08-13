@@ -8,9 +8,10 @@ socialCenter = async function () {
   const names = { youTube: 'YouTube', instagram: 'Instagram', tikTok: 'TikTok' };
   const labels = { scheduled: 'Agendada', queued: 'Na fila', uploading: 'Enviando', published: 'Publicada', failed: 'Falhou' };
   host.innerHTML = history.map(item => `<article class="publication-row">
-    <div><strong>${names[item.platform]}</strong> · ${labels[item.status] || item.status}<small>${item.scheduledAt ? `Programada para ${new Date(item.scheduledAt).toLocaleString('pt-BR')}` : new Date(item.createdAt).toLocaleString('pt-BR')}</small></div>
+    <div><strong>${names[item.platform]}</strong> · ${labels[item.status] || item.status}${item.platformStatus ? ` · ${escapeHtml(item.platformStatus)}` : ''}<small>${item.scheduledAt ? `Programada para ${new Date(item.scheduledAt).toLocaleString('pt-BR')}` : new Date(item.createdAt).toLocaleString('pt-BR')}</small>${item.status === 'uploading' ? `<div class="progress mt-2"><div class="progress-bar" style="width:${item.progress || 0}%"></div></div>` : ''}</div>
     ${item.externalUrl ? `<a class="btn btn-sm btn-outline-light" href="${item.externalUrl}" target="_blank" rel="noopener">Abrir</a>` : ''}
     ${item.status === 'failed' ? `<button class="btn btn-sm btn-outline-warning" onclick="retryPublication('${item.id}')">Tentar novamente</button>` : ''}
+    ${item.platform === 'youTube' && item.externalId ? `<button class="btn btn-sm btn-outline-secondary" onclick="refreshPublication('${item.id}')">Atualizar estado</button>` : ''}
     ${item.error ? `<p class="text-danger mb-0">${escapeHtml(item.error)}</p>` : ''}
   </article>`).join('');
 };
@@ -39,3 +40,4 @@ async function retryPublication(id) {
   try { await api(`/api/social/publications/${id}/retry`, { method: 'POST' }); toast('Publicação colocada novamente na fila'); socialCenter(); }
   catch (error) { toast(error.message); }
 }
+async function refreshPublication(id) { try { await api(`/api/social/publications/${id}/refresh`, { method: 'POST' }); toast('Estado atualizado'); socialCenter(); } catch (error) { toast(error.message); } }
