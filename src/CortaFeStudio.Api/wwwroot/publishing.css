@@ -1,0 +1,1 @@
+.publication-row{display:grid;grid-template-columns:1fr auto;gap:.65rem;align-items:center;border-bottom:1px solid var(--line);padding:1rem 0}.publication-row small{display:block;color:var(--muted);margin-top:.25rem}.publication-row p{grid-column:1/-1;font-size:.78rem}

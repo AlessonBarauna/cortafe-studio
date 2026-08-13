@@ -15,6 +15,7 @@ public sealed class SocialService
     private readonly Dictionary<SocialPlatform, SocialCredential> _accounts = [];
     private readonly Dictionary<string, SocialPlatform> _states = [];
     private readonly List<PublicationRecord> _history = [];
+    private readonly SemaphoreSlim _publishLock = new(1, 1);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
     public SocialService(IWebHostEnvironment env, IDataProtectionProvider dataProtection, IHttpClientFactory http, ProjectStore projects)
@@ -112,17 +113,46 @@ public sealed class SocialService
         var clip = project.Clips.FirstOrDefault(c => c.Id == clipId) ?? throw new InvalidOperationException("Corte não encontrado.");
         var path = string.IsNullOrWhiteSpace(clip.VideoPath) ? null : _projects.ResolveAsset(projectId, clip.VideoPath);
         if (path is null) throw new InvalidOperationException("Renderize o corte antes de publicar.");
-        var record = new PublicationRecord { Platform = request.Platform, ProjectId = projectId, ClipId = clipId, Status = "uploading" };
+        if (_history.Any(x => x.ProjectId == projectId && x.ClipId == clipId && x.Platform == request.Platform && x.Status is "scheduled" or "uploading" or "published"))
+            throw new InvalidOperationException("Este corte já está agendado ou publicado nesta plataforma.");
+        var scheduled = request.PublishAt is { } date && date > DateTimeOffset.UtcNow.AddSeconds(10);
+        var record = new PublicationRecord { Platform = request.Platform, ProjectId = projectId, ClipId = clipId, Status = scheduled ? "scheduled" : "queued", ScheduledAt = request.PublishAt, Title = request.Title, Description = request.Description, Privacy = request.Privacy };
         _history.Add(record);
+        await SaveAsync();
+        if (scheduled) return record;
+        await ExecuteAsync(record);
+        return record;
+    }
+
+    public IReadOnlyList<PublicationRecord> Due() => _history.Where(x => x.Status == "scheduled" && x.ScheduledAt <= DateTimeOffset.UtcNow).OrderBy(x => x.ScheduledAt).ToList();
+
+    public async Task<PublicationRecord> RetryAsync(string id)
+    {
+        var record = _history.FirstOrDefault(x => x.Id == id) ?? throw new InvalidOperationException("Publicação não encontrada.");
+        if (record.Status != "failed") throw new InvalidOperationException("Somente publicações com falha podem ser reenviadas.");
+        record.Status = "scheduled"; record.ScheduledAt = DateTimeOffset.UtcNow; record.Error = null; record.UpdatedAt = DateTimeOffset.UtcNow;
+        await SaveAsync(); return record;
+    }
+
+    public async Task ExecuteAsync(PublicationRecord record)
+    {
+        await _publishLock.WaitAsync();
         try
         {
-            if (request.Platform == SocialPlatform.YouTube) await PublishYouTubeAsync(path, request, record);
-            else if (request.Platform == SocialPlatform.Instagram) await PublishInstagramAsync(projectId, clip, request, record);
+            if (record.Status is "uploading" or "published") return;
+            var project = _projects.Get(record.ProjectId) ?? throw new InvalidOperationException("Projeto não encontrado.");
+            var clip = project.Clips.FirstOrDefault(c => c.Id == record.ClipId) ?? throw new InvalidOperationException("Corte não encontrado.");
+            var path = string.IsNullOrWhiteSpace(clip.VideoPath) ? null : _projects.ResolveAsset(record.ProjectId, clip.VideoPath);
+            if (path is null) throw new InvalidOperationException("Renderize o corte antes de publicar.");
+            record.Status = "uploading"; record.Attempts++; record.UpdatedAt = DateTimeOffset.UtcNow; await SaveAsync();
+            var request = new PublishRequest(record.Platform, record.Title, record.Description, record.Privacy);
+            if (record.Platform == SocialPlatform.YouTube) await PublishYouTubeAsync(path, request, record);
+            else if (record.Platform == SocialPlatform.Instagram) await PublishInstagramAsync(record.ProjectId, clip, request, record);
             else await PublishTikTokAsync(path, request, record);
-            record.Status = "published";
+            record.Status = "published"; record.PublishedAt = DateTimeOffset.UtcNow;
         }
         catch (Exception ex) { record.Status = "failed"; record.Error = ex.Message; }
-        return record;
+        finally { record.UpdatedAt = DateTimeOffset.UtcNow; await SaveAsync(); _publishLock.Release(); }
     }
 
     public IReadOnlyList<PublicationRecord> History() => _history.OrderByDescending(x => x.CreatedAt).ToList();
@@ -244,8 +274,14 @@ public sealed class SocialService
             if (!File.Exists(_file)) return;
             foreach (var item in JsonSerializer.Deserialize<List<SocialCredential>>(_protector.Unprotect(File.ReadAllText(_file)), JsonOptions) ?? [])
                 _accounts[item.Platform] = item;
+            var historyFile = _file + ".history";
+            if (File.Exists(historyFile)) _history.AddRange(JsonSerializer.Deserialize<List<PublicationRecord>>(_protector.Unprotect(File.ReadAllText(historyFile)), JsonOptions) ?? []);
         }
         catch { }
     }
-    private Task SaveAsync() => File.WriteAllTextAsync(_file, _protector.Protect(JsonSerializer.Serialize(_accounts.Values, JsonOptions)));
+    private async Task SaveAsync()
+    {
+        await File.WriteAllTextAsync(_file, _protector.Protect(JsonSerializer.Serialize(_accounts.Values, JsonOptions)));
+        await File.WriteAllTextAsync(_file + ".history", _protector.Protect(JsonSerializer.Serialize(_history, JsonOptions)));
+    }
 }

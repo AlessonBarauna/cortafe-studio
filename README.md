@@ -104,3 +104,5 @@ TikTok:    https://SEU-DOMINIO/api/social/callback/tiktok
 - **TikTok:** crie um aplicativo no TikTok for Developers e solicite Login Kit e Content Posting API com `video.publish`. Aplicativos não auditados publicam somente como `SELF_ONLY`.
 
 Cada corte renderizado passa a exibir botões YouTube, Instagram e TikTok. A primeira publicação deve ser privada para validar título, legenda e enquadramento.
+
+As publicações podem ser agendadas, sobrevivem à reinicialização do aplicativo e falhas podem ser reenviadas pela Central de Publicação. O sistema impede duplicidade do mesmo corte na mesma rede.
