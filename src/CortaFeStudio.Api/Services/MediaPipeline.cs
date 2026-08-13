@@ -14,7 +14,9 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         if (p.SourceKind == SourceKind.YouTube)
         {
             var template = Path.Combine(dir, "source.%(ext)s");
-            await tools.RunAsync(tools.Find("yt-dlp"), ["--no-playlist", "--ffmpeg-location", tools.Find("ffmpeg"), "--merge-output-format", "mp4", "-f", "bv*[height<=1080]+ba/b[height<=1080]", "-o", template, "--print", "after_move:filepath", p.Source], dir, ct);
+            var downloadArgs = tools.YouTubeArguments();
+            downloadArgs.AddRange(["--no-playlist", "--ffmpeg-location", tools.Find("ffmpeg"), "--merge-output-format", "mp4", "-f", "bv*[height<=1080]+ba/b[height<=1080]", "-o", template, "--print", "after_move:filepath", p.Source]);
+            await tools.RunAsync(tools.Find("yt-dlp"), downloadArgs, dir, ct);
             p.LocalMedia = Path.GetFileName(Directory.EnumerateFiles(dir, "source.*").First(f => Path.GetFileName(f) != "source.audio.wav"));
         }
         var media = Path.Combine(dir, p.LocalMedia ?? throw new InvalidOperationException("Arquivo de origem não encontrado."));
@@ -219,7 +221,8 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         try
         {
             foreach (var old in Directory.EnumerateFiles(dir, "youtube-captions*.json3")) File.Delete(old);
-            var args = new List<string> { "--skip-download", "--write-subs" };
+            var args = tools.YouTubeArguments();
+            args.AddRange(["--skip-download", "--write-subs"]);
             if (allowAutomatic) args.Add("--write-auto-subs");
             args.AddRange(["--sub-langs", "pt-BR,pt-PT,pt-orig,pt", "--sub-format", "json3", "--no-playlist", "-o", template, p.Source]);
             await tools.RunAsync(tools.Find("yt-dlp"), args, dir, ct);

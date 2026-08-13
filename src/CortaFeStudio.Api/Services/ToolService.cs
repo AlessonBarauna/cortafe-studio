@@ -17,10 +17,17 @@ public sealed class ToolService(IWebHostEnvironment env)
         return File.Exists(local) ? local : exe;
     }
 
+    public List<string> YouTubeArguments()
+    {
+        var args = new List<string> { "--force-ipv4" };
+        if (CommandAvailable(Find("node"))) args.AddRange(["--js-runtimes", "node"]);
+        return args;
+    }
+
     public async Task<Dictionary<string, object>> CheckAsync()
     {
         var result = new Dictionary<string, object>();
-        foreach (var (key, command, args) in new[] { ("ffmpeg", Find("ffmpeg"), "-version"), ("ffprobe", Find("ffprobe"), "-version"), ("ytDlp", Find("yt-dlp"), "--version"), ("python", Find("python"), "--version"), ("ollama", "ollama", "--version") })
+        foreach (var (key, command, args) in new[] { ("ffmpeg", Find("ffmpeg"), "-version"), ("ffprobe", Find("ffprobe"), "-version"), ("ytDlp", Find("yt-dlp"), "--version"), ("python", Find("python"), "--version"), ("node", Find("node"), "--version"), ("ollama", "ollama", "--version") })
             result[key] = await VersionAsync(command, args);
         result["transcriber"] = File.Exists(Path.Combine(Root, "scripts", "transcribe.py"));
         return result;
@@ -37,6 +44,17 @@ public sealed class ToolService(IWebHostEnvironment env)
         catch (Exception ex) { return new { available = false, error = ex.Message }; }
     }
 
+    private static bool CommandAvailable(string command)
+    {
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo(command, "--version") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true });
+            if (process is null || !process.WaitForExit(3000)) return false;
+            return process.ExitCode == 0;
+        }
+        catch { return false; }
+    }
+
     public async Task RunAsync(string command, IEnumerable<string> args, string? workDir = null, CancellationToken ct = default)
     {
         var psi = new ProcessStartInfo(command) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = workDir ?? Root };
@@ -44,7 +62,7 @@ public sealed class ToolService(IWebHostEnvironment env)
         using var p = Process.Start(psi) ?? throw new InvalidOperationException($"Não foi possível iniciar {command}.");
         var stdout = p.StandardOutput.ReadToEndAsync(ct); var stderr = p.StandardError.ReadToEndAsync(ct);
         await p.WaitForExitAsync(ct); var error = await stderr; await stdout;
-        if (p.ExitCode != 0) throw new InvalidOperationException($"{Path.GetFileName(command)} falhou: {error[^Math.Min(error.Length, 1800)..]}");
+        if (p.ExitCode != 0) throw new InvalidOperationException(FriendlyError(command, error));
     }
 
     public async Task<string> CaptureAsync(string command, IEnumerable<string> args, string? workDir = null, CancellationToken ct = default)
@@ -54,7 +72,19 @@ public sealed class ToolService(IWebHostEnvironment env)
         using var p = Process.Start(psi) ?? throw new InvalidOperationException($"Não foi possível iniciar {command}.");
         var stdout = p.StandardOutput.ReadToEndAsync(ct); var stderr = p.StandardError.ReadToEndAsync(ct);
         await p.WaitForExitAsync(ct); var output = await stdout; var error = await stderr;
-        if (p.ExitCode != 0) throw new InvalidOperationException($"{Path.GetFileName(command)} falhou: {error[^Math.Min(error.Length, 1800)..]}");
+        if (p.ExitCode != 0) throw new InvalidOperationException(FriendlyError(command, error));
         return output.Trim();
+    }
+
+    private static string FriendlyError(string command, string error)
+    {
+        if (Path.GetFileName(command).StartsWith("yt-dlp", StringComparison.OrdinalIgnoreCase))
+        {
+            if (error.Contains("No supported JavaScript runtime", StringComparison.OrdinalIgnoreCase))
+                return "O YouTube exige um runtime JavaScript. Instale o Node.js 22 ou superior e reinicie o CortaFé.";
+            if (error.Contains("HTTP Error 403", StringComparison.OrdinalIgnoreCase))
+                return "O YouTube recusou temporariamente o download (erro 403). Atualize o yt-dlp, desative VPN/proxy e tente novamente.";
+        }
+        return $"{Path.GetFileName(command)} falhou: {error[^Math.Min(error.Length, 1800)..]}";
     }
 }
