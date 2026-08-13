@@ -31,4 +31,14 @@ public sealed class RenderFilterFactoryTests
         Assert.Contains("gblur=sigma=34", filter);
         Assert.Contains("overlay=(W-w)/2:(H-h)/2", filter);
     }
+
+    [Fact]
+    public void Audio_NormalizaVozEReduzRuidoComFades()
+    {
+        var filter = RenderFilterFactory.Audio(60);
+        Assert.Contains("afftdn=nf=-25", filter);
+        Assert.Contains("loudnorm=I=-16", filter);
+        Assert.Contains("afade=t=in", filter);
+        Assert.Contains("afade=t=out:st=59.82", filter);
+    }
 }
