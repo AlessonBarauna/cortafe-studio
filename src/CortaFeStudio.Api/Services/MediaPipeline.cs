@@ -11,12 +11,21 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
     {
         var dir = store.ProjectDirectory(p.Id);
         await Stage(p, ProjectStatus.Acquiring, 5, "Preparando a mídia");
+        var transcriptFile = Path.Combine(dir, "transcript.json");
+        if (p.Transcript.Count == 0 && File.Exists(transcriptFile))
+            p.Transcript = JsonSerializer.Deserialize<List<TranscriptSegment>>(await File.ReadAllTextAsync(transcriptFile, ct), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+        if (p.SourceKind == SourceKind.YouTube && p.Transcript.Count == 0)
+        {
+            await Stage(p, ProjectStatus.Acquiring, 8, "Consultando duração e legendas do YouTube");
+            p.Duration = await ProbeYouTubeDuration(p.Source, ct);
+            await TryLoadYouTubeCaptionsAsync(p, allowAutomatic: true, ct);
+        }
         var existingMedia = !string.IsNullOrWhiteSpace(p.LocalMedia) ? Path.Combine(dir, p.LocalMedia) : null;
         if (p.SourceKind == SourceKind.YouTube && (existingMedia is null || !File.Exists(existingMedia)))
         {
             var template = Path.Combine(dir, "source.%(ext)s");
-            var downloadArgs = tools.YouTubeArguments();
-            downloadArgs.AddRange(["--no-playlist", "--ffmpeg-location", tools.Find("ffmpeg"), "--merge-output-format", "mp4", "-f", "bv*[height<=1080]+ba/b[height<=1080]", "-o", template, "--print", "after_move:filepath", p.Source]);
+            await Stage(p, ProjectStatus.Acquiring, 12, p.Transcript.Count > 0 ? "Baixando vídeo; legendas já aproveitadas" : "Baixando vídeo em formato otimizado");
+            var downloadArgs = YouTubeAcquisition.DownloadArguments(tools.YouTubeArguments(), tools.Find("ffmpeg"), template, p.Source);
             await tools.RunAsync(tools.Find("yt-dlp"), downloadArgs, dir, ct);
             p.LocalMedia = Path.GetFileName(Directory.EnumerateFiles(dir, "source.*").First(f => Path.GetFileName(f) != "source.audio.wav"));
             await Checkpoint(p, "media", "Mídia adquirida");
@@ -24,10 +33,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         var media = Path.Combine(dir, p.LocalMedia ?? throw new InvalidOperationException("Arquivo de origem não encontrado."));
         if (!File.Exists(media)) throw new InvalidOperationException("O arquivo de origem não está mais disponível.");
         if (!p.CompletedStages.Contains("media")) await Checkpoint(p, "media", "Mídia disponível");
-        p.Duration = await ProbeDuration(media, ct);
-        var transcriptFile = Path.Combine(dir, "transcript.json");
-        if (p.Transcript.Count == 0 && File.Exists(transcriptFile))
-            p.Transcript = JsonSerializer.Deserialize<List<TranscriptSegment>>(await File.ReadAllTextAsync(transcriptFile, ct), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+        if (p.Duration <= 0) p.Duration = await ProbeDuration(media, ct);
         var transcriptReady = p.Transcript.Count > 0;
         var hasManualCaptions = transcriptReady;
         if (!transcriptReady && p.SourceKind == SourceKind.YouTube)
@@ -84,6 +90,15 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
     {
         var output = await tools.CaptureAsync(tools.Find("ffprobe"), ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", media], Path.GetDirectoryName(media), ct);
         return double.TryParse(output, NumberStyles.Float, CultureInfo.InvariantCulture, out var duration) ? duration : 0;
+    }
+    private async Task<double> ProbeYouTubeDuration(string url, CancellationToken ct)
+    {
+        try
+        {
+            var output = await tools.CaptureAsync(tools.Find("yt-dlp"), YouTubeAcquisition.MetadataArguments(tools.YouTubeArguments(), url), tools.Root, ct);
+            return double.TryParse(output.Split('\n').LastOrDefault()?.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var duration) ? duration : 0;
+        }
+        catch { return 0; }
     }
 
     private static List<ClipCandidate> BuildCandidates(List<TranscriptSegment> segments, ProjectOptions options)
