@@ -21,6 +21,7 @@ builder.Services.AddDataProtection()
     .SetApplicationName("CortaFeStudio");
 builder.Services.AddSingleton<SocialService>();
 builder.Services.AddSingleton<DiagnosticsService>();
+builder.Services.AddSingleton<StorageService>();
 builder.Services.AddHostedService<PublicationScheduler>();
 builder.Services.AddProblemDetails();
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)));
@@ -35,6 +36,7 @@ api.MapGet("/health", async (ToolService tools) => new { status = "ok", tools = 
 api.MapGet("/diagnostics", async (DiagnosticsService diagnostics) => await diagnostics.SnapshotAsync());
 api.MapGet("/projects", (ProjectStore store) => store.List());
 api.MapGet("/queue", (ProjectQueue queue) => queue.Status());
+api.MapGet("/storage", (StorageService storage) => storage.Report());
 api.MapGet("/projects/{id}", (string id, ProjectStore store) =>
     store.Get(id) is { } project ? Results.Ok(project) : Results.NotFound());
 
@@ -73,6 +75,14 @@ api.MapPost("/projects/{id}/restart-from", async (string id, RestartFromRequest 
     var project = store.Get(id); if (project is null) return Results.NotFound();
     try { await pipeline.ResetFromAsync(project, request.Stage); await queue.EnqueueAsync(id); return Results.Accepted($"/api/projects/{id}", project); }
     catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+api.MapPost("/projects/{id}/cleanup", async (string id, CleanupProjectRequest request, ProjectStore store, StorageService storage) =>
+{
+    var project = store.Get(id); return project is null ? Results.NotFound() : Results.Ok(new { freedBytes = await storage.CleanupAsync(project, request.DeleteSource) });
+});
+api.MapPost("/projects/{id}/archive", async (string id, ProjectStore store, StorageService storage) =>
+{
+    var project = store.Get(id); if (project is null) return Results.NotFound(); await storage.ArchiveAsync(project, true); return Results.Ok();
 });
 
 api.MapPut("/projects/{id}/clips/{clipId}", async (string id, string clipId, ClipUpdate update, ProjectStore store) =>

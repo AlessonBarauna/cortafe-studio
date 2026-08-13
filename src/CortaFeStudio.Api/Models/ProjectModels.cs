@@ -28,6 +28,7 @@ public sealed class VideoProject
     public List<TranscriptSegment> Transcript { get; set; } = [];
     public string? TranscriptSource { get; set; }
     public List<ClipCandidate> Clips { get; set; } = [];
+    public bool Archived { get; set; }
 }
 
 public sealed class ProjectOptions
@@ -86,5 +87,6 @@ public sealed class UrlProjectRequest
 public record ClipUpdate(double? Start, double? End, string? Title, string? CoverText, string? Caption, bool? Approved, string? CropFocus, string? SubtitleStyle, string? CoverAccent, string? CoverPosition, double? CoverTimestamp, string? EditedTranscript);
 public record SplitClipRequest(double At);
 public record RestartFromRequest(string Stage);
+public record CleanupProjectRequest(bool DeleteSource = false);
 public record ReanalyzeRequest(string? Topic, int? ClipCount, bool Render = false);
 public record ClipFeedbackRequest(string Feedback);
