@@ -85,8 +85,38 @@ api.MapPut("/projects/{id}/clips/{clipId}", async (string id, string clipId, Cli
         clip.CoverAccent = update.CoverAccent ?? clip.CoverAccent;
         clip.CoverPosition = update.CoverPosition ?? clip.CoverPosition;
         clip.CoverTimestamp = update.CoverTimestamp ?? clip.CoverTimestamp;
+        clip.EditedTranscript = update.EditedTranscript?.Trim() ?? clip.EditedTranscript;
     });
     return updated is null ? Results.NotFound() : Results.Ok(updated);
+});
+
+api.MapPost("/projects/{id}/clips/{clipId}/duplicate", async (string id, string clipId, ProjectStore store) =>
+{
+    ClipCandidate? copy = null;
+    var updated = await store.UpdateAsync(id, project =>
+    {
+        var source = project.Clips.FirstOrDefault(clip => clip.Id == clipId); if (source is null) return;
+        copy = JsonSerializer.Deserialize<ClipCandidate>(JsonSerializer.Serialize(source));
+        if (copy is null) return;
+        copy.Id = Guid.NewGuid().ToString("N")[..10]; copy.Title += " (cópia)"; copy.VideoPath = null; copy.CoverPath = null; copy.Feedback = "pending";
+        project.Clips.Insert(project.Clips.IndexOf(source) + 1, copy);
+    });
+    return updated is null || copy is null ? Results.NotFound() : Results.Ok(copy);
+});
+
+api.MapPost("/projects/{id}/clips/{clipId}/split", async (string id, string clipId, SplitClipRequest request, ProjectStore store) =>
+{
+    List<ClipCandidate>? parts = null;
+    var updated = await store.UpdateAsync(id, project =>
+    {
+        var source = project.Clips.FirstOrDefault(clip => clip.Id == clipId); if (source is null || request.At <= source.Start + 3 || request.At >= source.End - 3) return;
+        var left = JsonSerializer.Deserialize<ClipCandidate>(JsonSerializer.Serialize(source))!;
+        var right = JsonSerializer.Deserialize<ClipCandidate>(JsonSerializer.Serialize(source))!;
+        left.Id = Guid.NewGuid().ToString("N")[..10]; left.End = request.At; left.Title += " · Parte 1"; left.VideoPath = null; left.CoverPath = null;
+        right.Id = Guid.NewGuid().ToString("N")[..10]; right.Start = request.At; right.Title += " · Parte 2"; right.VideoPath = null; right.CoverPath = null;
+        var index = project.Clips.IndexOf(source); project.Clips.RemoveAt(index); project.Clips.InsertRange(index, [left, right]); parts = [left, right];
+    });
+    return updated is null || parts is null ? Results.BadRequest(new { error = "Escolha um ponto com pelo menos 3 segundos de cada lado." }) : Results.Ok(parts);
 });
 
 api.MapPost("/projects/{id}/clips/{clipId}/cover", async (string id, string clipId, ProjectStore store, MediaPipeline pipeline) =>
