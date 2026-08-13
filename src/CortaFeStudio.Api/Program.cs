@@ -258,7 +258,8 @@ api.MapPost("/social/publications/{id}/refresh", async (string id, SocialService
     try { return Results.Ok(await social.RefreshStatusAsync(id)); } catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
 api.MapPost("/social/configure", async (SocialConfigurationRequest request, SocialService social) =>
-{ await social.ConfigureAsync(request); return Results.Ok(); });
+    { await social.ConfigureAsync(request); return Results.Ok(); });
+api.MapDelete("/social/accounts/{platform}", async (SocialPlatform platform, SocialService social) => { await social.DisconnectAsync(platform); return Results.NoContent(); });
 api.MapGet("/social/connect/{platform}", (SocialPlatform platform, HttpRequest request, SocialService social) =>
 {
     try { return Results.Ok(new { url = social.AuthorizationUrl(platform, $"{request.Scheme}://{request.Host}") }); }

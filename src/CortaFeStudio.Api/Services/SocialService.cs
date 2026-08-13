@@ -61,6 +61,11 @@ public sealed class SocialService
         await SaveAsync();
     }
 
+    public async Task DisconnectAsync(SocialPlatform platform)
+    {
+        var account = RequireConfigured(platform); account.AccessToken = null; account.RefreshToken = null; account.ExpiresAt = null; account.AccountId = null; account.AccountName = null; await SaveAsync();
+    }
+
     public string AuthorizationUrl(SocialPlatform platform, string baseUrl)
     {
         var account = RequireConfigured(platform);
@@ -113,6 +118,7 @@ public sealed class SocialService
         var clip = project.Clips.FirstOrDefault(c => c.Id == clipId) ?? throw new InvalidOperationException("Corte não encontrado.");
         var path = string.IsNullOrWhiteSpace(clip.VideoPath) ? null : _projects.ResolveAsset(projectId, clip.VideoPath);
         if (path is null) throw new InvalidOperationException("Renderize o corte antes de publicar.");
+        SocialPublishingPolicy.Validate(request.Platform, path, clip.End - clip.Start, request);
         if (_history.Any(x => x.ProjectId == projectId && x.ClipId == clipId && x.Platform == request.Platform && x.Status is "scheduled" or "uploading" or "published"))
             throw new InvalidOperationException("Este corte já está agendado ou publicado nesta plataforma.");
         var scheduled = request.PublishAt is { } date && date > DateTimeOffset.UtcNow.AddSeconds(10);
@@ -146,12 +152,18 @@ public sealed class SocialService
             if (path is null) throw new InvalidOperationException("Renderize o corte antes de publicar.");
             record.Status = "uploading"; record.Attempts++; record.UpdatedAt = DateTimeOffset.UtcNow; await SaveAsync();
             var request = new PublishRequest(record.Platform, record.Title, record.Description, record.Privacy);
+            await EnsureFreshTokenAsync(record.Platform);
             if (record.Platform == SocialPlatform.YouTube) await PublishYouTubeAsync(path, request, record);
             else if (record.Platform == SocialPlatform.Instagram) await PublishInstagramAsync(record.ProjectId, clip, request, record);
             else await PublishTikTokAsync(path, request, record);
             record.Status = "published"; record.PublishedAt = DateTimeOffset.UtcNow;
         }
-        catch (Exception ex) { record.Status = "failed"; record.Error = ex.Message; }
+        catch (Exception ex)
+        {
+            record.Error = ex.Message;
+            if (record.Attempts < 3) { record.Status = "scheduled"; record.ScheduledAt = DateTimeOffset.UtcNow.Add(SocialPublishingPolicy.RetryDelay(record.Attempts)); }
+            else record.Status = "failed";
+        }
         finally { record.UpdatedAt = DateTimeOffset.UtcNow; await SaveAsync(); _publishLock.Release(); }
     }
 
@@ -193,6 +205,7 @@ public sealed class SocialService
     {
         var record = _history.FirstOrDefault(item => item.Id == id) ?? throw new InvalidOperationException("Publicação não encontrada.");
         if (record.Platform != SocialPlatform.YouTube || string.IsNullOrWhiteSpace(record.ExternalId)) return record;
+        await EnsureFreshTokenAsync(SocialPlatform.YouTube);
         var account = RequireConnected(SocialPlatform.YouTube); using var client = _http.CreateClient(); client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", account.AccessToken);
         using var document = JsonDocument.Parse(await client.GetStringAsync($"https://www.googleapis.com/youtube/v3/videos?part=processingDetails,statistics&id={record.ExternalId}"));
         var items = document.RootElement.GetProperty("items"); if (items.GetArrayLength() > 0) record.PlatformStatus = items[0].TryGetProperty("processingDetails", out var details) && details.TryGetProperty("processingStatus", out var status) ? status.GetString() : "available";
@@ -272,6 +285,31 @@ public sealed class SocialService
             return doc.RootElement.GetProperty("data").GetProperty("user").GetProperty("display_name").GetString();
         }
         catch { return platform.ToString(); }
+    }
+
+    private async Task EnsureFreshTokenAsync(SocialPlatform platform)
+    {
+        var account = RequireConnected(platform);
+        if (account.ExpiresAt is null || account.ExpiresAt > DateTimeOffset.UtcNow.AddMinutes(5)) return;
+        using var client = _http.CreateClient(); HttpResponseMessage response;
+        if (platform == SocialPlatform.Instagram)
+            response = await client.GetAsync($"https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token={Uri.EscapeDataString(account.AccessToken!)}");
+        else
+        {
+            if (string.IsNullOrWhiteSpace(account.RefreshToken)) throw new InvalidOperationException($"A conexão com {platform} expirou. Conecte a conta novamente.");
+            var endpoint = platform == SocialPlatform.YouTube ? "https://oauth2.googleapis.com/token" : "https://open.tiktokapis.com/v2/oauth/token/";
+            var fields = platform == SocialPlatform.YouTube
+                ? new Dictionary<string, string> { ["client_id"] = account.ClientId, ["client_secret"] = account.ClientSecret, ["refresh_token"] = account.RefreshToken, ["grant_type"] = "refresh_token" }
+                : new Dictionary<string, string> { ["client_key"] = account.ClientId, ["client_secret"] = account.ClientSecret, ["refresh_token"] = account.RefreshToken, ["grant_type"] = "refresh_token" };
+            response = await client.PostAsync(endpoint, new FormUrlEncodedContent(fields));
+        }
+        using (response)
+        {
+            var raw = await response.Content.ReadAsStringAsync(); if (!response.IsSuccessStatusCode) throw new InvalidOperationException($"Não foi possível renovar a conexão com {platform}: {raw}");
+            using var document = JsonDocument.Parse(raw); var root = document.RootElement; account.AccessToken = root.GetProperty("access_token").GetString();
+            if (root.TryGetProperty("refresh_token", out var refresh)) account.RefreshToken = refresh.GetString();
+            account.ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(root.TryGetProperty("expires_in", out var expires) ? expires.GetDouble() : 3600); await SaveAsync();
+        }
     }
 
     private SocialCredential RequireConfigured(SocialPlatform platform) =>
