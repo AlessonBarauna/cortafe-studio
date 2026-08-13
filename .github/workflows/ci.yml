@@ -19,6 +19,8 @@ jobs:
           node-version: 24
       - run: dotnet restore CortaFeStudio.sln --configfile NuGet.Config
       - run: dotnet build CortaFeStudio.sln -c Release --no-restore
+      - name: Executar testes automatizados
+        run: dotnet test CortaFeStudio.sln -c Release --no-build
       - name: Validar JavaScript
         shell: pwsh
         run: Get-ChildItem src/CortaFeStudio.Api/wwwroot -Filter *.js | ForEach-Object { node --check $_.FullName }

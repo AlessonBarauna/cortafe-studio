@@ -204,9 +204,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
     {
         var dir = store.ProjectDirectory(p.Id); var ass = Path.Combine(dir, $"captions-{clip.Id}.ass"); await File.WriteAllTextAsync(ass, BuildAss(p.Transcript, clip), Encoding.UTF8, ct);
         var output = $"clip-{clip.Id}.mp4"; var escaped = ass.Replace("\\", "/").Replace(":", "\\:").Replace("'", "\\'");
-        var framing = clip.LayoutMode == "blur"
-            ? "split=2[bg][fg];[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=34,eq=brightness=-0.18[back];[fg]scale=1080:-2[front];[back][front]overlay=(W-w)/2:(H-h)/2"
-            : $"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920:{CropX(clip.CropX)}:{CropY(clip.CropFocus)}";
+        var framing = RenderFilterFactory.Framing(clip);
         var filter = $"{framing},subtitles='{escaped}'";
         await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-ss", F(clip.Start), "-to", F(clip.End), "-i", Path.Combine(dir, p.LocalMedia!), "-vf", filter, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", Path.Combine(dir, output)], dir, ct);
         clip.VideoPath = output;
@@ -310,8 +308,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
     }
     private static string EscapeAss(string value) => value.Replace("\n", " ").Replace("{", "(").Replace("}", ")");
     private static string EscapeFilterPath(string value) => value.Replace("\\", "/").Replace(":", "\\:").Replace("'", "\\'");
-    private static string CropY(string focus) => focus switch { "top" => "0", "bottom" => "ih-1920", _ => "(ih-1920)/2" };
-    private static string CropX(double focus) => $"max(0\\,min(iw-1080\\,iw*{Math.Clamp(focus, 0, 1).ToString("0.###", CultureInfo.InvariantCulture)}-540))";
+    private static string CropY(string focus) => RenderFilterFactory.CropY(focus);
     private static string NormalizeColor(string? value) => System.Text.RegularExpressions.Regex.IsMatch(value ?? "", "^#[0-9A-Fa-f]{6}$") ? "0x" + value![1..] : "0xF0B44D";
     private static string AssTime(double seconds) => TimeSpan.FromSeconds(seconds).ToString(@"h\:mm\:ss\.ff");
     private static string F(double number) => number.ToString("0.###", CultureInfo.InvariantCulture);

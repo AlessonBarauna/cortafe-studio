@@ -267,3 +267,5 @@ static string GetContentType(string path) => Path.GetExtension(path).ToLowerInva
 };
 public record PinRequest(string Pin);
 public record BackupRequest(string Password);
+
+public partial class Program;
