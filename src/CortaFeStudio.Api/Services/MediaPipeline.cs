@@ -238,10 +238,24 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
 
     private static string BuildAss(List<TranscriptSegment> segments, ClipCandidate clip)
     {
-        var sb = new StringBuilder("[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\nStyle: Impacto,Arial,72,&H00FFFFFF,&H0000D7FF,&H00120B22,&H80000000,-1,0,0,0,100,100,0,0,1,6,2,2,70,70,300,1\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n");
-        foreach (var s in segments.Where(s => s.End >= clip.Start && s.Start <= clip.End)) sb.AppendLine($"Dialogue: 0,{AssTime(Math.Max(0, s.Start - clip.Start))},{AssTime(Math.Min(clip.End - clip.Start, s.End - clip.Start))},Impacto,,0,0,0,,{s.Text.Replace("\n", " ").Replace("{", "(").Replace("}", ")")}");
+        var sb = new StringBuilder("[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\nWrapStyle: 2\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\nStyle: Impacto,Arial,68,&H00FFFFFF,&H0000B7FF,&H00120B22,&H80000000,-1,0,0,0,100,100,0,0,1,6,2,2,90,90,310,1\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n");
+        var words = segments.SelectMany(s => s.Words).Where(w => w.End >= clip.Start && w.Start <= clip.End).OrderBy(w => w.Start).ToList();
+        if (words.Count > 0)
+        {
+            for (var i = 0; i < words.Count;)
+            {
+                var group = new List<TranscriptWord> { words[i++] };
+                while (i < words.Count && group.Count < 5 && words[i].End - group[0].Start <= 2.8) group.Add(words[i++]);
+                var start = Math.Max(0, group[0].Start - clip.Start); var end = Math.Min(clip.End - clip.Start, group[^1].End - clip.Start + .08);
+                var karaoke = string.Concat(group.Select(w => $"{{\\kf{Math.Max(1, (int)Math.Round((w.End - w.Start) * 100))}}}{EscapeAss(w.Word.Trim())} ")).TrimEnd();
+                sb.AppendLine($"Dialogue: 0,{AssTime(start)},{AssTime(end)},Impacto,,0,0,0,,{karaoke}");
+            }
+        }
+        else foreach (var s in segments.Where(s => s.End >= clip.Start && s.Start <= clip.End))
+            sb.AppendLine($"Dialogue: 0,{AssTime(Math.Max(0, s.Start - clip.Start))},{AssTime(Math.Min(clip.End - clip.Start, s.End - clip.Start))},Impacto,,0,0,0,,{EscapeAss(s.Text)}");
         return sb.ToString();
     }
+    private static string EscapeAss(string value) => value.Replace("\n", " ").Replace("{", "(").Replace("}", ")");
     private static string AssTime(double seconds) => TimeSpan.FromSeconds(seconds).ToString(@"h\:mm\:ss\.ff");
     private static string F(double number) => number.ToString("0.###", CultureInfo.InvariantCulture);
 }
