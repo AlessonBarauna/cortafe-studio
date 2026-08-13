@@ -1,0 +1,4 @@
+.social-card{background:#14121c;border:1px solid rgba(255,255,255,.11);padding:1.5rem}
+.social-card.connected{border-color:#58d68d}
+.social-logo{width:52px;height:52px;display:grid;place-items:center;border-radius:50%;background:#f2eee6;color:#09080d;font-weight:800}
+.social-state{font-size:.72rem;text-transform:uppercase;letter-spacing:.12em;color:#9d99aa}

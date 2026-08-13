@@ -1,0 +1,243 @@
+using System.Globalization;
+using System.Text;
+using System.Text.Json;
+using CortaFeStudio.Api.Models;
+
+namespace CortaFeStudio.Api.Services;
+
+public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpClientFactory http, EditorialAnalyzer editorial)
+{
+    public async Task ProcessAsync(VideoProject p, CancellationToken ct)
+    {
+        var dir = store.ProjectDirectory(p.Id);
+        await Stage(p, ProjectStatus.Acquiring, 5, "Preparando a mídia");
+        if (p.SourceKind == SourceKind.YouTube)
+        {
+            var template = Path.Combine(dir, "source.%(ext)s");
+            await tools.RunAsync(tools.Find("yt-dlp"), ["--no-playlist", "--ffmpeg-location", tools.Find("ffmpeg"), "--merge-output-format", "mp4", "-f", "bv*[height<=1080]+ba/b[height<=1080]", "-o", template, "--print", "after_move:filepath", p.Source], dir, ct);
+            p.LocalMedia = Path.GetFileName(Directory.EnumerateFiles(dir, "source.*").First(f => Path.GetFileName(f) != "source.audio.wav"));
+        }
+        var media = Path.Combine(dir, p.LocalMedia ?? throw new InvalidOperationException("Arquivo de origem não encontrado."));
+        p.Duration = await ProbeDuration(media, ct);
+        var hasManualCaptions = false;
+        if (p.SourceKind == SourceKind.YouTube)
+        {
+            await Stage(p, ProjectStatus.Transcribing, 18, "Verificando legendas existentes no YouTube");
+            hasManualCaptions = await TryLoadYouTubeCaptionsAsync(p, allowAutomatic: false, ct);
+        }
+        if (!hasManualCaptions)
+        {
+            await Stage(p, ProjectStatus.Transcribing, 20, "Extraindo áudio");
+            var audio = Path.Combine(dir, "source.audio.wav");
+            await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-i", media, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", audio], dir, ct);
+            await Stage(p, ProjectStatus.Transcribing, 35, "Transcrevendo com IA local");
+            var transcriptFile = Path.Combine(dir, "transcript.json");
+            await tools.RunAsync(tools.Find("python"), [Path.Combine(tools.Root, "scripts", "transcribe.py"), audio, transcriptFile, p.Options.WhisperModel], dir, ct);
+            p.Transcript = JsonSerializer.Deserialize<List<TranscriptSegment>>(await File.ReadAllTextAsync(transcriptFile, ct), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+            p.TranscriptSource = $"Faster-Whisper ({p.Options.WhisperModel})";
+            if (p.SourceKind == SourceKind.YouTube && (p.Options.ContentType == "louvor" || p.Transcript.Sum(x => x.Text.Length) < 120))
+                await TryLoadYouTubeCaptionsAsync(p, allowAutomatic: true, ct);
+        }
+        await Stage(p, ProjectStatus.Analyzing, 72, "Encontrando momentos de impacto");
+        p.Clips = editorial.Analyze(p.Transcript, p.Options);
+        foreach (var clip in p.Clips) { await EnrichWithOllama(clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
+        foreach (var clip in p.Clips) await RenderClipAsync(p, clip, ct);
+        p.Status = ProjectStatus.Ready; p.Progress = 100; p.Stage = $"{p.Clips.Count} cortes prontos para revisar"; await store.SaveAsync(p);
+    }
+
+    private async Task Stage(VideoProject p, ProjectStatus status, int progress, string stage) { p.Status = status; p.Progress = progress; p.Stage = stage; await store.SaveAsync(p); }
+    private async Task<double> ProbeDuration(string media, CancellationToken ct)
+    {
+        var output = await tools.CaptureAsync(tools.Find("ffprobe"), ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", media], Path.GetDirectoryName(media), ct);
+        return double.TryParse(output, NumberStyles.Float, CultureInfo.InvariantCulture, out var duration) ? duration : 0;
+    }
+
+    private static List<ClipCandidate> BuildCandidates(List<TranscriptSegment> segments, ProjectOptions options)
+    {
+        if (options.ContentType == "louvor") return BuildMusicCandidates(segments, options);
+        var candidates = new List<(ClipCandidate Clip, double Rank)>();
+        var strongHooks = new[] { "olha deixa eu", "deixa eu te", "posso te falar", "eu vou repetir", "vou falar mais uma vez", "presta atenção", "o que que", "você tem noção", "imagina isso", "a verdade é", "sabe por que", "quando você" };
+        var impact = new[] { "deus", "jesus", "coração", "fé", "verdade", "justiça", "amor", "paz", "perdão", "reino", "caos", "serpente", "cruz", "propósito" };
+        var weakOpenings = new[] { "agora vamos", "vamos continuar", "continuar aqui", "próximas características", "quem tá entendendo", "beleza", "então gente" };
+        for (var anchor = 0; anchor < segments.Count; anchor++)
+        {
+            var anchorText = segments[anchor].Text.ToLowerInvariant();
+            var hookScore = strongHooks.Count(anchorText.Contains) * 18 + impact.Count(anchorText.Contains) * 3 + (anchorText.Contains('?') ? 7 : 0);
+            if (hookScore < 6) continue;
+            var startIndex = Math.Max(0, anchor - (hookScore >= 18 ? 0 : 1));
+            var start = segments[startIndex].Start; var parts = new List<TranscriptSegment>(); var j = startIndex;
+            while (j < segments.Count && segments[j].End - start <= options.MaxDuration)
+            {
+                parts.Add(segments[j]); j++;
+                var elapsed = parts[^1].End - start;
+                if (elapsed >= options.MinDuration && elapsed >= options.MaxDuration * .72 && EndsThought(parts[^1].Text)) break;
+            }
+            var duration = parts.LastOrDefault()?.End - start ?? 0; if (duration < options.MinDuration || parts.Count < 3) continue;
+            var text = string.Join(" ", parts.Select(x => x.Text)).Trim();
+            var lower = text.ToLowerInvariant();
+            var rank = 45 + hookScore + impact.Count(lower.Contains) * 2 + CountContrast(lower) * 6 + (EndsThought(parts[^1].Text) ? 8 : 0);
+            if (weakOpenings.Any(w => lower.StartsWith(w))) rank -= 24;
+            if (text.Length < 240) rank -= 12;
+            var title = MakeTitle(text); var cover = MakeCoverText(text);
+            candidates.Add((new ClipCandidate { Start = start, End = parts[^1].End, Score = Math.Round(Math.Min(99d, rank), 1), Transcript = text, Title = title, CoverText = cover, Caption = $"{title}. Uma reflexão para guardar e compartilhar. ✨" }, rank));
+        }
+        var selected = new List<ClipCandidate>();
+        foreach (var item in candidates.OrderByDescending(x => x.Rank))
+        {
+            if (selected.Any(c => Overlap(c.Start, c.End, item.Clip.Start, item.Clip.End) > .28)) continue;
+            selected.Add(item.Clip); if (selected.Count == options.ClipCount) break;
+        }
+        return selected.OrderBy(c => c.Start).ToList();
+    }
+
+    private static List<ClipCandidate> BuildMusicCandidates(List<TranscriptSegment> segments, ProjectOptions options)
+    {
+        var usable = segments.Where(s => s.Text.Replace("[música]", "", StringComparison.OrdinalIgnoreCase).Trim().Length > 2).ToList();
+        var pool = new List<ClipCandidate>();
+        for (var i = 0; i < usable.Count; i += 2)
+        {
+            var start = usable[i].Start; if (start < 8) continue;
+            var parts = usable.Skip(i).TakeWhile(s => s.End - start <= options.MaxDuration).ToList();
+            if (parts.Count < 3 || parts[^1].End - start < options.MinDuration) continue;
+            var text = string.Join(" ", parts.Select(s => s.Text.Replace("[música]", "", StringComparison.OrdinalIgnoreCase))).Trim();
+            var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var meaningful = words.Count(w => w.Length > 3);
+            var score = Math.Min(96, 55 + meaningful / 3d + (text.Contains("Deus", StringComparison.OrdinalIgnoreCase) ? 6 : 0) + (text.Contains("promessa", StringComparison.OrdinalIgnoreCase) ? 8 : 0));
+            pool.Add(new ClipCandidate { Start = start, End = parts[^1].End, Score = Math.Round(score, 1), Transcript = text, Title = "Promessa Maior • Momento de louvor", CoverText = "ELE CUMPRE A PROMESSA", Caption = "Uma canção para renovar a fé e lembrar das promessas de Deus. 🎶✨", Hashtags = ["#louvor", "#adoração", "#promessa", "#fé", "#worship"] });
+        }
+        var selected = new List<ClipCandidate>();
+        foreach (var clip in pool.OrderByDescending(c => c.Score))
+        {
+            if (selected.Any(c => Overlap(c.Start, c.End, clip.Start, clip.End) > .22)) continue;
+            selected.Add(clip); if (selected.Count == options.ClipCount) break;
+        }
+        return selected.OrderBy(c => c.Start).ToList();
+    }
+
+    private static bool EndsThought(string text) => text.TrimEnd().EndsWith('.') || text.TrimEnd().EndsWith('?') || text.TrimEnd().EndsWith('!');
+    private static int CountContrast(string text) => new[] { " mas ", " porque ", " então ", " porém ", " mesmo em meio", " não é ", " é um " }.Count(text.Contains);
+    private static double Overlap(double a1, double a2, double b1, double b2) => Math.Max(0, Math.Min(a2, b2) - Math.Max(a1, b1)) / Math.Min(a2 - a1, b2 - b1);
+    private static string MakeTitle(string text)
+    {
+        var lower = text.ToLowerInvariant();
+        if (lower.Contains("coração limpo")) return "O que realmente limpa o coração?";
+        if (lower.Contains("tranquilidade") && lower.Contains("paz")) return "Paz não é o mesmo que tranquilidade";
+        if (lower.Contains("perdoa") && lower.Contains("jesus")) return "O coração de Jesus na cruz";
+        if (lower.Contains("desconfia") && lower.Contains("deus")) return "A desconfiança que suja o coração";
+        if (lower.Contains("perseguido") && lower.Contains("justiça")) return "Nem toda perseguição é por justiça";
+        var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(9);
+        return string.Join(' ', words).Trim(' ', ',', '.', '?', '!');
+    }
+    private static string MakeCoverText(string text)
+    {
+        var title = MakeTitle(text).ToUpperInvariant();
+        return string.Join(' ', title.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(6));
+    }
+
+    private async Task EnrichWithOllama(ClipCandidate clip, string type, CancellationToken ct)
+    {
+        try
+        {
+            var prompt = $"Você é editor de conteúdo {type}. Responda SOMENTE JSON com title, coverText, caption e hashtags (array). Português do Brasil, título chamativo sem clickbait falso, capa até 6 palavras. Transcrição: {clip.Transcript}";
+            var payload = JsonSerializer.Serialize(new { model = "qwen2.5:3b", prompt, stream = false, format = "json" });
+            using var content = new StringContent(payload, Encoding.UTF8, "application/json"); using var response = await http.CreateClient().PostAsync("http://localhost:11434/api/generate", content, ct);
+            if (!response.IsSuccessStatusCode) return;
+            using var outer = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct)); var raw = outer.RootElement.GetProperty("response").GetString(); if (raw is null) return;
+            using var doc = JsonDocument.Parse(raw); var root = doc.RootElement;
+            clip.Title = root.TryGetProperty("title", out var title) ? title.GetString() ?? clip.Title : clip.Title;
+            clip.CoverText = root.TryGetProperty("coverText", out var cover) ? cover.GetString() ?? clip.CoverText : clip.CoverText;
+            clip.Caption = root.TryGetProperty("caption", out var caption) ? caption.GetString() ?? clip.Caption : clip.Caption;
+            if (root.TryGetProperty("hashtags", out var tags) && tags.ValueKind == JsonValueKind.Array) clip.Hashtags = tags.EnumerateArray().Select(x => x.GetString()).Where(x => x is not null).Cast<string>().ToList();
+        } catch { }
+    }
+
+    private async Task CreateCoverAsync(VideoProject p, ClipCandidate clip, CancellationToken ct)
+    {
+        var dir = store.ProjectDirectory(p.Id); var cover = $"cover-{clip.Id}.jpg"; var timestamp = clip.Start + Math.Min(3, (clip.End - clip.Start) / 2);
+        await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-ss", F(timestamp), "-i", Path.Combine(dir, p.LocalMedia!), "-frames:v", "1", "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,eq=contrast=1.08:saturation=1.12", Path.Combine(dir, cover)], dir, ct);
+        clip.CoverPath = cover;
+    }
+
+    public async Task RenderClipAsync(VideoProject p, ClipCandidate clip, CancellationToken ct = default)
+    {
+        var dir = store.ProjectDirectory(p.Id); var ass = Path.Combine(dir, $"captions-{clip.Id}.ass"); await File.WriteAllTextAsync(ass, BuildAss(p.Transcript, clip), Encoding.UTF8, ct);
+        var output = $"clip-{clip.Id}.mp4"; var escaped = ass.Replace("\\", "/").Replace(":", "\\:").Replace("'", "\\'");
+        var filter = $"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,subtitles='{escaped}'";
+        await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-ss", F(clip.Start), "-to", F(clip.End), "-i", Path.Combine(dir, p.LocalMedia!), "-vf", filter, "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", Path.Combine(dir, output)], dir, ct);
+        clip.VideoPath = output;
+    }
+
+    public async Task RenderAllAsync(VideoProject p, CancellationToken ct = default)
+    {
+        foreach (var clip in p.Clips.Where(c => c.Approved)) await RenderClipAsync(p, clip, ct);
+        await store.SaveAsync(p);
+    }
+
+    public async Task ReanalyzeAndRenderAsync(VideoProject p, CancellationToken ct = default)
+    {
+        if (p.Transcript.Count == 0) throw new InvalidOperationException("Este projeto ainda não possui transcrição para reaproveitar.");
+        p.Status = ProjectStatus.Analyzing; p.Progress = 72; p.Stage = "Refazendo o ranking sem transcrever novamente"; await store.SaveAsync(p);
+        p.Clips = editorial.Analyze(p.Transcript, p.Options);
+        foreach (var clip in p.Clips) { await EnrichWithOllama(clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
+        await RenderAllAsync(p, ct);
+        p.Status = ProjectStatus.Ready; p.Progress = 100; p.Stage = $"{p.Clips.Count} novos cortes renderizados"; await store.SaveAsync(p);
+    }
+
+    public async Task ReanalyzeAsync(VideoProject p, bool render, CancellationToken ct = default)
+    {
+        if (p.Transcript.Count == 0) throw new InvalidOperationException("Este projeto ainda não possui transcrição.");
+        p.Status = ProjectStatus.Analyzing; p.Progress = 78; p.Stage = "Aplicando análise editorial"; await store.SaveAsync(p);
+        p.Clips = editorial.Analyze(p.Transcript, p.Options);
+        foreach (var clip in p.Clips) { await EnrichWithOllama(clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
+        if (render) await RenderAllAsync(p, ct);
+        p.Status = ProjectStatus.Ready; p.Progress = 100; p.Stage = $"{p.Clips.Count} candidatos editoriais prontos"; await store.SaveAsync(p);
+    }
+
+    public async Task RecoverYouTubeCaptionsAndRenderAsync(VideoProject p, CancellationToken ct = default)
+    {
+        if (p.SourceKind != SourceKind.YouTube) throw new InvalidOperationException("O projeto não veio do YouTube.");
+        p.Status = ProjectStatus.Transcribing; p.Progress = 55; p.Stage = "Recuperando legendas do YouTube"; await store.SaveAsync(p);
+        if (!await TryLoadYouTubeCaptionsAsync(p, allowAutomatic: true, ct)) throw new InvalidOperationException("O YouTube não disponibilizou legendas automáticas para este vídeo.");
+        await ReanalyzeAndRenderAsync(p, ct);
+    }
+
+    private async Task<bool> TryLoadYouTubeCaptionsAsync(VideoProject p, bool allowAutomatic, CancellationToken ct)
+    {
+        var dir = store.ProjectDirectory(p.Id); var template = Path.Combine(dir, "youtube-captions");
+        try
+        {
+            foreach (var old in Directory.EnumerateFiles(dir, "youtube-captions*.json3")) File.Delete(old);
+            var args = new List<string> { "--skip-download", "--write-subs" };
+            if (allowAutomatic) args.Add("--write-auto-subs");
+            args.AddRange(["--sub-langs", "pt-BR,pt-PT,pt-orig,pt", "--sub-format", "json3", "--no-playlist", "-o", template, p.Source]);
+            await tools.RunAsync(tools.Find("yt-dlp"), args, dir, ct);
+            var file = Directory.EnumerateFiles(dir, "youtube-captions*.json3").OrderBy(f => f.Contains("pt-orig") ? 0 : 1).FirstOrDefault();
+            if (file is null) return false;
+            using var doc = JsonDocument.Parse(await File.ReadAllTextAsync(file, ct)); var parsed = new List<TranscriptSegment>();
+            foreach (var ev in doc.RootElement.GetProperty("events").EnumerateArray())
+            {
+                if (!ev.TryGetProperty("segs", out var segs) || !ev.TryGetProperty("tStartMs", out var startNode)) continue;
+                var text = string.Concat(segs.EnumerateArray().Select(s => s.TryGetProperty("utf8", out var value) ? value.GetString() : "")).Replace("\n", " ").Trim();
+                if (string.IsNullOrWhiteSpace(text)) continue;
+                var start = startNode.GetDouble() / 1000d; var duration = ev.TryGetProperty("dDurationMs", out var durationNode) ? durationNode.GetDouble() / 1000d : 2d;
+                parsed.Add(new TranscriptSegment { Start = start, End = start + Math.Max(.2, duration), Text = text });
+            }
+            var spokenCharacters = parsed.Sum(s => s.Text.Replace("[música]", "", StringComparison.OrdinalIgnoreCase).Trim().Length);
+            var coveredSeconds = parsed.Sum(s => Math.Max(0, s.End - s.Start));
+            if (parsed.Count < 3 || spokenCharacters < 80 || (p.Duration > 0 && coveredSeconds < Math.Min(20, p.Duration * .03))) return false;
+            p.Transcript = parsed;
+            p.TranscriptSource = allowAutomatic ? "Legendas do YouTube (manual ou automática)" : "Legendas manuais do YouTube";
+            await File.WriteAllTextAsync(Path.Combine(dir, "transcript.json"), JsonSerializer.Serialize(parsed, new JsonSerializerOptions { WriteIndented = true }), ct); await store.SaveAsync(p); return true;
+        }
+        catch { return false; }
+    }
+
+    private static string BuildAss(List<TranscriptSegment> segments, ClipCandidate clip)
+    {
+        var sb = new StringBuilder("[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\nStyle: Impacto,Arial,72,&H00FFFFFF,&H0000D7FF,&H00120B22,&H80000000,-1,0,0,0,100,100,0,0,1,6,2,2,70,70,300,1\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n");
+        foreach (var s in segments.Where(s => s.End >= clip.Start && s.Start <= clip.End)) sb.AppendLine($"Dialogue: 0,{AssTime(Math.Max(0, s.Start - clip.Start))},{AssTime(Math.Min(clip.End - clip.Start, s.End - clip.Start))},Impacto,,0,0,0,,{s.Text.Replace("\n", " ").Replace("{", "(").Replace("}", ")")}");
+        return sb.ToString();
+    }
+    private static string AssTime(double seconds) => TimeSpan.FromSeconds(seconds).ToString(@"h\:mm\:ss\.ff");
+    private static string F(double number) => number.ToString("0.###", CultureInfo.InvariantCulture);
+}
