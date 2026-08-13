@@ -81,6 +81,8 @@ Na primeira utilização, o Faster-Whisper baixa o modelo selecionado. Isso acon
 
 ## Armazenamento e privacidade
 
+O servidor aceita conexões apenas do próprio computador. É possível configurar um PIN local e criar backups criptografados em `storage/backups`; os vídeos não entram no backup por padrão.
+
 Os projetos ficam em `src/CortaFeStudio.Api/storage/projects`. Cada projeto contém o original temporário, áudio de análise, transcrição, capas, legendas e cortes renderizados. Essa pasta está ignorada pelo Git.
 
 O sistema destina-se a conteúdo próprio ou autorizado. Links privados, transmissões ao vivo, vídeos de membros e conteúdos com restrições podem não funcionar. O YouTube pode alterar seus mecanismos; mantenha o yt-dlp atualizado.

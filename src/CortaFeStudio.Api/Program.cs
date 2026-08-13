@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.DataProtection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Net;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -25,16 +26,28 @@ builder.Services.AddSingleton<SocialService>();
 builder.Services.AddSingleton<DiagnosticsService>();
 builder.Services.AddSingleton<StorageService>();
 builder.Services.AddSingleton<FramingService>();
+builder.Services.AddSingleton<LocalSecurityService>();
 builder.Services.AddHostedService<PublicationScheduler>();
 builder.Services.AddProblemDetails();
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)));
 
 var app = builder.Build();
 app.UseExceptionHandler();
+app.Use(async (context, next) =>
+{
+    if (!IPAddress.IsLoopback(context.Connection.RemoteIpAddress ?? IPAddress.Loopback)) { context.Response.StatusCode = 403; await context.Response.WriteAsJsonAsync(new { error = "O CortaFé aceita acesso somente deste computador." }); return; }
+    var security = context.RequestServices.GetRequiredService<LocalSecurityService>(); var path = context.Request.Path;
+    if (security.Enabled && path.StartsWithSegments("/api") && !path.StartsWithSegments("/api/security") && !security.ValidSession(context.Request.Cookies["cortafe-session"])) { context.Response.StatusCode = 401; await context.Response.WriteAsJsonAsync(new { error = "Sessão local expirada." }); return; }
+    await next();
+});
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
 var api = app.MapGroup("/api");
+api.MapGet("/security/status", (LocalSecurityService security) => new { enabled = security.Enabled });
+api.MapPost("/security/configure", async (PinRequest request, LocalSecurityService security) => { await security.ConfigurePinAsync(request.Pin); return Results.Ok(); });
+api.MapPost("/security/login", (PinRequest request, HttpResponse response, LocalSecurityService security) => { if (!security.VerifyPin(request.Pin)) return Results.BadRequest(new { error = "PIN incorreto." }); response.Cookies.Append("cortafe-session", security.CreateSession(), new CookieOptions { HttpOnly = true, SameSite = SameSiteMode.Strict, Secure = false, MaxAge = TimeSpan.FromHours(12) }); return Results.Ok(); });
+api.MapPost("/security/backup", async (BackupRequest request, LocalSecurityService security) => { try { return Results.Ok(new { path = await security.CreateBackupAsync(request.Password) }); } catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); } });
 api.MapGet("/health", async (ToolService tools) => new { status = "ok", tools = await tools.CheckAsync() });
 api.MapGet("/diagnostics", async (DiagnosticsService diagnostics) => await diagnostics.SnapshotAsync());
 api.MapGet("/tools/updates", async (ToolUpdateService updates, CancellationToken ct) => await updates.CheckAsync(ct));
@@ -251,3 +264,5 @@ static string GetContentType(string path) => Path.GetExtension(path).ToLowerInva
     ".mp4" => "video/mp4", ".webm" => "video/webm", ".jpg" or ".jpeg" => "image/jpeg",
     ".png" => "image/png", ".json" => "application/json", _ => "application/octet-stream"
 };
+public record PinRequest(string Pin);
+public record BackupRequest(string Password);
