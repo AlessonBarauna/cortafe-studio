@@ -70,8 +70,21 @@ api.MapPut("/projects/{id}/clips/{clipId}", async (string id, string clipId, Cli
         clip.Caption = update.Caption ?? clip.Caption;
         clip.CoverText = update.CoverText ?? clip.CoverText;
         clip.Approved = update.Approved ?? clip.Approved;
+        clip.CropFocus = update.CropFocus ?? clip.CropFocus;
+        clip.SubtitleStyle = update.SubtitleStyle ?? clip.SubtitleStyle;
+        clip.CoverAccent = update.CoverAccent ?? clip.CoverAccent;
+        clip.CoverPosition = update.CoverPosition ?? clip.CoverPosition;
+        clip.CoverTimestamp = update.CoverTimestamp ?? clip.CoverTimestamp;
     });
     return updated is null ? Results.NotFound() : Results.Ok(updated);
+});
+
+api.MapPost("/projects/{id}/clips/{clipId}/cover", async (string id, string clipId, ProjectStore store, MediaPipeline pipeline) =>
+{
+    var project = store.Get(id); var clip = project?.Clips.FirstOrDefault(c => c.Id == clipId);
+    if (project is null || clip is null) return Results.NotFound();
+    try { await pipeline.RefreshCoverAsync(project, clip); await store.SaveAsync(project); return Results.Ok(clip); }
+    catch (Exception ex) { return Results.Problem(ex.Message); }
 });
 
 api.MapPost("/projects/{id}/clips/{clipId}/render", async (string id, string clipId, ProjectStore store, MediaPipeline pipeline) =>

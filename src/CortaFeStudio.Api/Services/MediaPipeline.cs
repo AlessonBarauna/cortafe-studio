@@ -157,16 +157,24 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
 
     private async Task CreateCoverAsync(VideoProject p, ClipCandidate clip, CancellationToken ct)
     {
-        var dir = store.ProjectDirectory(p.Id); var cover = $"cover-{clip.Id}.jpg"; var timestamp = clip.Start + Math.Min(3, (clip.End - clip.Start) / 2);
-        await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-ss", F(timestamp), "-i", Path.Combine(dir, p.LocalMedia!), "-frames:v", "1", "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,eq=contrast=1.08:saturation=1.12", Path.Combine(dir, cover)], dir, ct);
+        var dir = store.ProjectDirectory(p.Id); var cover = $"cover-{clip.Id}.jpg"; var timestamp = clip.CoverTimestamp ?? clip.Start + Math.Min(3, (clip.End - clip.Start) / 2);
+        var textFile = Path.Combine(dir, $"cover-text-{clip.Id}.txt");
+        var words = clip.CoverText.Split(' ', StringSplitOptions.RemoveEmptyEntries); var midpoint = Math.Max(1, (int)Math.Ceiling(words.Length / 2d));
+        await File.WriteAllTextAsync(textFile, string.Join(' ', words.Take(midpoint)) + (words.Length > midpoint ? "\n" + string.Join(' ', words.Skip(midpoint)) : ""), Encoding.UTF8, ct);
+        var escapedText = EscapeFilterPath(textFile); var accent = NormalizeColor(clip.CoverAccent); var y = clip.CoverPosition == "top" ? "260" : clip.CoverPosition == "center" ? "(h-text_h)/2" : "h-text_h-300"; var accentY = clip.CoverPosition == "top" ? "520" : clip.CoverPosition == "center" ? "1120" : "1680";
+        var font = File.Exists(@"C:\Windows\Fonts\arialbd.ttf") ? $":fontfile='{EscapeFilterPath(@"C:\Windows\Fonts\arialbd.ttf")}'" : ":font='Arial'";
+        var filter = $"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920:0:{CropY(clip.CropFocus)},eq=contrast=1.08:saturation=1.12,drawbox=x=0:y=0:w=iw:h=ih:color=black@0.22:t=fill,drawtext=textfile='{escapedText}'{font}:fontsize=82:fontcolor=white:borderw=5:bordercolor=black@0.85:line_spacing=16:x=(w-text_w)/2:y={y},drawbox=x=90:y={accentY}:w=220:h=10:color={accent}:t=fill";
+        await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-ss", F(timestamp), "-i", Path.Combine(dir, p.LocalMedia!), "-frames:v", "1", "-vf", filter, Path.Combine(dir, cover)], dir, ct);
         clip.CoverPath = cover;
     }
+
+    public Task RefreshCoverAsync(VideoProject project, ClipCandidate clip, CancellationToken ct = default) => CreateCoverAsync(project, clip, ct);
 
     public async Task RenderClipAsync(VideoProject p, ClipCandidate clip, CancellationToken ct = default)
     {
         var dir = store.ProjectDirectory(p.Id); var ass = Path.Combine(dir, $"captions-{clip.Id}.ass"); await File.WriteAllTextAsync(ass, BuildAss(p.Transcript, clip), Encoding.UTF8, ct);
         var output = $"clip-{clip.Id}.mp4"; var escaped = ass.Replace("\\", "/").Replace(":", "\\:").Replace("'", "\\'");
-        var filter = $"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,subtitles='{escaped}'";
+        var filter = $"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920:0:{CropY(clip.CropFocus)},subtitles='{escaped}'";
         await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-ss", F(clip.Start), "-to", F(clip.End), "-i", Path.Combine(dir, p.LocalMedia!), "-vf", filter, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", Path.Combine(dir, output)], dir, ct);
         clip.VideoPath = output;
     }
@@ -238,7 +246,8 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
 
     private static string BuildAss(List<TranscriptSegment> segments, ClipCandidate clip)
     {
-        var sb = new StringBuilder("[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\nWrapStyle: 2\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\nStyle: Impacto,Arial,68,&H00FFFFFF,&H0000B7FF,&H00120B22,&H80000000,-1,0,0,0,100,100,0,0,1,6,2,2,90,90,310,1\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n");
+        var style = clip.SubtitleStyle switch { "clean" => "Style: Impacto,Arial,58,&H00FFFFFF,&H00FFFFFF,&H00101010,&H70000000,-1,0,0,0,100,100,0,0,1,3,0,2,110,110,250,1", "bold" => "Style: Impacto,Arial Black,76,&H00FFFFFF,&H0000B7FF,&H00120B22,&H80000000,-1,0,0,0,100,100,0,0,1,7,3,5,80,80,280,1", _ => "Style: Impacto,Arial,68,&H00FFFFFF,&H0000B7FF,&H00120B22,&H80000000,-1,0,0,0,100,100,0,0,1,6,2,2,90,90,310,1" };
+        var sb = new StringBuilder($"[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\nWrapStyle: 2\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\n{style}\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n");
         var words = segments.SelectMany(s => s.Words).Where(w => w.End >= clip.Start && w.Start <= clip.End).OrderBy(w => w.Start).ToList();
         if (words.Count > 0)
         {
@@ -256,6 +265,9 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         return sb.ToString();
     }
     private static string EscapeAss(string value) => value.Replace("\n", " ").Replace("{", "(").Replace("}", ")");
+    private static string EscapeFilterPath(string value) => value.Replace("\\", "/").Replace(":", "\\:").Replace("'", "\\'");
+    private static string CropY(string focus) => focus switch { "top" => "0", "bottom" => "ih-1920", _ => "(ih-1920)/2" };
+    private static string NormalizeColor(string? value) => System.Text.RegularExpressions.Regex.IsMatch(value ?? "", "^#[0-9A-Fa-f]{6}$") ? "0x" + value![1..] : "0xF0B44D";
     private static string AssTime(double seconds) => TimeSpan.FromSeconds(seconds).ToString(@"h\:mm\:ss\.ff");
     private static string F(double number) => number.ToString("0.###", CultureInfo.InvariantCulture);
 }

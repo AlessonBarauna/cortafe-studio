@@ -12,6 +12,7 @@ Estúdio local para transformar pregações, ministrações, podcasts e aulas em
 - Título, frase de capa, legenda e hashtags via Ollama local, com fallback sem IA.
 - Capas verticais extraídas do próprio vídeo.
 - Mesa de revisão para editar título, texto, início e fim de cada corte.
+- Direção visual por corte: foco do enquadramento, três estilos de legenda, frame, cor e posição da capa.
 - Renderização 9:16 em MP4 com legendas dinâmicas, destaque sincronizado da palavra falada e download individual.
 - Biblioteca local de projetos, sem conta e sem telemetria.
 
