@@ -219,6 +219,10 @@ api.MapPost("/social/publications/{id}/retry", async (string id, SocialService s
     try { return Results.Ok(await social.RetryAsync(id)); }
     catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
+api.MapPost("/social/publications/{id}/refresh", async (string id, SocialService social) =>
+{
+    try { return Results.Ok(await social.RefreshStatusAsync(id)); } catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
 api.MapPost("/social/configure", async (SocialConfigurationRequest request, SocialService social) =>
 { await social.ConfigureAsync(request); return Results.Ok(); });
 api.MapGet("/social/connect/{platform}", (SocialPlatform platform, HttpRequest request, SocialService social) =>

@@ -122,3 +122,5 @@ TikTok:    https://SEU-DOMINIO/api/social/callback/tiktok
 Cada corte renderizado passa a exibir botões YouTube, Instagram e TikTok. A primeira publicação deve ser privada para validar título, legenda e enquadramento.
 
 As publicações podem ser agendadas, sobrevivem à reinicialização do aplicativo e falhas podem ser reenviadas pela Central de Publicação. O sistema impede duplicidade do mesmo corte na mesma rede.
+
+Uploads para o YouTube usam blocos retomáveis de 8 MB, persistem o progresso e podem continuar após uma interrupção. O histórico também consulta o estado de processamento final do vídeo.
