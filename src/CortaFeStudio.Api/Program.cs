@@ -1,10 +1,13 @@
 using CortaFeStudio.Api.Models;
 using CortaFeStudio.Api.Services;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.DataProtection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
 builder.Services.Configure<FormOptions>(o => o.MultipartBodyLengthLimit = 20L * 1024 * 1024 * 1024);
 builder.Services.AddSingleton<ProjectStore>();
 builder.Services.AddSingleton<ToolService>();
@@ -13,8 +16,11 @@ builder.Services.AddSingleton<EditorialAnalyzer>();
 builder.Services.AddSingleton<ProjectQueue>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ProjectQueue>());
 builder.Services.AddHttpClient();
-builder.Services.AddDataProtection();
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "storage", "keys")))
+    .SetApplicationName("CortaFeStudio");
 builder.Services.AddSingleton<SocialService>();
+builder.Services.AddHostedService<PublicationScheduler>();
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)));
 
 var app = builder.Build();
@@ -139,6 +145,11 @@ api.MapGet("/projects/{id}/assets/{**path}", (string id, string path, ProjectSto
 
 api.MapGet("/social/status", (SocialService social) => social.Status());
 api.MapGet("/social/history", (SocialService social) => social.History());
+api.MapPost("/social/publications/{id}/retry", async (string id, SocialService social) =>
+{
+    try { return Results.Ok(await social.RetryAsync(id)); }
+    catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
 api.MapPost("/social/configure", async (SocialConfigurationRequest request, SocialService social) =>
 { await social.ConfigureAsync(request); return Results.Ok(); });
 api.MapGet("/social/connect/{platform}", (SocialPlatform platform, HttpRequest request, SocialService social) =>
