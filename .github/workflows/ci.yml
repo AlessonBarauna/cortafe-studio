@@ -1,0 +1,27 @@
+name: Verificar projeto
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+          cache: true
+          cache-dependency-path: src/CortaFeStudio.Api/CortaFeStudio.Api.csproj
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: dotnet restore CortaFeStudio.sln --configfile NuGet.Config
+      - run: dotnet build CortaFeStudio.sln -c Release --no-restore
+      - name: Validar JavaScript
+        shell: pwsh
+        run: Get-ChildItem src/CortaFeStudio.Api/wwwroot -Filter *.js | ForEach-Object { node --check $_.FullName }
+      - name: Verificar segredos versionados
+        shell: pwsh
+        run: if (git ls-files | Select-String 'storage/|credentials.protected|\.cfbackup$') { throw 'Arquivo privado encontrado no Git.' }
