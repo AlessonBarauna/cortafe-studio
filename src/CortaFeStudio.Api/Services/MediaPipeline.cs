@@ -40,9 +40,13 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         }
         await Stage(p, ProjectStatus.Analyzing, 72, "Encontrando momentos de impacto");
         p.Clips = editorial.Analyze(p.Transcript, p.Options);
-        foreach (var clip in p.Clips) { await EnrichWithOllama(clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
-        foreach (var clip in p.Clips) await RenderClipAsync(p, clip, ct);
-        p.Status = ProjectStatus.Ready; p.Progress = 100; p.Stage = $"{p.Clips.Count} cortes prontos para revisar"; await store.SaveAsync(p);
+        await Stage(p, ProjectStatus.Analyzing, 82, $"Preparando {p.Clips.Count} candidatos");
+        await Parallel.ForEachAsync(p.Clips, new ParallelOptions { MaxDegreeOfParallelism = 2, CancellationToken = ct }, async (clip, token) =>
+        {
+            await EnrichWithOllama(clip, p.Options.ContentType, token);
+            await CreateCoverAsync(p, clip, token);
+        });
+        p.Status = ProjectStatus.Ready; p.Progress = 100; p.CompletedAt = DateTime.UtcNow; p.Stage = $"{p.Clips.Count} cortes prontos para revisar"; await store.SaveAsync(p);
     }
 
     private async Task Stage(VideoProject p, ProjectStatus status, int progress, string stage) { p.Status = status; p.Progress = progress; p.Stage = stage; await store.SaveAsync(p); }
@@ -163,7 +167,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         var dir = store.ProjectDirectory(p.Id); var ass = Path.Combine(dir, $"captions-{clip.Id}.ass"); await File.WriteAllTextAsync(ass, BuildAss(p.Transcript, clip), Encoding.UTF8, ct);
         var output = $"clip-{clip.Id}.mp4"; var escaped = ass.Replace("\\", "/").Replace(":", "\\:").Replace("'", "\\'");
         var filter = $"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,subtitles='{escaped}'";
-        await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-ss", F(clip.Start), "-to", F(clip.End), "-i", Path.Combine(dir, p.LocalMedia!), "-vf", filter, "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", Path.Combine(dir, output)], dir, ct);
+        await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-ss", F(clip.Start), "-to", F(clip.End), "-i", Path.Combine(dir, p.LocalMedia!), "-vf", filter, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", Path.Combine(dir, output)], dir, ct);
         clip.VideoPath = output;
     }
 

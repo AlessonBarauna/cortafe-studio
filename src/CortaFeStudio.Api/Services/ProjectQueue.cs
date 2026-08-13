@@ -5,15 +5,40 @@ namespace CortaFeStudio.Api.Services;
 
 public sealed class ProjectQueue(ProjectStore store, MediaPipeline pipeline, ILogger<ProjectQueue> logger) : BackgroundService
 {
-    private readonly Channel<string> _queue = Channel.CreateUnbounded<string>();
-    public ValueTask EnqueueAsync(string id) => _queue.Writer.WriteAsync(id);
+    private readonly Channel<string> _queue = Channel.CreateBounded<string>(new BoundedChannelOptions(100) { SingleReader = true, FullMode = BoundedChannelFullMode.Wait });
+    private readonly HashSet<string> _scheduled = [];
+    private readonly object _sync = new();
+    private string? _active;
+
+    public async ValueTask EnqueueAsync(string id)
+    {
+        lock (_sync) if (!_scheduled.Add(id)) return;
+        await _queue.Writer.WriteAsync(id);
+    }
+
+    public object Status()
+    {
+        lock (_sync) return new { activeProjectId = _active, waiting = _scheduled.Count(id => id != _active), scheduledProjectIds = _scheduled.ToArray() };
+    }
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        foreach (var project in store.List().Where(p => p.Status is ProjectStatus.Queued or ProjectStatus.Acquiring or ProjectStatus.Transcribing or ProjectStatus.Analyzing))
+        {
+            project.Status = ProjectStatus.Queued; project.Stage = "Retomado após reinicialização";
+            await store.SaveAsync(project); await EnqueueAsync(project.Id);
+        }
         await foreach (var id in _queue.Reader.ReadAllAsync(stoppingToken))
         {
             var project = store.Get(id); if (project is null) continue;
-            try { await pipeline.ProcessAsync(project, stoppingToken); await store.SaveAsync(project); }
+            lock (_sync) _active = id;
+            try
+            {
+                project.Attempt++; project.StartedAt = DateTime.UtcNow; project.Error = null;
+                await pipeline.ProcessAsync(project, stoppingToken); await store.SaveAsync(project);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { project.Status = ProjectStatus.Queued; project.Stage = "Aguardando retomada"; await store.SaveAsync(project); }
             catch (Exception ex) { logger.LogError(ex, "Falha no projeto {Id}", id); project.Status = ProjectStatus.Failed; project.Error = ex.Message; project.Stage = "Processamento interrompido"; await store.SaveAsync(project); }
+            finally { lock (_sync) { _scheduled.Remove(id); _active = null; } }
         }
     }
 }

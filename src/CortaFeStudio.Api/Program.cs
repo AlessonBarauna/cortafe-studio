@@ -24,6 +24,7 @@ app.UseStaticFiles();
 var api = app.MapGroup("/api");
 api.MapGet("/health", async (ToolService tools) => new { status = "ok", tools = await tools.CheckAsync() });
 api.MapGet("/projects", (ProjectStore store) => store.List());
+api.MapGet("/queue", (ProjectQueue queue) => queue.Status());
 api.MapGet("/projects/{id}", (string id, ProjectStore store) =>
     store.Get(id) is { } project ? Results.Ok(project) : Results.NotFound());
 
