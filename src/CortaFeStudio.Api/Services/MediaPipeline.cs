@@ -311,7 +311,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
     private static string EscapeAss(string value) => value.Replace("\n", " ").Replace("{", "(").Replace("}", ")");
     private static string EscapeFilterPath(string value) => value.Replace("\\", "/").Replace(":", "\\:").Replace("'", "\\'");
     private static string CropY(string focus) => focus switch { "top" => "0", "bottom" => "ih-1920", _ => "(ih-1920)/2" };
-    private static string CropX(double focus) => $"max(0,min(iw-1080,iw*{Math.Clamp(focus, 0, 1).ToString("0.###", CultureInfo.InvariantCulture)}-540))";
+    private static string CropX(double focus) => $"max(0\\,min(iw-1080\\,iw*{Math.Clamp(focus, 0, 1).ToString("0.###", CultureInfo.InvariantCulture)}-540))";
     private static string NormalizeColor(string? value) => System.Text.RegularExpressions.Regex.IsMatch(value ?? "", "^#[0-9A-Fa-f]{6}$") ? "0x" + value![1..] : "0xF0B44D";
     private static string AssTime(double seconds) => TimeSpan.FromSeconds(seconds).ToString(@"h\:mm\:ss\.ff");
     private static string F(double number) => number.ToString("0.###", CultureInfo.InvariantCulture);
