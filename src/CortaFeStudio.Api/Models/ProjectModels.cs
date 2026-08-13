@@ -71,6 +71,9 @@ public sealed class ClipCandidate
     public string EditorialProfile { get; set; } = "pregacao";
     public string Feedback { get; set; } = "pending";
     public string CropFocus { get; set; } = "center";
+    public double CropX { get; set; } = .5;
+    public string LayoutMode { get; set; } = "fill";
+    public bool FaceTrackingAnalyzed { get; set; }
     public string SubtitleStyle { get; set; } = "impact";
     public string CoverAccent { get; set; } = "#F0B44D";
     public string CoverPosition { get; set; } = "bottom";
@@ -84,7 +87,7 @@ public sealed class UrlProjectRequest
     public string? Name { get; set; }
     public ProjectOptions? Options { get; set; }
 }
-public record ClipUpdate(double? Start, double? End, string? Title, string? CoverText, string? Caption, bool? Approved, string? CropFocus, string? SubtitleStyle, string? CoverAccent, string? CoverPosition, double? CoverTimestamp, string? EditedTranscript);
+public record ClipUpdate(double? Start, double? End, string? Title, string? CoverText, string? Caption, bool? Approved, string? CropFocus, string? SubtitleStyle, string? CoverAccent, string? CoverPosition, double? CoverTimestamp, string? EditedTranscript, double? CropX, string? LayoutMode);
 public record SplitClipRequest(double At);
 public record RestartFromRequest(string Stage);
 public record CleanupProjectRequest(bool DeleteSource = false);

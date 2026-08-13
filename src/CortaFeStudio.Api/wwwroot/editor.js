@@ -7,12 +7,14 @@ clipCard = function (project, clip, index) {
     <summary>Direção visual</summary>
     <div class="editor-grid mt-3">
       <label>Foco do vídeo<select class="form-select" name="cropFocus">${option('top', clip.cropFocus, 'Superior')}${option('center', clip.cropFocus || 'center', 'Central')}${option('bottom', clip.cropFocus, 'Inferior')}</select></label>
+      <label>Composição<select class="form-select" name="layoutMode">${option('fill', clip.layoutMode || 'fill', 'Preencher 9:16')}${option('blur', clip.layoutMode, 'Fundo desfocado')}</select></label>
+      <label>Posição horizontal<input class="form-range" name="cropX" type="range" min="0" max="1" step=".01" value="${clip.cropX ?? .5}"></label>
       <label>Estilo da legenda<select class="form-select" name="subtitleStyle">${option('impact', clip.subtitleStyle || 'impact', 'Impacto')}${option('clean', clip.subtitleStyle, 'Limpa')}${option('bold', clip.subtitleStyle, 'Palco')}</select></label>
       <label>Posição na capa<select class="form-select" name="coverPosition">${option('top', clip.coverPosition, 'Superior')}${option('center', clip.coverPosition, 'Centro')}${option('bottom', clip.coverPosition || 'bottom', 'Inferior')}</select></label>
       <label>Cor de destaque<input class="form-control form-control-color" name="coverAccent" type="color" value="${escapeHtml(clip.coverAccent || '#F0B44D')}"></label>
       <label>Frame da capa (segundos)<input class="form-control" name="coverTimestamp" type="number" min="${clip.start}" max="${clip.end}" step=".1" value="${timestamp}"></label>
     </div>
-    <button type="button" class="btn btn-sm btn-outline-warning mt-3" onclick="refreshCover('${project.id}','${clip.id}')">Atualizar capa</button>
+    <div class="d-flex gap-2 mt-3"><button type="button" class="btn btn-sm btn-outline-warning" onclick="refreshCover('${project.id}','${clip.id}')">Atualizar capa</button><button type="button" class="btn btn-sm btn-outline-light" onclick="analyzeFraming('${project.id}','${clip.id}')">Detectar rosto</button></div>
   </details>`;
   return clipCardWithEditorial(project, clip, index).replace('<div class="d-flex gap-2 mt-3"><button class="btn btn-outline-light flex-fill" data-save>', controls + '<div class="d-flex gap-2 mt-3"><button class="btn btn-outline-light flex-fill" data-save>');
 };
@@ -24,7 +26,7 @@ saveClip = async function (project, card) {
     start: +value('start'), end: +value('end'), title: value('title'), coverText: value('coverText'),
     caption: value('caption'), approved: true, cropFocus: value('cropFocus'),
     subtitleStyle: value('subtitleStyle'), coverAccent: value('coverAccent'),
-    coverPosition: value('coverPosition'), coverTimestamp: +value('coverTimestamp')
+    coverPosition: value('coverPosition'), coverTimestamp: +value('coverTimestamp'), cropX: +value('cropX'), layoutMode: value('layoutMode')
   };
   await api(`/api/projects/${project.id}/clips/${clip.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   Object.assign(clip, body);
@@ -41,3 +43,5 @@ async function refreshCover(projectId, clipId) {
     openProject(projectId);
   } catch (error) { toast(error.message); }
 }
+
+async function analyzeFraming(projectId, clipId) { try { toast('Analisando rostos no trecho…'); await api(`/api/projects/${projectId}/clips/${clipId}/analyze-framing`, { method: 'POST' }); toast('Enquadramento ajustado'); openProject(projectId); } catch (error) { toast(error.message.includes('cv2') ? 'Instale o componente de visão pelo instalador do projeto' : error.message); } }

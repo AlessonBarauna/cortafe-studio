@@ -22,6 +22,7 @@ builder.Services.AddDataProtection()
 builder.Services.AddSingleton<SocialService>();
 builder.Services.AddSingleton<DiagnosticsService>();
 builder.Services.AddSingleton<StorageService>();
+builder.Services.AddSingleton<FramingService>();
 builder.Services.AddHostedService<PublicationScheduler>();
 builder.Services.AddProblemDetails();
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)));
@@ -103,8 +104,15 @@ api.MapPut("/projects/{id}/clips/{clipId}", async (string id, string clipId, Cli
         clip.CoverPosition = update.CoverPosition ?? clip.CoverPosition;
         clip.CoverTimestamp = update.CoverTimestamp ?? clip.CoverTimestamp;
         clip.EditedTranscript = update.EditedTranscript?.Trim() ?? clip.EditedTranscript;
+        clip.CropX = Math.Clamp(update.CropX ?? clip.CropX, 0, 1);
+        clip.LayoutMode = update.LayoutMode ?? clip.LayoutMode;
     });
     return updated is null ? Results.NotFound() : Results.Ok(updated);
+});
+api.MapPost("/projects/{id}/clips/{clipId}/analyze-framing", async (string id, string clipId, ProjectStore store, FramingService framing) =>
+{
+    var project = store.Get(id); var clip = project?.Clips.FirstOrDefault(item => item.Id == clipId); if (project is null || clip is null) return Results.NotFound();
+    try { return Results.Ok(await framing.AnalyzeAsync(project, clip)); } catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
 
 api.MapPost("/projects/{id}/clips/{clipId}/duplicate", async (string id, string clipId, ProjectStore store) =>
