@@ -11,6 +11,8 @@ public sealed class EditorialAnalyzer(EditorialLearningService learning)
     private static readonly string[] GenericOpenings = ["beleza", "amém", "entendendo, gente", "quem tá entendendo", "quem está entendendo", "topa", "tá", "né"];
     private static readonly string[] StrongHooks = ["presta atenção", "deixa eu te", "posso te falar", "eu vou repetir", "vou falar mais uma vez", "você tem noção", "imagina isso", "sabe por quê", "o que significa", "o que que", "quando você", "a verdade é", "o problema é"];
     private static readonly string[] Conclusions = ["por isso", "então", "ou seja", "é por isso", "no fim", "a verdade é", "isso significa", "portanto"];
+    private static readonly string[] ContextDependence = ["como eu disse", "isso aqui", "aquilo", "esse ponto", "continuando", "voltando", "o mesmo", "essa parte"];
+    private static readonly string[] StorySignals = ["um dia", "aconteceu", "eu lembro", "certa vez", "quando eu", "naquele momento"];
     private static readonly string[] Spiritual = ["deus", "jesus", "fé", "graça", "coração", "reino", "justiça", "perdão", "amor", "cruz", "palavra", "espírito"];
     private static readonly string[] Podcast = ["eu percebi", "na prática", "por exemplo", "o problema", "a verdade", "experiência", "aprendi", "discordo", "ninguém fala"];
     private static readonly string[] Teaching = ["significa", "primeiro", "segundo", "exemplo", "conceito", "definição", "entenda", "observe", "passo", "porque"];
@@ -63,6 +65,8 @@ public sealed class EditorialAnalyzer(EditorialLearningService learning)
         var contrasts = new[] { " mas ", " porém ", " não é ", " mesmo em ", " ao contrário", " enquanto " }.Count(lower.Contains);
         if (contrasts > 0) { score += Math.Min(16, contrasts * 5); reasons.Add("contraste memorável"); }
         var conclusion = Conclusions.Count(lower.Contains); if (conclusion > 0) { score += Math.Min(12, conclusion * 4); reasons.Add("desenvolve uma conclusão"); }
+        var structure = StructureScore(parts, lower, out var structureReason); score += structure; if (structureReason is not null) reasons.Insert(0, structureReason);
+        if (ContextDependence.Any(opening.Contains)) { score -= 18; reasons.Add("penalizado: depende do contexto anterior"); }
         var profileWords = options.ContentType switch { "podcast" => Podcast, "aula" => Teaching, _ => Spiritual };
         var profileHits = profileWords.Count(lower.Contains); if (profileHits > 1) { score += Math.Min(15, profileHits * 2.5); reasons.Add($"relevante para {ProfileLabel(options.ContentType)}"); }
         if (!string.IsNullOrWhiteSpace(options.Topic))
@@ -89,9 +93,31 @@ public sealed class EditorialAnalyzer(EditorialLearningService learning)
     private static int FindNaturalStart(List<TranscriptSegment> segments, int anchor)
     {
         var text = Clean(segments[anchor].Text).ToLowerInvariant();
+        if (anchor > 0 && (IncompleteOpenings.Any(text.StartsWith) || ContextDependence.Any(text.Contains)))
+        {
+            var previous = Clean(segments[anchor - 1].Text).ToLowerInvariant();
+            if (!TransitionOpenings.Any(previous.StartsWith) && segments[anchor].Start - segments[anchor - 1].End < 2.5) return anchor - 1;
+        }
         return anchor;
     }
-    private static bool HasResolution(List<TranscriptSegment> parts) { var last = string.Join(" ", parts.TakeLast(Math.Min(3, parts.Count)).Select(x => x.Text)).ToLowerInvariant(); return Conclusions.Any(last.Contains) || EndsThought(parts[^1].Text); }
+    private static double StructureScore(List<TranscriptSegment> parts, string lower, out string? reason)
+    {
+        reason = null;
+        var opening = Clean(parts[0].Text).ToLowerInvariant();
+        var ending = Clean(parts[^1].Text).ToLowerInvariant();
+        var hasSetup = opening.Contains('?') || StrongHooks.Any(opening.Contains) || StorySignals.Any(opening.Contains);
+        var hasDevelopment = lower.Contains(" porque ") || lower.Contains(" mas ") || lower.Contains(" por exemplo") || parts.Count >= 6;
+        var hasResolution = EndsThought(ending) && (Conclusions.Any(ending.Contains) || Conclusions.Any(lower.Contains));
+        var phases = (hasSetup ? 1 : 0) + (hasDevelopment ? 1 : 0) + (hasResolution ? 1 : 0);
+        if (phases == 3) { reason = "ideia completa: gancho, desenvolvimento e conclusão"; return 14; }
+        if (phases == 2) { reason = "ideia bem desenvolvida"; return 6; }
+        return -7;
+    }
+    private static bool HasResolution(List<TranscriptSegment> parts)
+    {
+        var last = string.Join(" ", parts.TakeLast(Math.Min(3, parts.Count)).Select(x => x.Text)).ToLowerInvariant();
+        return Conclusions.Any(last.Contains) || last.Contains("assim, ") || last.Contains("desse modo");
+    }
     private static List<ClipCandidate> AnalyzeWorship(List<TranscriptSegment> segments, ProjectOptions options)
     {
         var usable = segments.Where(s => Clean(s.Text).Replace("[música]", "", StringComparison.OrdinalIgnoreCase).Length > 2).ToList(); var pool = new List<ClipCandidate>();

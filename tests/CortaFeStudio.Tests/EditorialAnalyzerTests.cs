@@ -1,0 +1,41 @@
+using CortaFeStudio.Api.Models;
+using CortaFeStudio.Api.Services;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.FileProviders;
+
+namespace CortaFeStudio.Tests;
+
+public sealed class EditorialAnalyzerTests : IDisposable
+{
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "cortafe-editorial", Guid.NewGuid().ToString("N"));
+
+    [Fact]
+    public void Analyze_PrefereIdeiaCompletaEExplicaEscolha()
+    {
+        var analyzer = CreateAnalyzer();
+        var segments = Segments("Você sabe por que a fé muda nossa caminhada?", "Muitas vezes nós olhamos somente para o problema.", "Mas Deus nos convida a confiar mesmo quando não vemos.", "Por exemplo, Abraão caminhou sem conhecer todo o percurso.", "A fé cresce porque escolhemos obedecer à palavra.", "Por isso, confie em Deus e dê hoje o próximo passo.");
+        var clips = analyzer.Analyze(segments, new ProjectOptions { MinDuration = 20, MaxDuration = 40, ClipCount = 3 });
+        Assert.NotEmpty(clips);
+        Assert.Contains(clips, clip => clip.Reasons.Any(reason => reason.StartsWith("ideia completa")));
+    }
+
+    [Fact]
+    public void Analyze_EvitaCandidatosSobrepostos()
+    {
+        var analyzer = CreateAnalyzer();
+        var texts = Enumerable.Range(0, 18).Select(i => i % 3 == 0 ? "Presta atenção, Deus transforma o coração quando você confia." : i % 3 == 1 ? "A verdade é que a fé vence o medo porque nasce da palavra." : "Por isso siga em paz, confie em Jesus e termine bem esta caminhada.").ToArray();
+        var clips = analyzer.Analyze(Segments(texts), new ProjectOptions { MinDuration = 18, MaxDuration = 35, ClipCount = 8 });
+        for (var i = 0; i < clips.Count; i++) for (var j = i + 1; j < clips.Count; j++)
+            Assert.True(Math.Max(0, Math.Min(clips[i].End, clips[j].End) - Math.Max(clips[i].Start, clips[j].Start)) / Math.Min(clips[i].End - clips[i].Start, clips[j].End - clips[j].Start) <= .24);
+    }
+
+    private EditorialAnalyzer CreateAnalyzer() => new(new EditorialLearningService(new TestEnvironment(_root)));
+    private static List<TranscriptSegment> Segments(params string[] texts) => texts.Select((text, index) => new TranscriptSegment { Start = index * 5, End = index * 5 + 4.8, Text = text }).ToList();
+    public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
+    private sealed class TestEnvironment(string root) : IWebHostEnvironment
+    {
+        public string ApplicationName { get; set; } = "Tests"; public string EnvironmentName { get; set; } = "Testing";
+        public string ContentRootPath { get; set; } = root; public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+        public string WebRootPath { get; set; } = root; public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
+    }
+}
