@@ -29,6 +29,15 @@ public sealed class EditorialAnalyzerTests : IDisposable
             Assert.True(Math.Max(0, Math.Min(clips[i].End, clips[j].End) - Math.Max(clips[i].Start, clips[j].Start)) / Math.Min(clips[i].End - clips[i].Start, clips[j].End - clips[j].Start) <= .24);
     }
 
+    [Fact]
+    public void Analyze_OrdenaPontuacaoDoMaiorParaOMenor()
+    {
+        var analyzer = CreateAnalyzer();
+        var texts = Enumerable.Range(0, 24).Select(i => i % 4 == 0 ? "Presta atenção, você sabe por que Deus transforma o coração?" : i % 4 == 3 ? "Por isso confie em Jesus e dê o próximo passo." : "A fé cresce porque a palavra vence o medo e traz paz.").ToArray();
+        var clips = analyzer.Analyze(Segments(texts), new ProjectOptions { MinDuration = 15, MaxDuration = 30, ClipCount = 8 });
+        Assert.Equal(clips.OrderByDescending(clip => clip.Score).Select(clip => clip.Id), clips.Select(clip => clip.Id));
+    }
+
     private EditorialAnalyzer CreateAnalyzer() => new(new EditorialLearningService(new TestEnvironment(_root)));
     private static List<TranscriptSegment> Segments(params string[] texts) => texts.Select((text, index) => new TranscriptSegment { Start = index * 5, End = index * 5 + 4.8, Text = text }).ToList();
     public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
