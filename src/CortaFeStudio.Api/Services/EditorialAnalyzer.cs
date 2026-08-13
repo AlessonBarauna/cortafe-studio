@@ -48,7 +48,7 @@ public sealed class EditorialAnalyzer(EditorialLearningService learning)
             if (diverse.Any(c => Overlap(c, clip) > .24 || Similar(c.Transcript, clip.Transcript) > .72)) continue;
             diverse.Add(clip); if (diverse.Count >= targetPool) break;
         }
-        return RefineWordBoundaries(diverse.Take(options.ClipCount).OrderBy(c => c.Start).ToList(), segments, options);
+        return RefineWordBoundaries(diverse.Take(options.ClipCount).OrderByDescending(c => c.Score).ToList(), segments, options);
     }
 
     private static ClipCandidate Score(List<TranscriptSegment> parts, string text, ProjectOptions options)
@@ -152,7 +152,7 @@ public sealed class EditorialAnalyzer(EditorialLearningService learning)
         var value = Fold(word).Trim(' ', ',', '.', '?', '!', ':', ';', '-');
         return value is "e" or "ai" or "entao" or "bom" or "bem" or "ne" or "ta" or "gente";
     }
-    private static List<ClipCandidate> SelectDiverse(List<ClipCandidate> pool, int count) { var result = new List<ClipCandidate>(); foreach (var c in pool.OrderByDescending(x => x.Score)) { if (result.Any(x => Overlap(x, c) > .22)) continue; result.Add(c); if (result.Count == count) break; } return result.OrderBy(x => x.Start).ToList(); }
+    private static List<ClipCandidate> SelectDiverse(List<ClipCandidate> pool, int count) { var result = new List<ClipCandidate>(); foreach (var c in pool.OrderByDescending(x => x.Score)) { if (result.Any(x => Overlap(x, c) > .22)) continue; result.Add(c); if (result.Count == count) break; } return result.OrderByDescending(x => x.Score).ToList(); }
     private static List<TranscriptSegment> Normalize(List<TranscriptSegment> source) => source.Where(s => s.End > s.Start && !string.IsNullOrWhiteSpace(s.Text)).OrderBy(s => s.Start).ToList();
     private static string Clean(string value) => string.Join(' ', value.Replace("\n", " ").Split(' ', StringSplitOptions.RemoveEmptyEntries));
     private static bool EndsThought(string value) => value.TrimEnd().EndsWith('.') || value.TrimEnd().EndsWith('?') || value.TrimEnd().EndsWith('!');
