@@ -20,15 +20,19 @@ builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "storage", "keys")))
     .SetApplicationName("CortaFeStudio");
 builder.Services.AddSingleton<SocialService>();
+builder.Services.AddSingleton<DiagnosticsService>();
 builder.Services.AddHostedService<PublicationScheduler>();
+builder.Services.AddProblemDetails();
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)));
 
 var app = builder.Build();
+app.UseExceptionHandler();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
 var api = app.MapGroup("/api");
 api.MapGet("/health", async (ToolService tools) => new { status = "ok", tools = await tools.CheckAsync() });
+api.MapGet("/diagnostics", async (DiagnosticsService diagnostics) => await diagnostics.SnapshotAsync());
 api.MapGet("/projects", (ProjectStore store) => store.List());
 api.MapGet("/queue", (ProjectQueue queue) => queue.Status());
 api.MapGet("/projects/{id}", (string id, ProjectStore store) =>
