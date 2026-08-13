@@ -42,6 +42,7 @@ app.Use(async (context, next) =>
 });
 app.UseDefaultFiles();
 app.UseStaticFiles();
+app.MapGet("/favicon.ico", () => Results.Redirect("/favicon.svg", permanent: true));
 
 var api = app.MapGroup("/api");
 api.MapGet("/security/status", (LocalSecurityService security) => new { enabled = security.Enabled });
