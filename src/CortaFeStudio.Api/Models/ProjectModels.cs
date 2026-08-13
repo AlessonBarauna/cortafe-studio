@@ -18,6 +18,10 @@ public sealed class VideoProject
     public string? Error { get; set; }
     public double Duration { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? StartedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public int Attempt { get; set; }
     public ProjectOptions Options { get; set; } = new();
     public List<TranscriptSegment> Transcript { get; set; } = [];
     public string? TranscriptSource { get; set; }

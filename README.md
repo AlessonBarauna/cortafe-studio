@@ -6,6 +6,7 @@ Estúdio local para transformar pregações, ministrações, podcasts e aulas em
 
 - Upload de vídeo ou áudio e importação por link público do YouTube.
 - Fila persistente e acompanhamento do processamento pela interface.
+- Retomada automática de trabalhos interrompidos e bloqueio de entradas duplicadas na fila.
 - Transcrição em português com Faster-Whisper e timestamps por palavra.
 - Seleção automática de trechos por duração, completude e palavras de impacto.
 - Título, frase de capa, legenda e hashtags via Ollama local, com fallback sem IA.
@@ -82,7 +83,7 @@ O sistema destina-se a conteúdo próprio ou autorizado. Links privados, transmi
 
 - O reenquadramento usa corte central inteligente ao formato 9:16; acompanhamento contínuo de rosto e diarização são evoluções futuras.
 - A transcrição de canto com instrumentos altos pode exigir correção manual.
-- Os cortes são renderizados individualmente após a revisão, evitando gastar processamento com sugestões descartadas.
+- Os candidatos e suas capas ficam prontos primeiro; os MP4 são renderizados após a revisão, evitando gastar processamento com sugestões descartadas.
 - A capa usa um frame tratado do vídeo. Remoção de fundo e editor livre de composição podem ser adicionados depois.
 
 ## Conectar redes sociais

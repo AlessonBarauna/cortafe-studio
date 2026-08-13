@@ -39,7 +39,14 @@ public sealed class ProjectStore
     public async Task<VideoProject?> UpdateAsync(string id, Action<VideoProject> action)
     { if (!_projects.TryGetValue(id, out var p)) return null; await _lock.WaitAsync(); try { action(p); await WriteAsync(p); return p; } finally { _lock.Release(); } }
     public async Task SaveAsync(VideoProject p) { await _lock.WaitAsync(); try { _projects[p.Id] = p; await WriteAsync(p); } finally { _lock.Release(); } }
-    private async Task WriteAsync(VideoProject p) => await File.WriteAllTextAsync(Path.Combine(ProjectDirectory(p.Id), "project.json"), JsonSerializer.Serialize(p, JsonOptions));
+    private async Task WriteAsync(VideoProject p)
+    {
+        p.UpdatedAt = DateTime.UtcNow;
+        var target = Path.Combine(ProjectDirectory(p.Id), "project.json");
+        var temporary = target + ".tmp";
+        await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(p, JsonOptions));
+        File.Move(temporary, target, true);
+    }
     public string? ResolveAsset(string id, string path)
     {
         var root = Path.GetFullPath(ProjectDirectory(id)); var candidate = Path.GetFullPath(Path.Combine(root, path.Replace('/', Path.DirectorySeparatorChar)));
