@@ -4,7 +4,7 @@ using CortaFeStudio.Api.Models;
 
 namespace CortaFeStudio.Api.Services;
 
-public sealed class EditorialAnalyzer
+public sealed class EditorialAnalyzer(EditorialLearningService learning)
 {
     private static readonly string[] TransitionOpenings = ["agora vamos", "vamos continuar", "continuando", "próxima característica", "antes de começar", "bom dia", "boa noite", "quem está entendendo", "quem tá entendendo", "beleza gente", "então gente", "como eu estava dizendo"];
     private static readonly string[] IncompleteOpenings = ["e aí", "e então", "porque", "por isso", "mas aí", "ele também", "ela também", "isso também", "como também"];
@@ -30,6 +30,8 @@ public sealed class EditorialAnalyzer
             if (duration < options.MinDuration || duration > options.MaxDuration + 3) continue;
             var text = string.Join(" ", parts.Select(s => Clean(s.Text))).Trim();
             var clip = Score(parts, text, options);
+            var learningScore = learning.Adjustment(options.ContentType, text, duration, out var learningReasons);
+            clip.Score = Math.Round(Math.Clamp(clip.Score + learningScore, 0, 99), 1); clip.Reasons.AddRange(learningReasons); clip.Reasons = clip.Reasons.Distinct().Take(5).ToList();
             if (clip.Score >= 45) pool.Add(clip);
         }
         if (!string.IsNullOrWhiteSpace(options.Topic))

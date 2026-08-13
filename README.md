@@ -10,6 +10,7 @@ Estúdio local para transformar pregações, ministrações, podcasts e aulas em
 - Checkpoints de mídia, áudio, transcrição e análise com reprocessamento seletivo.
 - Transcrição em português com Faster-Whisper, limites refinados por palavra e remoção de muletas no início do corte.
 - Seleção automática de trechos por duração, completude e palavras de impacto.
+- Aprendizado editorial local e explicável com base nos cortes aprovados e rejeitados.
 - Título, frase de capa, legenda e hashtags via Ollama local, com fallback sem IA.
 - Capas verticais extraídas do próprio vídeo.
 - Mesa de revisão para editar título, texto, início e fim de cada corte.

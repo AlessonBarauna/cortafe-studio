@@ -13,6 +13,7 @@ builder.Services.AddSingleton<ProjectStore>();
 builder.Services.AddSingleton<ToolService>();
 builder.Services.AddSingleton<MediaPipeline>();
 builder.Services.AddSingleton<EditorialAnalyzer>();
+builder.Services.AddSingleton<EditorialLearningService>();
 builder.Services.AddSingleton<ProjectQueue>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ProjectQueue>());
 builder.Services.AddHttpClient();
@@ -175,12 +176,15 @@ api.MapPost("/projects/{id}/editorial-analysis", async (string id, ReanalyzeRequ
     try { await pipeline.ReanalyzeAsync(project, request.Render); return Results.Ok(project); }
     catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
-api.MapPost("/projects/{id}/clips/{clipId}/feedback", async (string id, string clipId, ClipFeedbackRequest request, ProjectStore store) =>
+api.MapPost("/projects/{id}/clips/{clipId}/feedback", async (string id, string clipId, ClipFeedbackRequest request, ProjectStore store, EditorialLearningService learning) =>
 {
     if (request.Feedback is not ("approved" or "rejected")) return Results.BadRequest(new { error = "Feedback inválido." });
-    var updated = await store.UpdateAsync(id, p => { var clip = p.Clips.FirstOrDefault(c => c.Id == clipId); if (clip is not null) { clip.Feedback = request.Feedback; clip.Approved = request.Feedback == "approved"; } });
+    ClipCandidate? selected = null; var updated = await store.UpdateAsync(id, p => { selected = p.Clips.FirstOrDefault(c => c.Id == clipId); if (selected is not null) { selected.Feedback = request.Feedback; selected.Approved = request.Feedback == "approved"; } });
+    if (updated is not null && selected is not null) await learning.RecordAsync(updated, selected, request.Feedback);
     return updated is null ? Results.NotFound() : Results.Ok(updated);
 });
+api.MapGet("/editorial/profile", (EditorialLearningService learning) => learning.Profile());
+api.MapDelete("/editorial/profile", async (EditorialLearningService learning) => { await learning.ResetAsync(); return Results.NoContent(); });
 
 api.MapPost("/projects/{id}/render-all", async (string id, ProjectStore store, MediaPipeline pipeline) =>
 {
