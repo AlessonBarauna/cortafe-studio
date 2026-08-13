@@ -59,6 +59,8 @@ public sealed class ClipCandidate
     public double Start { get; set; }
     public double End { get; set; }
     public double Score { get; set; }
+    public string HookSentence { get; set; } = "";
+    public EditorialScoreBreakdown ScoreBreakdown { get; set; } = new();
     public string Transcript { get; set; } = "";
     public string Title { get; set; } = "Momento que merece ser ouvido";
     public string CoverText { get; set; } = "OUÇA ISSO";
@@ -79,6 +81,17 @@ public sealed class ClipCandidate
     public string CoverPosition { get; set; } = "bottom";
     public double? CoverTimestamp { get; set; }
     public string? EditedTranscript { get; set; }
+}
+public sealed class EditorialScoreBreakdown
+{
+    public double Hook { get; set; }
+    public double Clarity { get; set; }
+    public double Emotion { get; set; }
+    public double PracticalValue { get; set; }
+    public double Completion { get; set; }
+    public double Shareability { get; set; }
+    public double Learning { get; set; }
+    public double Total => Math.Round(Math.Clamp(Hook + Clarity + Emotion + PracticalValue + Completion + Shareability + Learning, 0, 99), 1);
 }
 
 public sealed class UrlProjectRequest

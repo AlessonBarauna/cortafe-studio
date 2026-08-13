@@ -38,6 +38,16 @@ public sealed class EditorialAnalyzerTests : IDisposable
         Assert.Equal(clips.OrderByDescending(clip => clip.Score).Select(clip => clip.Id), clips.Select(clip => clip.Id));
     }
 
+    [Fact]
+    public void Analyze_ExplicaPontuacaoEIdentificaGancho()
+    {
+        var clips = CreateAnalyzer().Analyze(Segments("Presta atenção, você sabe por que Deus transforma o coração?", "A fé cresce porque a palavra vence o medo.", "Por isso confie em Jesus e dê o próximo passo."), new ProjectOptions { MinDuration = 10, MaxDuration = 25, ClipCount = 2 });
+        var clip = Assert.Single(clips);
+        Assert.False(string.IsNullOrWhiteSpace(clip.HookSentence));
+        Assert.True(clip.ScoreBreakdown.Hook > 0);
+        Assert.Equal(clip.ScoreBreakdown.Total, clip.Score);
+    }
+
     private EditorialAnalyzer CreateAnalyzer() => new(new EditorialLearningService(new TestEnvironment(_root)));
     private static List<TranscriptSegment> Segments(params string[] texts) => texts.Select((text, index) => new TranscriptSegment { Start = index * 5, End = index * 5 + 4.8, Text = text }).ToList();
     public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
