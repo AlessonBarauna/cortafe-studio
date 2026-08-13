@@ -44,7 +44,7 @@ public sealed class EditorialAnalyzer
             if (diverse.Any(c => Overlap(c, clip) > .24 || Similar(c.Transcript, clip.Transcript) > .72)) continue;
             diverse.Add(clip); if (diverse.Count >= targetPool) break;
         }
-        return diverse.Take(options.ClipCount).OrderBy(c => c.Start).ToList();
+        return RefineWordBoundaries(diverse.Take(options.ClipCount).OrderBy(c => c.Start).ToList(), segments, options);
     }
 
     private static ClipCandidate Score(List<TranscriptSegment> parts, string text, ProjectOptions options)
@@ -99,7 +99,30 @@ public sealed class EditorialAnalyzer
             var text = string.Join(" ", parts.Select(s => Clean(s.Text).Replace("[música]", "", StringComparison.OrdinalIgnoreCase))); var repeated = Tokenize(text).GroupBy(x => x).Count(g => g.Count() >= 3); double score = 55 + Math.Min(22, repeated * 3) + Spiritual.Count(text.ToLowerInvariant().Contains) * 2;
             pool.Add(new ClipCandidate { Start = parts[0].Start, End = parts[^1].End, Score = Math.Round(Math.Min(96, score), 1), Transcript = text, Title = "Momento de louvor e adoração", CoverText = "UM MOMENTO DE ADORAÇÃO", Caption = "Uma canção para renovar a fé. 🎶✨", EditorialProfile = "louvor", Reasons = ["trecho lírico contínuo", repeated > 0 ? "possível refrão ou repetição" : "boa densidade de letra"] });
         }
-        return SelectDiverse(pool, options.ClipCount);
+        return RefineWordBoundaries(SelectDiverse(pool, options.ClipCount), segments, options);
+    }
+    private static List<ClipCandidate> RefineWordBoundaries(List<ClipCandidate> clips, List<TranscriptSegment> segments, ProjectOptions options)
+    {
+        foreach (var clip in clips)
+        {
+            var words = segments.SelectMany(s => s.Words).Where(w => w.End >= clip.Start && w.Start <= clip.End).OrderBy(w => w.Start).ToList();
+            if (words.Count < 8) continue;
+            var first = 0;
+            while (first < Math.Min(4, words.Count - 1) && IsOpeningFiller(words[first].Word) && words[first + 1].Start - words[0].Start <= 1.8) first++;
+            var refinedStart = words[first].Start;
+            var refinedEnd = words.Last().End;
+            if (refinedEnd - refinedStart < options.MinDuration * .85) continue;
+            clip.Start = Math.Max(0, refinedStart - .12);
+            clip.End = refinedEnd + .22;
+            clip.Transcript = string.Join(' ', words.Skip(first).Select(w => w.Word.Trim()).Where(w => w.Length > 0));
+            clip.Reasons = clip.Reasons.Append("limites ajustados palavra por palavra").Distinct().Take(4).ToList();
+        }
+        return clips;
+    }
+    private static bool IsOpeningFiller(string word)
+    {
+        var value = Fold(word).Trim(' ', ',', '.', '?', '!', ':', ';', '-');
+        return value is "e" or "ai" or "entao" or "bom" or "bem" or "ne" or "ta" or "gente";
     }
     private static List<ClipCandidate> SelectDiverse(List<ClipCandidate> pool, int count) { var result = new List<ClipCandidate>(); foreach (var c in pool.OrderByDescending(x => x.Score)) { if (result.Any(x => Overlap(x, c) > .22)) continue; result.Add(c); if (result.Count == count) break; } return result.OrderBy(x => x.Start).ToList(); }
     private static List<TranscriptSegment> Normalize(List<TranscriptSegment> source) => source.Where(s => s.End > s.Start && !string.IsNullOrWhiteSpace(s.Text)).OrderBy(s => s.Start).ToList();
