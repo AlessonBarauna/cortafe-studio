@@ -5,3 +5,4 @@ storage/
 python-*-amd64.exe
 .vs/
 *.user
+dist/

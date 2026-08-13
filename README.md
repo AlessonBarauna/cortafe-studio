@@ -70,6 +70,16 @@ O botão **Diagnóstico** mostra ferramentas instaladas, espaço em disco, uso d
 
 O diagnóstico consulta atualizações do yt-dlp e permite atualizar com backup, teste de versão e restauração automática em caso de falha.
 
+## Distribuição Windows
+
+Para gerar um pacote autocontido que não exige .NET instalado no computador de destino:
+
+```powershell
+.\scripts\gerar-distribuicao-windows.ps1
+```
+
+O ZIP será criado em `dist/CortaFeStudio-Windows-x64.zip`. O GitHub Actions valida compilação, JavaScript e ausência de arquivos privados em todos os PRs.
+
 ## Modelos de transcrição
 
 - `base`: opção mais rápida para CPU.
