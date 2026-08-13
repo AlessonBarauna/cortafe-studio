@@ -11,6 +11,7 @@ builder.Logging.AddConsole();
 builder.Services.Configure<FormOptions>(o => o.MultipartBodyLengthLimit = 20L * 1024 * 1024 * 1024);
 builder.Services.AddSingleton<ProjectStore>();
 builder.Services.AddSingleton<ToolService>();
+builder.Services.AddSingleton<ToolUpdateService>();
 builder.Services.AddSingleton<MediaPipeline>();
 builder.Services.AddSingleton<EditorialAnalyzer>();
 builder.Services.AddSingleton<EditorialLearningService>();
@@ -36,6 +37,11 @@ app.UseStaticFiles();
 var api = app.MapGroup("/api");
 api.MapGet("/health", async (ToolService tools) => new { status = "ok", tools = await tools.CheckAsync() });
 api.MapGet("/diagnostics", async (DiagnosticsService diagnostics) => await diagnostics.SnapshotAsync());
+api.MapGet("/tools/updates", async (ToolUpdateService updates, CancellationToken ct) => await updates.CheckAsync(ct));
+api.MapPost("/tools/yt-dlp/update", async (ToolUpdateService updates, CancellationToken ct) =>
+{
+    try { return Results.Ok(await updates.UpdateYtDlpAsync(ct)); } catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
 api.MapGet("/projects", (ProjectStore store) => store.List());
 api.MapGet("/queue", (ProjectQueue queue) => queue.Status());
 api.MapGet("/storage", (StorageService storage) => storage.Report());

@@ -68,6 +68,8 @@ Para validar backend, frontend e a API local após uma atualização:
 
 O botão **Diagnóstico** mostra ferramentas instaladas, espaço em disco, uso do armazenamento, fila e alertas sem revelar credenciais.
 
+O diagnóstico consulta atualizações do yt-dlp e permite atualizar com backup, teste de versão e restauração automática em caso de falha.
+
 ## Modelos de transcrição
 
 - `base`: opção mais rápida para CPU.

@@ -12,12 +12,15 @@ async function diagnosticsCenter() {
   try {
     const data = await api('/api/diagnostics');
     const toolName = { ffmpeg: 'FFmpeg', ffprobe: 'FFprobe', ytDlp: 'yt-dlp', python: 'Python', node: 'Node.js para YouTube', ollama: 'Ollama', transcriber: 'Transcritor' };
+    const updates = await api('/api/tools/updates').catch(() => null);
     host.innerHTML = `<div class="diagnostic-grid">
       <article><span>PROJETOS</span><strong>${data.projects.total}</strong><p>${data.projects.ready} prontos · ${data.projects.processing} processando · ${data.projects.failed} com falha</p></article>
       <article><span>ARMAZENAMENTO</span><strong>${data.disk.freeGb} GB</strong><p>livres · ${data.disk.storageGb} GB usados pelo estúdio</p></article>
       <article><span>PROCESSAMENTO</span><strong>${data.runtime.processors}</strong><p>núcleos · ${data.runtime.memoryMb} MB disponíveis</p></article>
     </div>
     <div class="studio-panel p-4 mt-4"><span class="eyebrow">FERRAMENTAS LOCAIS</span><div class="tool-grid mt-3">${Object.entries(data.tools).map(([name, state]) => `<div class="tool-row"><i class="${state.available === false ? 'off' : ''}"></i><strong>${toolName[name] || name}</strong><small>${state.version || (state === true ? 'disponível' : state.error || 'instalado')}</small></div>`).join('')}</div></div>
+    <div class="studio-panel p-4 mt-4"><div class="d-flex justify-content-between align-items-center"><div><span class="eyebrow">ATUALIZAÇÕES</span><p class="mb-0 mt-2 text-secondary">yt-dlp instalado: ${escapeHtml(updates?.installed || 'indisponível')} · mais recente: ${escapeHtml(updates?.latest || 'não consultado')}</p></div>${updates?.updateAvailable ? '<button class="btn btn-gold" id="updateYtDlp">Atualizar yt-dlp</button>' : '<span class="badge text-bg-success">Atualizado</span>'}</div></div>
     <div class="studio-panel p-4 mt-4"><span class="eyebrow">AVISOS</span>${data.warnings.length ? data.warnings.map(warning => `<p class="alert alert-warning mt-3 mb-0">${escapeHtml(warning)}</p>`).join('') : '<p class="text-success mt-3 mb-0">Tudo pronto para processar.</p>'}</div>`;
+    document.querySelector('#updateYtDlp')?.addEventListener('click', async event => { event.currentTarget.disabled = true; event.currentTarget.textContent = 'Atualizando…'; try { const result = await api('/api/tools/yt-dlp/update', { method: 'POST' }); toast(`yt-dlp atualizado: ${result.version}`); diagnosticsCenter(); } catch (error) { toast(error.message); event.currentTarget.disabled = false; } });
   } catch (error) { host.innerHTML = `<div class="alert alert-danger">${escapeHtml(error.message)}</div>`; }
 }
