@@ -13,6 +13,7 @@ Estúdio local para transformar pregações, ministrações, podcasts e aulas em
 - Capas verticais extraídas do próprio vídeo.
 - Mesa de revisão para editar título, texto, início e fim de cada corte.
 - Direção visual por corte: foco do enquadramento, três estilos de legenda, frame, cor e posição da capa.
+- Linha do tempo com forma de onda, ajuste visual de início e fim, edição da transcrição, duplicação e divisão de cortes.
 - Renderização 9:16 em MP4 com legendas dinâmicas, destaque sincronizado da palavra falada e download individual.
 - Biblioteca local de projetos, sem conta e sem telemetria.
 
