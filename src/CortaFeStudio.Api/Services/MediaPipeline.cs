@@ -5,7 +5,7 @@ using CortaFeStudio.Api.Models;
 
 namespace CortaFeStudio.Api.Services;
 
-public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpClientFactory http, EditorialAnalyzer editorial)
+public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpClientFactory http, LongVideoEditorialAnalyzer editorial)
 {
     public async Task ProcessAsync(VideoProject p, CancellationToken ct)
     {

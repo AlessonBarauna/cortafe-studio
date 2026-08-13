@@ -15,6 +15,7 @@ builder.Services.AddSingleton<ToolService>();
 builder.Services.AddSingleton<ToolUpdateService>();
 builder.Services.AddSingleton<MediaPipeline>();
 builder.Services.AddSingleton<EditorialAnalyzer>();
+builder.Services.AddSingleton<LongVideoEditorialAnalyzer>();
 builder.Services.AddSingleton<EditorialLearningService>();
 builder.Services.AddSingleton<ProjectQueue>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ProjectQueue>());
