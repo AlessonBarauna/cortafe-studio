@@ -33,7 +33,7 @@ public sealed class EditorialAnalyzer(EditorialLearningService learning)
             var text = string.Join(" ", parts.Select(s => Clean(s.Text))).Trim();
             var clip = Score(parts, text, options);
             var learningScore = learning.Adjustment(options.ContentType, text, duration, out var learningReasons);
-            clip.Score = Math.Round(Math.Clamp(clip.Score + learningScore, 0, 99), 1); clip.Reasons.AddRange(learningReasons); clip.Reasons = clip.Reasons.Distinct().Take(5).ToList();
+            clip.ScoreBreakdown.Learning = learningScore; clip.Score = clip.ScoreBreakdown.Total; clip.Reasons.AddRange(learningReasons); clip.Reasons = clip.Reasons.Distinct().Take(5).ToList();
             if (clip.Score >= 45) pool.Add(clip);
         }
         if (!string.IsNullOrWhiteSpace(options.Topic))
@@ -75,8 +75,21 @@ public sealed class EditorialAnalyzer(EditorialLearningService learning)
             if (hits > 0) { score += Math.Min(28, hits * 10); reasons.Add($"relacionado ao tema “{options.Topic}”"); } else score -= 12;
         }
         var wordCount = Tokenize(text).Count; if (wordCount is >= 65 and <= 190) score += 7; else if (wordCount < 35) score -= 18;
-        var title = MakeTitle(text, options.ContentType);
-        return new ClipCandidate { Start = parts[0].Start, End = parts[^1].End, Score = Math.Round(Math.Clamp(score, 0, 99), 1), Transcript = text, Title = title, CoverText = string.Join(' ', title.ToUpperInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(6)), Caption = $"{title}. Uma mensagem para guardar e compartilhar. ✨", EditorialProfile = options.ContentType, Reasons = reasons.Distinct().Take(4).ToList() };
+        var title = MakeTitle(text, options.ContentType); var breakdown = BuildBreakdown(opening, ending, lower);
+        return new ClipCandidate { Start = parts[0].Start, End = parts[^1].End, Score = breakdown.Total, ScoreBreakdown = breakdown, HookSentence = Clean(parts[0].Text), Transcript = text, Title = title, CoverText = string.Join(' ', title.ToUpperInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(6)), Caption = $"{title}. Uma mensagem para guardar e compartilhar. ✨", EditorialProfile = options.ContentType, Reasons = reasons.Distinct().Take(4).ToList() };
+    }
+    private static EditorialScoreBreakdown BuildBreakdown(string opening, string ending, string text)
+    {
+        var hook = Math.Min(20, (StrongHooks.Any(opening.Contains) ? 14 : 5) + (opening.Contains('?') ? 6 : 0));
+        var dependent = TransitionOpenings.Any(opening.StartsWith) || IncompleteOpenings.Any(opening.StartsWith) || ContextDependence.Any(opening.Contains);
+        return new EditorialScoreBreakdown
+        {
+            Hook = hook, Clarity = dependent ? 8 : 20,
+            Emotion = Math.Min(15, Spiritual.Count(text.Contains) * 2 + (text.Contains('!') ? 5 : 2)),
+            PracticalValue = Math.Min(15, new[] { "faça", "comece", "aprenda", "passo", "prática", "como", "decida" }.Count(text.Contains) * 4 + 3),
+            Completion = EndsThought(ending) ? (Conclusions.Any(text.Contains) ? 15 : 9) : 2,
+            Shareability = Math.Min(15, new[] { " mas ", "verdade", "nunca", "sempre", "ninguém", "todo mundo" }.Count(text.Contains) * 3 + 4)
+        };
     }
 
     private static List<TranscriptSegment> BuildWindow(List<TranscriptSegment> segments, int startIndex, ProjectOptions options)
