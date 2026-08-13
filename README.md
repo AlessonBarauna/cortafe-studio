@@ -7,6 +7,7 @@ Estúdio local para transformar pregações, ministrações, podcasts e aulas em
 - Upload de vídeo ou áudio e importação por link público do YouTube.
 - Fila persistente e acompanhamento do processamento pela interface.
 - Retomada automática de trabalhos interrompidos e bloqueio de entradas duplicadas na fila.
+- Checkpoints de mídia, áudio, transcrição e análise com reprocessamento seletivo.
 - Transcrição em português com Faster-Whisper, limites refinados por palavra e remoção de muletas no início do corte.
 - Seleção automática de trechos por duração, completude e palavras de impacto.
 - Título, frase de capa, legenda e hashtags via Ollama local, com fallback sem IA.
