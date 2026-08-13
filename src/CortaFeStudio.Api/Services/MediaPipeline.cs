@@ -221,13 +221,14 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         var output = $"clip-{clip.Id}.mp4"; var escaped = ass.Replace("\\", "/").Replace(":", "\\:").Replace("'", "\\'");
         var framing = RenderFilterFactory.Framing(clip);
         var filter = $"{framing},subtitles='{escaped}'";
-        await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-ss", F(clip.Start), "-to", F(clip.End), "-i", Path.Combine(dir, p.LocalMedia!), "-vf", filter, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", Path.Combine(dir, output)], dir, ct);
+        var audio = RenderFilterFactory.Audio(clip.End - clip.Start);
+        await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-ss", F(clip.Start), "-to", F(clip.End), "-i", Path.Combine(dir, p.LocalMedia!), "-vf", filter, "-af", audio, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", Path.Combine(dir, output)], dir, ct);
         clip.VideoPath = output;
     }
 
     public async Task RenderAllAsync(VideoProject p, CancellationToken ct = default)
     {
-        foreach (var clip in p.Clips.Where(c => c.Approved)) await RenderClipAsync(p, clip, ct);
+        await Parallel.ForEachAsync(p.Clips.Where(c => c.Approved), new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount / 4, 1, 2), CancellationToken = ct }, async (clip, token) => await RenderClipAsync(p, clip, token));
         await store.SaveAsync(p);
     }
 
