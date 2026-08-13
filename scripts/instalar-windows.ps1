@@ -15,7 +15,7 @@ if (-not (Test-Path $LocalPython)) {
 }
 
 Write-Host 'Instalando Faster-Whisper no Python...'
-& $LocalPython -m pip install --upgrade faster-whisper
+& $LocalPython -m pip install --upgrade faster-whisper 'opencv-python-headless==4.10.0.84'
 
 if (-not (Get-Command yt-dlp -ErrorAction SilentlyContinue)) {
   Write-Host 'Baixando yt-dlp...'
