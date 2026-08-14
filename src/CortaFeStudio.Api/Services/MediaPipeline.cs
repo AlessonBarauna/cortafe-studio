@@ -228,8 +228,21 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
 
     public async Task RenderAllAsync(VideoProject p, CancellationToken ct = default)
     {
-        await Parallel.ForEachAsync(p.Clips.Where(c => c.Approved), new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount / 4, 1, 2), CancellationToken = ct }, async (clip, token) => await RenderClipAsync(p, clip, token));
-        await store.SaveAsync(p);
+        var clips = p.Clips.Where(c => c.Approved).ToList(); var completed = 0;
+        p.IsRendering = true; p.RenderCompleted = 0; p.RenderTotal = clips.Count; await store.SaveAsync(p);
+        try
+        {
+            await Parallel.ForEachAsync(clips, new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount / 4, 1, 2), CancellationToken = ct }, async (clip, token) =>
+            {
+                await RenderClipAsync(p, clip, token);
+                p.RenderCompleted = Interlocked.Increment(ref completed);
+                await store.SaveAsync(p);
+            });
+        }
+        finally
+        {
+            p.IsRendering = false; await store.SaveAsync(p);
+        }
     }
 
     public async Task ReanalyzeAndRenderAsync(VideoProject p, CancellationToken ct = default)
