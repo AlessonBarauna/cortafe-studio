@@ -32,7 +32,8 @@ public sealed class ProjectStore
 
     public async Task<VideoProject> CreateAsync(string? name, SourceKind kind, string source, ProjectOptions? options)
     {
-        var p = new VideoProject { Name = string.IsNullOrWhiteSpace(name) ? "Vídeo do YouTube" : name.Trim(), SourceKind = kind, Source = source, Options = options ?? new() };
+        var projectOptions = options ?? new(); projectOptions.ApplyAutomaticDuration();
+        var p = new VideoProject { Name = string.IsNullOrWhiteSpace(name) ? "Vídeo do YouTube" : name.Trim(), SourceKind = kind, Source = source, Options = projectOptions };
         _projects[p.Id] = p; Directory.CreateDirectory(ProjectDirectory(p.Id)); await SaveAsync(p); return p;
     }
 

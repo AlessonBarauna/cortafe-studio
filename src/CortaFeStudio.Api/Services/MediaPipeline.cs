@@ -60,6 +60,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         if (p.Transcript.Count == 0) throw new InvalidOperationException("A transcrição não produziu conteúdo utilizável.");
         await Checkpoint(p, "transcript", "Transcrição disponível");
         await Stage(p, ProjectStatus.Analyzing, 72, "Encontrando momentos de impacto");
+        p.Options.ApplyAutomaticDuration();
         p.Clips = editorial.Analyze(p.Transcript, p.Options);
         await Checkpoint(p, "analysis", $"{p.Clips.Count} candidatos encontrados");
         await Stage(p, ProjectStatus.Analyzing, 82, $"Preparando {p.Clips.Count} candidatos");
@@ -248,6 +249,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
     public async Task ReanalyzeAndRenderAsync(VideoProject p, CancellationToken ct = default)
     {
         if (p.Transcript.Count == 0) throw new InvalidOperationException("Este projeto ainda não possui transcrição para reaproveitar.");
+        p.Options.ApplyAutomaticDuration();
         p.Status = ProjectStatus.Analyzing; p.Progress = 72; p.Stage = "Refazendo o ranking sem transcrever novamente"; await store.SaveAsync(p);
         p.Clips = editorial.Analyze(p.Transcript, p.Options);
         foreach (var clip in p.Clips) { await EnrichWithOllama(clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
@@ -258,6 +260,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
     public async Task ReanalyzeAsync(VideoProject p, bool render, CancellationToken ct = default)
     {
         if (p.Transcript.Count == 0) throw new InvalidOperationException("Este projeto ainda não possui transcrição.");
+        p.Options.ApplyAutomaticDuration();
         p.Status = ProjectStatus.Analyzing; p.Progress = 78; p.Stage = "Aplicando análise editorial"; await store.SaveAsync(p);
         p.Clips = editorial.Analyze(p.Transcript, p.Options);
         foreach (var clip in p.Clips) { await EnrichWithOllama(clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }

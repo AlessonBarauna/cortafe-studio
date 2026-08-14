@@ -21,6 +21,15 @@ public sealed class ProjectStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task CreateAsync_FixaDuracaoAutomaticaEntreSessentaESetentaECincoSegundos()
+    {
+        var store = new ProjectStore(new TestEnvironment(_root));
+        var project = await store.CreateAsync("Duração", SourceKind.YouTube, "https://youtube.com/watch?v=teste", new ProjectOptions { MinDuration = 10, MaxDuration = 300 });
+        Assert.Equal(60, project.Options.MinDuration);
+        Assert.Equal(75, project.Options.MaxDuration);
+    }
+
+    [Fact]
     public async Task SaveAsync_PersisteCheckpointNoJsonESqlite()
     {
         var environment = new TestEnvironment(_root);
