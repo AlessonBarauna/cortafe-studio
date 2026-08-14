@@ -37,7 +37,7 @@ public sealed class VideoProject
 public sealed class ProjectOptions
 {
     public string ContentType { get; set; } = "pregacao";
-    public int ClipCount { get; set; } = 5;
+    public int ClipCount { get; set; } = 20;
     public const int AutomaticMinDuration = 60;
     public const int AutomaticMaxDuration = 75;
     public int MinDuration { get; set; } = AutomaticMinDuration;
@@ -48,7 +48,7 @@ public sealed class ProjectOptions
     public static ProjectOptions FromForm(IFormCollection f) => new()
     {
         ContentType = f["contentType"].FirstOrDefault() ?? "pregacao",
-        ClipCount = int.TryParse(f["clipCount"], out var count) ? Math.Clamp(count, 1, 20) : 5,
+        ClipCount = int.TryParse(f["clipCount"], out var count) ? Math.Clamp(count, 1, 20) : 20,
         MinDuration = AutomaticMinDuration,
         MaxDuration = AutomaticMaxDuration,
         WhisperModel = f["whisperModel"].FirstOrDefault() ?? "base",

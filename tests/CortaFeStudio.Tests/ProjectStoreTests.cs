@@ -30,6 +30,9 @@ public sealed class ProjectStoreTests : IDisposable
     }
 
     [Fact]
+    public void ProjectOptions_UsaVinteCortesComoPadrao() => Assert.Equal(20, new ProjectOptions().ClipCount);
+
+    [Fact]
     public async Task SaveAsync_PersisteCheckpointNoJsonESqlite()
     {
         var environment = new TestEnvironment(_root);

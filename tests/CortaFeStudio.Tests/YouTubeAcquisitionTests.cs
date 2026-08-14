@@ -19,5 +19,6 @@ public sealed class YouTubeAcquisitionTests
         var args = YouTubeAcquisition.MetadataArguments([], "https://youtu.be/teste");
         Assert.Contains("--skip-download", args);
         Assert.Contains("duration", args);
+        Assert.Contains("title", args);
     }
 }
