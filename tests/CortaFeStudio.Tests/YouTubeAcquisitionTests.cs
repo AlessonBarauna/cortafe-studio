@@ -11,6 +11,17 @@ public sealed class YouTubeAcquisitionTests
         Assert.Contains("--concurrent-fragments", args);
         Assert.Contains("4", args);
         Assert.Contains("vcodec^=avc1", string.Join(' ', args));
+        Assert.Contains("--http-chunk-size", args);
+        Assert.Contains("10M", args);
+        Assert.Contains("15", args);
+    }
+
+    [Fact]
+    public void DownloadCompativel_UsaMp4CombinadoComoUltimoRecurso()
+    {
+        var args = YouTubeAcquisition.CompatibleDownloadArguments([], "ffmpeg", "source.%(ext)s", "https://youtu.be/teste");
+        Assert.Contains("18/b[height<=720][ext=mp4]/best[height<=720]", args);
+        Assert.Contains("--http-chunk-size", args);
     }
 
     [Fact]
