@@ -8,6 +8,7 @@ public sealed class ProjectStore
 {
     private readonly string _root;
     private readonly Dictionary<string, VideoProject> _projects = [];
+    private readonly HashSet<string> _deleted = [];
     private readonly string _database;
     private readonly SemaphoreSlim _lock = new(1, 1);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
@@ -45,7 +46,36 @@ public sealed class ProjectStore
 
     public async Task<VideoProject?> UpdateAsync(string id, Action<VideoProject> action)
     { if (!_projects.TryGetValue(id, out var p)) return null; await _lock.WaitAsync(); try { action(p); await WriteAsync(p); return p; } finally { _lock.Release(); } }
-    public async Task SaveAsync(VideoProject p) { await _lock.WaitAsync(); try { _projects[p.Id] = p; await WriteAsync(p); } finally { _lock.Release(); } }
+    public async Task SaveAsync(VideoProject p) { await _lock.WaitAsync(); try { if (_deleted.Contains(p.Id)) return; _projects[p.Id] = p; await WriteAsync(p); } finally { _lock.Release(); } }
+    public async Task<bool> DeleteAsync(string id)
+    {
+        await _lock.WaitAsync();
+        try
+        {
+            if (!_projects.Remove(id)) return false;
+            _deleted.Add(id);
+            using var connection = new SqliteConnection($"Data Source={_database}"); connection.Open();
+            using var command = connection.CreateCommand(); command.CommandText = "DELETE FROM projects WHERE id=$id"; command.Parameters.AddWithValue("$id", id); command.ExecuteNonQuery();
+            var directory = Path.GetFullPath(ProjectDirectory(id)); var root = Path.GetFullPath(_root) + Path.DirectorySeparatorChar;
+            if (directory.StartsWith(root, StringComparison.OrdinalIgnoreCase) && Directory.Exists(directory)) Directory.Delete(directory, true);
+            return true;
+        }
+        finally { _lock.Release(); }
+    }
+
+    public async Task<bool> DeleteClipAsync(string projectId, string clipId)
+    {
+        await _lock.WaitAsync();
+        try
+        {
+            if (!_projects.TryGetValue(projectId, out var project)) return false;
+            var clip = project.Clips.FirstOrDefault(item => item.Id == clipId); if (clip is null) return false;
+            var directory = ProjectDirectory(projectId);
+            foreach (var file in Directory.EnumerateFiles(directory).Where(file => Path.GetFileName(file).Contains(clipId, StringComparison.OrdinalIgnoreCase))) File.Delete(file);
+            project.Clips.Remove(clip); await WriteAsync(project); return true;
+        }
+        finally { _lock.Release(); }
+    }
     private async Task WriteAsync(VideoProject p)
     {
         p.UpdatedAt = DateTime.UtcNow;

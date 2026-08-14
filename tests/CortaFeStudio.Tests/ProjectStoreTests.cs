@@ -33,6 +33,35 @@ public sealed class ProjectStoreTests : IDisposable
         Assert.Contains("media", reloaded!.CompletedStages);
     }
 
+    [Fact]
+    public async Task DeleteClipAsync_RemoveCorteEArquivosRelacionados()
+    {
+        var store = new ProjectStore(new TestEnvironment(_root));
+        var project = await store.CreateAsync("Cortes", SourceKind.YouTube, "https://youtube.com/watch?v=teste", null);
+        var clip = new ClipCandidate { Id = "clipteste", VideoPath = "clip-clipteste.mp4", CoverPath = "cover-clipteste.jpg" };
+        project.Clips.Add(clip); await store.SaveAsync(project);
+        await File.WriteAllTextAsync(Path.Combine(store.ProjectDirectory(project.Id), clip.VideoPath), "video");
+        await File.WriteAllTextAsync(Path.Combine(store.ProjectDirectory(project.Id), clip.CoverPath), "capa");
+
+        Assert.True(await store.DeleteClipAsync(project.Id, clip.Id));
+        Assert.Empty(project.Clips);
+        Assert.False(File.Exists(Path.Combine(store.ProjectDirectory(project.Id), clip.VideoPath)));
+        Assert.False(File.Exists(Path.Combine(store.ProjectDirectory(project.Id), clip.CoverPath)));
+    }
+
+    [Fact]
+    public async Task DeleteAsync_RemoveCatalogoEPastaCompleta()
+    {
+        var environment = new TestEnvironment(_root); var store = new ProjectStore(environment);
+        var project = await store.CreateAsync("Excluir", SourceKind.YouTube, "https://youtube.com/watch?v=teste", null);
+        var directory = store.ProjectDirectory(project.Id);
+
+        Assert.True(await store.DeleteAsync(project.Id));
+        Assert.Null(store.Get(project.Id));
+        Assert.False(Directory.Exists(directory));
+        Assert.Null(new ProjectStore(environment).Get(project.Id));
+    }
+
     public void Dispose()
     {
         SqliteConnection.ClearAllPools();

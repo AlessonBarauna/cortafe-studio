@@ -63,6 +63,13 @@ api.MapGet("/queue", (ProjectQueue queue) => queue.Status());
 api.MapGet("/storage", (StorageService storage) => storage.Report());
 api.MapGet("/projects/{id}", (string id, ProjectStore store) =>
     store.Get(id) is { } project ? Results.Ok(project) : Results.NotFound());
+api.MapDelete("/projects/{id}", async (string id, ProjectStore store) =>
+{
+    var project = store.Get(id); if (project is null) return Results.NotFound();
+    if (project.Status is not (ProjectStatus.Ready or ProjectStatus.Failed or ProjectStatus.Cancelled))
+        return Results.Conflict(new { error = "Cancele o processamento antes de excluir este projeto." });
+    return await store.DeleteAsync(id) ? Results.NoContent() : Results.NotFound();
+});
 
 api.MapPost("/projects/url", async (UrlProjectRequest request, ProjectStore store, ProjectQueue queue) =>
 {
@@ -155,6 +162,8 @@ api.MapPut("/projects/{id}/clips/{clipId}", async (string id, string clipId, Cli
     });
     return updated is null ? Results.NotFound() : Results.Ok(updated);
 });
+api.MapDelete("/projects/{id}/clips/{clipId}", async (string id, string clipId, ProjectStore store) =>
+    await store.DeleteClipAsync(id, clipId) ? Results.NoContent() : Results.NotFound());
 api.MapPost("/projects/{id}/clips/{clipId}/analyze-framing", async (string id, string clipId, ProjectStore store, FramingService framing) =>
 {
     var project = store.Get(id); var clip = project?.Clips.FirstOrDefault(item => item.Id == clipId); if (project is null || clip is null) return Results.NotFound();
