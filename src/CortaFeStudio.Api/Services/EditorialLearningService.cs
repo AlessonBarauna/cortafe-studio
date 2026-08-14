@@ -42,6 +42,6 @@ public sealed class EditorialLearningService
     public object Profile() => EnumProfiles().Select(profile => { var items = _feedback.Where(item => item.Profile == profile).ToList(); return new { profile, total = items.Count, approved = items.Count(item => item.Decision == "approved"), rejected = items.Count(item => item.Decision == "rejected"), preferredDuration = items.Where(item => item.Decision == "approved").Select(item => (double?)item.Duration).Average() }; });
     public async Task ResetAsync() { _feedback.Clear(); if (File.Exists(_file)) File.Delete(_file); await Task.CompletedTask; }
     private static IEnumerable<string> Terms(string value) => value.ToLowerInvariant().Split([' ', ',', '.', '?', '!', ':', ';', '-', '—'], StringSplitOptions.RemoveEmptyEntries).Select(term => term.Trim()).Where(term => term.Length > 3 && !StopWords.Contains(term)).Distinct();
-    private static string[] EnumProfiles() => ["pregacao", "louvor", "podcast", "aula"];
+    private static string[] EnumProfiles() => EditorialProfiles.All.Select(profile => profile.Id).ToArray();
     private sealed class EditorialFeedback { public string ProjectId { get; set; } = ""; public string ClipId { get; set; } = ""; public string Profile { get; set; } = ""; public string Decision { get; set; } = ""; public double Duration { get; set; } public List<string> Terms { get; set; } = []; public DateTime CreatedAt { get; set; } }
 }
