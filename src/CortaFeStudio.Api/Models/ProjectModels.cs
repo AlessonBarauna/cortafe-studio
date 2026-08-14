@@ -74,6 +74,7 @@ public sealed class ClipCandidate
     public string Feedback { get; set; } = "pending";
     public string CropFocus { get; set; } = "center";
     public double CropX { get; set; } = .5;
+    public List<FramingKeyframe> FramingTrack { get; set; } = [];
     public string LayoutMode { get; set; } = "fill";
     public bool FaceTrackingAnalyzed { get; set; }
     public string SubtitleStyle { get; set; } = "impact";
@@ -81,6 +82,11 @@ public sealed class ClipCandidate
     public string CoverPosition { get; set; } = "bottom";
     public double? CoverTimestamp { get; set; }
     public string? EditedTranscript { get; set; }
+}
+public sealed class FramingKeyframe
+{
+    public double Time { get; set; }
+    public double X { get; set; } = .5;
 }
 public sealed class EditorialScoreBreakdown
 {

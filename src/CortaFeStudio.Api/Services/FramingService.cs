@@ -13,6 +13,13 @@ public sealed class FramingService(ProjectStore store, ToolService tools)
         await tools.RunAsync(tools.Find("python"), [Path.Combine(tools.Root, "scripts", "detect_faces.py"), media, clip.Start.ToString(CultureInfo.InvariantCulture), clip.End.ToString(CultureInfo.InvariantCulture), output], directory, ct);
         using var document = JsonDocument.Parse(await File.ReadAllTextAsync(output, ct)); var root = document.RootElement;
         clip.FaceTrackingAnalyzed = true; clip.CropX = root.GetProperty("cropX").GetDouble();
+        clip.FramingTrack = root.TryGetProperty("track", out var track)
+            ? track.EnumerateArray().Select(point => new FramingKeyframe
+            {
+                Time = point.GetProperty("time").GetDouble(),
+                X = point.GetProperty("x").GetDouble()
+            }).ToList()
+            : [];
         clip.CropFocus = clip.CropX < .38 ? "left" : clip.CropX > .62 ? "right" : "center";
         clip.Reasons = clip.Reasons.Append(root.GetProperty("detected").GetBoolean() ? "enquadramento ajustado ao rosto" : "enquadramento central por segurança").Distinct().Take(5).ToList();
         await store.SaveAsync(project); return clip;
