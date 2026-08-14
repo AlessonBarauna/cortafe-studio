@@ -28,6 +28,9 @@ public sealed class VideoProject
     public List<TranscriptSegment> Transcript { get; set; } = [];
     public string? TranscriptSource { get; set; }
     public List<ClipCandidate> Clips { get; set; } = [];
+    public bool IsRendering { get; set; }
+    public int RenderCompleted { get; set; }
+    public int RenderTotal { get; set; }
     public bool Archived { get; set; }
 }
 
