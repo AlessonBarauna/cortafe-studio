@@ -67,7 +67,7 @@ public sealed class EditorialAnalyzer(EditorialLearningService learning)
         var conclusion = Conclusions.Count(lower.Contains); if (conclusion > 0) { score += Math.Min(12, conclusion * 4); reasons.Add("desenvolve uma conclusão"); }
         var structure = StructureScore(parts, lower, out var structureReason); score += structure; if (structureReason is not null) reasons.Insert(0, structureReason);
         if (ContextDependence.Any(opening.Contains)) { score -= 18; reasons.Add("penalizado: depende do contexto anterior"); }
-        var profileWords = options.ContentType switch { "podcast" => Podcast, "aula" => Teaching, _ => Spiritual };
+        var profile = EditorialProfiles.Get(options.ContentType); var profileWords = profile.Signals;
         var profileHits = profileWords.Count(lower.Contains); if (profileHits > 1) { score += Math.Min(15, profileHits * 2.5); reasons.Add($"relevante para {ProfileLabel(options.ContentType)}"); }
         if (!string.IsNullOrWhiteSpace(options.Topic))
         {
@@ -75,17 +75,17 @@ public sealed class EditorialAnalyzer(EditorialLearningService learning)
             if (hits > 0) { score += Math.Min(28, hits * 10); reasons.Add($"relacionado ao tema “{options.Topic}”"); } else score -= 12;
         }
         var wordCount = Tokenize(text).Count; if (wordCount is >= 65 and <= 190) score += 7; else if (wordCount < 35) score -= 18;
-        var title = MakeTitle(text, options.ContentType); var breakdown = BuildBreakdown(opening, ending, lower);
-        return new ClipCandidate { Start = parts[0].Start, End = parts[^1].End, Score = breakdown.Total, ScoreBreakdown = breakdown, HookSentence = Clean(parts[0].Text), Transcript = text, Title = title, CoverText = string.Join(' ', title.ToUpperInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(6)), Caption = $"{title}. Uma mensagem para guardar e compartilhar. ✨", EditorialProfile = options.ContentType, Reasons = reasons.Distinct().Take(4).ToList() };
+        var title = MakeTitle(text, options.ContentType); var breakdown = BuildBreakdown(opening, ending, lower, profile);
+        return new ClipCandidate { Start = parts[0].Start, End = parts[^1].End, Score = breakdown.Total, ScoreBreakdown = breakdown, HookSentence = Clean(parts[0].Text), Transcript = text, Title = title, CoverText = string.Join(' ', title.ToUpperInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(6)), Caption = $"{title}. {profile.CaptionSuffix} ✨", Hashtags = profile.Hashtags.ToList(), EditorialProfile = options.ContentType, Reasons = reasons.Distinct().Take(4).ToList() };
     }
-    private static EditorialScoreBreakdown BuildBreakdown(string opening, string ending, string text)
+    private static EditorialScoreBreakdown BuildBreakdown(string opening, string ending, string text, EditorialProfileDefinition profile)
     {
         var hook = Math.Min(20, (StrongHooks.Any(opening.Contains) ? 14 : 5) + (opening.Contains('?') ? 6 : 0));
         var dependent = TransitionOpenings.Any(opening.StartsWith) || IncompleteOpenings.Any(opening.StartsWith) || ContextDependence.Any(opening.Contains);
         return new EditorialScoreBreakdown
         {
             Hook = hook, Clarity = dependent ? 8 : 20,
-            Emotion = Math.Min(15, Spiritual.Count(text.Contains) * 2 + (text.Contains('!') ? 5 : 2)),
+            Emotion = Math.Min(15, profile.Signals.Count(text.Contains) * 2 + (text.Contains('!') ? 5 : 2)),
             PracticalValue = Math.Min(15, new[] { "faça", "comece", "aprenda", "passo", "prática", "como", "decida" }.Count(text.Contains) * 4 + 3),
             Completion = EndsThought(ending) ? (Conclusions.Any(text.Contains) ? 15 : 9) : 2,
             Shareability = Math.Min(15, new[] { " mas ", "verdade", "nunca", "sempre", "ninguém", "todo mundo" }.Count(text.Contains) * 3 + 4)
@@ -173,6 +173,6 @@ public sealed class EditorialAnalyzer(EditorialLearningService learning)
     private static double Similar(string a, string b) { var x = Tokenize(a).ToHashSet(); var y = Tokenize(b).ToHashSet(); return x.Count == 0 || y.Count == 0 ? 0 : x.Intersect(y).Count() / (double)x.Union(y).Count(); }
     private static List<string> Tokenize(string value) => value.ToLower(CultureInfo.GetCultureInfo("pt-BR")).Split([' ', ',', '.', '?', '!', ':', ';', '—', '-'], StringSplitOptions.RemoveEmptyEntries).ToList();
     private static string Fold(string value) { var normalized = value.Normalize(NormalizationForm.FormD); var sb = new StringBuilder(); foreach (var c in normalized) if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark) sb.Append(char.ToLowerInvariant(c)); return sb.ToString().Normalize(NormalizationForm.FormC); }
-    private static string ProfileLabel(string profile) => profile switch { "podcast" => "podcast", "aula" => "conteúdo educativo", _ => "pregação" };
+    private static string ProfileLabel(string profile) => EditorialProfiles.Get(profile).Label.ToLowerInvariant();
     private static string MakeTitle(string text, string profile) { var lower = text.ToLowerInvariant(); if (lower.Contains("coração limpo")) return "O que realmente limpa o coração?"; if (lower.Contains("tranquilidade") && lower.Contains("paz")) return "Paz não é o mesmo que tranquilidade"; if (lower.Contains("perdoa") && lower.Contains("jesus")) return "O coração de Jesus na cruz"; if (lower.Contains("desconfia") && lower.Contains("deus")) return "A desconfiança que suja o coração"; var sentences = text.Split(['.', '?', '!'], StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()).Where(x => x.Length >= 24).ToList(); var sentence = sentences.FirstOrDefault(x => StrongHooks.Any(x.ToLowerInvariant().Contains)) ?? sentences.FirstOrDefault() ?? text; return string.Join(' ', sentence.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(9)).Trim(',', '.', '?', '!'); }
 }
