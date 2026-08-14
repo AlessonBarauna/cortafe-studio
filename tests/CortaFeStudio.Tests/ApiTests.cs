@@ -36,6 +36,13 @@ public sealed class ApiTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Equal(HttpStatusCode.NotFound, (await _client.GetAsync("/api/projects/inexistente/exports/project.json")).StatusCode);
 
     [Fact]
+    public async Task Exclusao_DeProjetoECorteInexistentes_RetornaNaoEncontrado()
+    {
+        Assert.Equal(HttpStatusCode.NotFound, (await _client.DeleteAsync("/api/projects/inexistente")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await _client.DeleteAsync("/api/projects/inexistente/clips/inexistente")).StatusCode);
+    }
+
+    [Fact]
     public async Task Favicon_PossuiRotaDeCompatibilidade()
     {
         using var noRedirect = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
