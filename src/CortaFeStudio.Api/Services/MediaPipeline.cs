@@ -27,8 +27,14 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
             var template = Path.Combine(dir, "source.%(ext)s");
             await Stage(p, ProjectStatus.Acquiring, 12, p.Transcript.Count > 0 ? "Baixando vídeo; legendas já aproveitadas" : "Baixando vídeo em formato otimizado");
             var downloadArgs = YouTubeAcquisition.DownloadArguments(tools.YouTubeArguments(), tools.Find("ffmpeg"), template, p.Source);
-            await tools.RunAsync(tools.Find("yt-dlp"), downloadArgs, dir, ct);
-            p.LocalMedia = Path.GetFileName(Directory.EnumerateFiles(dir, "source.*").First(f => Path.GetFileName(f) != "source.audio.wav"));
+            try { await tools.RunAsync(tools.Find("yt-dlp"), downloadArgs, dir, ct); }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("403", StringComparison.OrdinalIgnoreCase))
+            {
+                await Stage(p, ProjectStatus.Acquiring, 14, "YouTube recusou o 1080p; tentando formato compatível");
+                var compatibleArgs = YouTubeAcquisition.CompatibleDownloadArguments(tools.YouTubeArguments(), tools.Find("ffmpeg"), template, p.Source);
+                await tools.RunAsync(tools.Find("yt-dlp"), compatibleArgs, dir, ct);
+            }
+            p.LocalMedia = Path.GetFileName(Directory.EnumerateFiles(dir, "source.*").First(f => Path.GetFileName(f) != "source.audio.wav" && !f.EndsWith(".part", StringComparison.OrdinalIgnoreCase)));
             await Checkpoint(p, "media", "Mídia adquirida");
         }
         var media = Path.Combine(dir, p.LocalMedia ?? throw new InvalidOperationException("Arquivo de origem não encontrado."));
