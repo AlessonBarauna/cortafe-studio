@@ -38,8 +38,10 @@ public sealed class ProjectOptions
 {
     public string ContentType { get; set; } = "pregacao";
     public int ClipCount { get; set; } = 5;
-    public int MinDuration { get; set; } = 30;
-    public int MaxDuration { get; set; } = 75;
+    public const int AutomaticMinDuration = 60;
+    public const int AutomaticMaxDuration = 75;
+    public int MinDuration { get; set; } = AutomaticMinDuration;
+    public int MaxDuration { get; set; } = AutomaticMaxDuration;
     public string WhisperModel { get; set; } = "base";
     public string? Topic { get; set; }
     public bool DeleteSourceAfterProcessing { get; set; }
@@ -47,11 +49,12 @@ public sealed class ProjectOptions
     {
         ContentType = f["contentType"].FirstOrDefault() ?? "pregacao",
         ClipCount = int.TryParse(f["clipCount"], out var count) ? Math.Clamp(count, 1, 20) : 5,
-        MinDuration = int.TryParse(f["minDuration"], out var min) ? Math.Clamp(min, 10, 300) : 30,
-        MaxDuration = int.TryParse(f["maxDuration"], out var max) ? Math.Clamp(max, 15, 600) : 75,
+        MinDuration = AutomaticMinDuration,
+        MaxDuration = AutomaticMaxDuration,
         WhisperModel = f["whisperModel"].FirstOrDefault() ?? "base",
         Topic = f["topic"].FirstOrDefault()
     };
+    public void ApplyAutomaticDuration() { MinDuration = AutomaticMinDuration; MaxDuration = AutomaticMaxDuration; }
 }
 
 public sealed class TranscriptSegment { public double Start { get; set; } public double End { get; set; } public string Text { get; set; } = ""; public List<TranscriptWord> Words { get; set; } = []; }
