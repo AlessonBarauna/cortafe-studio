@@ -41,4 +41,25 @@ public sealed class RenderFilterFactoryTests
         Assert.Contains("afade=t=in", filter);
         Assert.Contains("afade=t=out:st=59.82", filter);
     }
+
+    [Fact]
+    public void Framing_ComRastreamento_InterpolaMovimentoAoLongoDoTempo()
+    {
+        var clip = new ClipCandidate
+        {
+            FramingTrack =
+            [
+                new FramingKeyframe { Time = 0, X = .3 },
+                new FramingKeyframe { Time = 2, X = .7 },
+                new FramingKeyframe { Time = 4, X = .5 }
+            ]
+        };
+
+        var filter = RenderFilterFactory.Framing(clip);
+
+        Assert.Contains("if(lte(t\\,2)\\,0.3+(0.7-0.3)*(t-0)/2", filter);
+        Assert.Contains("lte(t\\,4)", filter);
+        Assert.Contains("*(t-2)/2", filter);
+        Assert.Contains("iw*(", filter);
+    }
 }
