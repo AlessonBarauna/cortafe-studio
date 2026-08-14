@@ -14,11 +14,12 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         var transcriptFile = Path.Combine(dir, "transcript.json");
         if (p.Transcript.Count == 0 && File.Exists(transcriptFile))
             p.Transcript = JsonSerializer.Deserialize<List<TranscriptSegment>>(await File.ReadAllTextAsync(transcriptFile, ct), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
-        if (p.SourceKind == SourceKind.YouTube && p.Transcript.Count == 0)
+        if (p.SourceKind == SourceKind.YouTube && (p.Transcript.Count == 0 || p.Duration <= 0 || p.Name == "Vídeo do YouTube"))
         {
             await Stage(p, ProjectStatus.Acquiring, 8, "Consultando duração e legendas do YouTube");
-            p.Duration = await ProbeYouTubeDuration(p.Source, ct);
-            await TryLoadYouTubeCaptionsAsync(p, allowAutomatic: true, ct);
+            var metadata = await ProbeYouTubeMetadata(p.Source, ct); p.Duration = metadata.Duration;
+            if (p.Name == "Vídeo do YouTube" && !string.IsNullOrWhiteSpace(metadata.Title)) p.Name = metadata.Title;
+            if (p.Transcript.Count == 0) await TryLoadYouTubeCaptionsAsync(p, allowAutomatic: true, ct);
         }
         var existingMedia = !string.IsNullOrWhiteSpace(p.LocalMedia) ? Path.Combine(dir, p.LocalMedia) : null;
         if (p.SourceKind == SourceKind.YouTube && (existingMedia is null || !File.Exists(existingMedia)))
@@ -92,14 +93,16 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         var output = await tools.CaptureAsync(tools.Find("ffprobe"), ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", media], Path.GetDirectoryName(media), ct);
         return double.TryParse(output, NumberStyles.Float, CultureInfo.InvariantCulture, out var duration) ? duration : 0;
     }
-    private async Task<double> ProbeYouTubeDuration(string url, CancellationToken ct)
+    private async Task<(double Duration, string? Title)> ProbeYouTubeMetadata(string url, CancellationToken ct)
     {
         try
         {
             var output = await tools.CaptureAsync(tools.Find("yt-dlp"), YouTubeAcquisition.MetadataArguments(tools.YouTubeArguments(), url), tools.Root, ct);
-            return double.TryParse(output.Split('\n').LastOrDefault()?.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var duration) ? duration : 0;
+            var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var duration = lines.Length > 0 && double.TryParse(lines[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0;
+            return (duration, lines.Length > 1 ? lines[1] : null);
         }
-        catch { return 0; }
+        catch { return (0, null); }
     }
 
     private static List<ClipCandidate> BuildCandidates(List<TranscriptSegment> segments, ProjectOptions options)
