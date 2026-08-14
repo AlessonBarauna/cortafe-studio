@@ -34,7 +34,7 @@
     <form id="projectForm" class="row g-4">
       <div class="col-xl-8"><div class="source-panel">
         <div class="source-tabs" role="tablist"><button type="button" class="active" data-source="url">Link do YouTube</button><button type="button" data-source="upload">Arquivo do computador</button></div>
-        <div id="urlSource" class="source-body"><label class="form-label">Cole o endereço do vídeo</label><div class="url-field"><span>▶</span><input class="form-control" name="url" type="url" placeholder="https://youtube.com/watch?v=..."></div><small>Use conteúdo próprio ou autorizado. O arquivo temporário pode ser apagado depois.</small></div>
+        <div id="urlSource" class="source-body"><div class="d-flex justify-content-between align-items-center"><label class="form-label">Cole um ou vários links</label><span class="badge rounded-pill text-bg-warning">LOTE · ATÉ 20</span></div><div class="url-field align-items-start"><span class="mt-2">▶</span><textarea class="form-control" name="url" rows="4" placeholder="Um link do YouTube por linha"></textarea></div><small>Um link cria um projeto. Várias linhas entram juntas na fila local, sem custo por uso.</small></div>
         <div id="uploadSource" class="source-body d-none"><label id="dropZone" class="drop-zone"><input name="file" type="file" accept="video/*,audio/*" hidden><span class="upload-icon">↑</span><strong>Arraste seu vídeo aqui</strong><small>MP4, MOV, MKV, WebM, MP3 ou WAV</small></label></div>
       </div></div>
       <div class="col-xl-4"><aside class="settings-panel"><span class="panel-number">01</span><h3>Direção do corte</h3>

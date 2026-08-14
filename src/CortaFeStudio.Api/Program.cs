@@ -74,6 +74,22 @@ api.MapPost("/projects/url", async (UrlProjectRequest request, ProjectStore stor
     return Results.Accepted($"/api/projects/{project.Id}", project);
 });
 
+api.MapPost("/projects/url-batch", async (UrlBatchProjectRequest request, ProjectStore store, ProjectQueue queue) =>
+{
+    var urls = request.Urls.Where(url => !string.IsNullOrWhiteSpace(url)).Distinct().ToList();
+    if (urls.Count == 0) return Results.BadRequest(new { error = "Informe pelo menos um link do YouTube." });
+    if (urls.Count > 20) return Results.BadRequest(new { error = "Envie no máximo 20 links por lote." });
+    if (urls.Any(url => !IsYouTubeUrl(url))) return Results.BadRequest(new { error = "O lote contém um link que não pertence ao YouTube." });
+    var projects = new List<VideoProject>();
+    for (var index = 0; index < urls.Count; index++)
+    {
+        var name = string.IsNullOrWhiteSpace(request.Name) ? null : $"{request.Name} · {index + 1:00}";
+        var project = await store.CreateAsync(name, SourceKind.YouTube, urls[index], request.Options);
+        await queue.EnqueueAsync(project.Id); projects.Add(project);
+    }
+    return Results.Accepted("/api/projects", projects);
+});
+
 api.MapPost("/projects/upload", async (HttpRequest request, ProjectStore store, ProjectQueue queue) =>
 {
     if (!request.HasFormContentType) return Results.BadRequest(new { error = "Envie um formulário com um arquivo." });
@@ -132,8 +148,10 @@ api.MapPut("/projects/{id}/clips/{clipId}", async (string id, string clipId, Cli
         clip.CoverPosition = update.CoverPosition ?? clip.CoverPosition;
         clip.CoverTimestamp = update.CoverTimestamp ?? clip.CoverTimestamp;
         clip.EditedTranscript = update.EditedTranscript?.Trim() ?? clip.EditedTranscript;
+        if (update.CropX is { } cropX && Math.Abs(cropX - clip.CropX) > .001) clip.FramingTrack.Clear();
         clip.CropX = Math.Clamp(update.CropX ?? clip.CropX, 0, 1);
         clip.LayoutMode = update.LayoutMode ?? clip.LayoutMode;
+        if (update.OutputPreset is "vertical" or "portrait" or "square" or "landscape") clip.OutputPreset = update.OutputPreset;
     });
     return updated is null ? Results.NotFound() : Results.Ok(updated);
 });
@@ -246,6 +264,13 @@ api.MapGet("/projects/{id}/exports/clips.zip", async (string id, ProjectStore st
     try { var file = await exports.CreateZipAsync(project, ct); return Results.File(file, "application/zip", $"{project.Name}-cortes.zip", enableRangeProcessing: true); }
     catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
+api.MapGet("/projects/{id}/exports/project.json", (string id, ProjectStore store) =>
+{
+    var project = store.Get(id); if (project is null) return Results.NotFound();
+    var options = new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+    return Results.File(JsonSerializer.SerializeToUtf8Bytes(project, options), "application/json", $"cortafe-{project.Id}.json");
+});
 
 api.MapGet("/social/status", (SocialService social) => social.Status());
 api.MapGet("/social/history", (SocialService social) => social.History());
@@ -287,6 +312,8 @@ static string GetContentType(string path) => Path.GetExtension(path).ToLowerInva
     ".mp4" => "video/mp4", ".webm" => "video/webm", ".jpg" or ".jpeg" => "image/jpeg",
     ".png" => "image/png", ".json" => "application/json", _ => "application/octet-stream"
 };
+static bool IsYouTubeUrl(string url) => Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+    new[] { "youtube.com", "www.youtube.com", "youtu.be", "m.youtube.com" }.Contains(uri.Host.ToLowerInvariant());
 public record PinRequest(string Pin);
 public record BackupRequest(string Password);
 

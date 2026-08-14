@@ -295,7 +295,8 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
     private static string BuildAss(List<TranscriptSegment> segments, ClipCandidate clip)
     {
         var style = clip.SubtitleStyle switch { "clean" => "Style: Impacto,Arial,58,&H00FFFFFF,&H00FFFFFF,&H00101010,&H70000000,-1,0,0,0,100,100,0,0,1,3,0,2,110,110,250,1", "bold" => "Style: Impacto,Arial Black,76,&H00FFFFFF,&H0000B7FF,&H00120B22,&H80000000,-1,0,0,0,100,100,0,0,1,7,3,5,80,80,280,1", _ => "Style: Impacto,Arial,68,&H00FFFFFF,&H0000B7FF,&H00120B22,&H80000000,-1,0,0,0,100,100,0,0,1,6,2,2,90,90,310,1" };
-        var sb = new StringBuilder($"[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\nWrapStyle: 2\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\n{style}\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n");
+        var (width, height) = RenderFilterFactory.Dimensions(clip.OutputPreset);
+        var sb = new StringBuilder($"[Script Info]\nScriptType: v4.00+\nPlayResX: {width}\nPlayResY: {height}\nWrapStyle: 2\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\n{style}\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n");
         var words = segments.SelectMany(s => s.Words).Where(w => w.End >= clip.Start && w.Start <= clip.End).OrderBy(w => w.Start).ToList();
         if (!string.IsNullOrWhiteSpace(clip.EditedTranscript) && words.Count > 0)
         {

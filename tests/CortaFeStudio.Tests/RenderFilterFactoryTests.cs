@@ -42,6 +42,22 @@ public sealed class RenderFilterFactoryTests
         Assert.Contains("afade=t=out:st=59.82", filter);
     }
 
+    [Theory]
+    [InlineData("vertical", 1080, 1920)]
+    [InlineData("portrait", 1080, 1350)]
+    [InlineData("square", 1080, 1080)]
+    [InlineData("landscape", 1920, 1080)]
+    public void Dimensions_ResolvePresetProfissional(string preset, int width, int height) =>
+        Assert.Equal((width, height), RenderFilterFactory.Dimensions(preset));
+
+    [Fact]
+    public void Framing_Horizontal_UsaResolucaoCorreta()
+    {
+        var filter = RenderFilterFactory.Framing(new ClipCandidate { OutputPreset = "landscape" });
+        Assert.Contains("scale=1920:1080", filter);
+        Assert.Contains("crop=1920:1080", filter);
+    }
+
     [Fact]
     public void Framing_ComRastreamento_InterpolaMovimentoAoLongoDoTempo()
     {
