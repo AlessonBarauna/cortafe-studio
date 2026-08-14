@@ -8,13 +8,14 @@ clipCard = function (project, clip, index) {
     <div class="editor-grid mt-3">
       <label>Foco do vídeo<select class="form-select" name="cropFocus">${option('top', clip.cropFocus, 'Superior')}${option('center', clip.cropFocus || 'center', 'Central')}${option('bottom', clip.cropFocus, 'Inferior')}</select></label>
       <label>Composição<select class="form-select" name="layoutMode">${option('fill', clip.layoutMode || 'fill', 'Preencher 9:16')}${option('blur', clip.layoutMode, 'Fundo desfocado')}</select></label>
+      <label>Formato de saída<select class="form-select" name="outputPreset">${option('vertical', clip.outputPreset || 'vertical', 'Vertical · 1080×1920')}${option('portrait', clip.outputPreset, 'Feed retrato · 1080×1350')}${option('square', clip.outputPreset, 'Quadrado · 1080×1080')}${option('landscape', clip.outputPreset, 'Horizontal · 1920×1080')}</select></label>
       <label>Posição horizontal<input class="form-range" name="cropX" type="range" min="0" max="1" step=".01" value="${clip.cropX ?? .5}"></label>
       <label>Estilo da legenda<select class="form-select" name="subtitleStyle">${option('impact', clip.subtitleStyle || 'impact', 'Impacto')}${option('clean', clip.subtitleStyle, 'Limpa')}${option('bold', clip.subtitleStyle, 'Palco')}</select></label>
       <label>Posição na capa<select class="form-select" name="coverPosition">${option('top', clip.coverPosition, 'Superior')}${option('center', clip.coverPosition, 'Centro')}${option('bottom', clip.coverPosition || 'bottom', 'Inferior')}</select></label>
       <label>Cor de destaque<input class="form-control form-control-color" name="coverAccent" type="color" value="${escapeHtml(clip.coverAccent || '#F0B44D')}"></label>
       <label>Frame da capa (segundos)<input class="form-control" name="coverTimestamp" type="number" min="${clip.start}" max="${clip.end}" step=".1" value="${timestamp}"></label>
     </div>
-    <div class="d-flex gap-2 mt-3"><button type="button" class="btn btn-sm btn-outline-warning" onclick="refreshCover('${project.id}','${clip.id}')">Atualizar capa</button><button type="button" class="btn btn-sm btn-outline-light" onclick="analyzeFraming('${project.id}','${clip.id}')">Detectar rosto</button></div>
+    <div class="d-flex gap-2 mt-3 flex-wrap"><button type="button" class="btn btn-sm btn-outline-warning" onclick="refreshCover('${project.id}','${clip.id}')">Atualizar capa</button><button type="button" class="btn btn-sm btn-outline-light" onclick="analyzeFraming('${project.id}','${clip.id}')">Detectar rosto</button>${index === 0 ? `<a class="btn btn-sm btn-outline-light" href="/api/projects/${project.id}/exports/project.json" download>Exportar projeto JSON</a>` : ''}</div>
   </details>`;
   return clipCardWithEditorial(project, clip, index).replace('<div class="d-flex gap-2 mt-3"><button class="btn btn-outline-light flex-fill" data-save>', controls + '<div class="d-flex gap-2 mt-3"><button class="btn btn-outline-light flex-fill" data-save>');
 };
@@ -26,7 +27,7 @@ saveClip = async function (project, card) {
     start: +value('start'), end: +value('end'), title: value('title'), coverText: value('coverText'),
     caption: value('caption'), approved: true, cropFocus: value('cropFocus'),
     subtitleStyle: value('subtitleStyle'), coverAccent: value('coverAccent'),
-    coverPosition: value('coverPosition'), coverTimestamp: +value('coverTimestamp'), cropX: +value('cropX'), layoutMode: value('layoutMode')
+    coverPosition: value('coverPosition'), coverTimestamp: +value('coverTimestamp'), cropX: +value('cropX'), layoutMode: value('layoutMode'), outputPreset: value('outputPreset')
   };
   await api(`/api/projects/${project.id}/clips/${clip.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   Object.assign(clip, body);

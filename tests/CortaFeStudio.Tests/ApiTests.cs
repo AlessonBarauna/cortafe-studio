@@ -22,6 +22,20 @@ public sealed class ApiTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
+    public async Task ProjetoUrlEmLote_RejeitaQuandoUmDominioNaoForPermitido()
+    {
+        var response = await _client.PostAsJsonAsync("/api/projects/url-batch", new
+        {
+            urls = new[] { "https://youtube.com/watch?v=abc", "https://example.com/video" }
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ExportacaoJson_DeProjetoInexistente_RetornaNaoEncontrado() =>
+        Assert.Equal(HttpStatusCode.NotFound, (await _client.GetAsync("/api/projects/inexistente/exports/project.json")).StatusCode);
+
+    [Fact]
     public async Task Favicon_PossuiRotaDeCompatibilidade()
     {
         using var noRedirect = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
