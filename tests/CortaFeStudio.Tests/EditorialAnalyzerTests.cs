@@ -48,6 +48,46 @@ public sealed class EditorialAnalyzerTests : IDisposable
         Assert.Equal(clip.ScoreBreakdown.Total, clip.Score);
     }
 
+    [Fact]
+    public void Analyze_AplicaPenalidadeParaFalaDeTransicao()
+    {
+        var analyzer = CreateAnalyzer();
+
+        var segments = Segments(
+            "Agora vamos continuar, presta atenção no que Deus faz com o coração?",
+            "A fé muda nossa caminhada porque a palavra produz confiança.",
+            "Por isso confie em Jesus e dê hoje o próximo passo.");
+
+        var clips = analyzer.Analyze(
+            segments,
+            new ProjectOptions
+            {
+                MinDuration = 10,
+                MaxDuration = 25,
+                ClipCount = 1
+            });
+
+        var clip = Assert.Single(clips);
+
+        Assert.StartsWith(
+            "Agora vamos continuar",
+            clip.HookSentence,
+            StringComparison.OrdinalIgnoreCase);
+
+        Assert.True(
+            clip.ScoreBreakdown.OpeningAdjustment < 0);
+
+        Assert.Contains(
+            clip.Reasons,
+            reason => reason.Contains(
+                "fala de transição",
+                StringComparison.OrdinalIgnoreCase));
+
+        Assert.Equal(
+            clip.ScoreBreakdown.Total,
+            clip.Score);
+    }
+
     private EditorialAnalyzer CreateAnalyzer() => new(new EditorialLearningService(new TestEnvironment(_root)));
     private static List<TranscriptSegment> Segments(params string[] texts) => texts.Select((text, index) => new TranscriptSegment { Start = index * 5, End = index * 5 + 4.8, Text = text }).ToList();
     public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
