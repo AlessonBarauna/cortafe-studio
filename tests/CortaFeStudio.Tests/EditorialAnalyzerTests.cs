@@ -92,7 +92,9 @@ public sealed class EditorialAnalyzerTests : IDisposable
     new(
         new EditorialLearningService(
             new TestEnvironment(_root)),
-        new EditorialScoringService());
+        new EditorialScoringService(),
+        new EditorialCandidateSelector());
+        
     private static List<TranscriptSegment> Segments(params string[] texts) => texts.Select((text, index) => new TranscriptSegment { Start = index * 5, End = index * 5 + 4.8, Text = text }).ToList();
     public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
     private sealed class TestEnvironment(string root) : IWebHostEnvironment
