@@ -14,6 +14,7 @@ builder.Services.AddSingleton<ProjectStore>();
 builder.Services.AddSingleton<ToolService>();
 builder.Services.AddSingleton<ToolUpdateService>();
 builder.Services.AddSingleton<MediaPipeline>();
+builder.Services.AddSingleton<EditorialScoringService>();
 builder.Services.AddSingleton<EditorialAnalyzer>();
 builder.Services.AddSingleton<LongVideoEditorialAnalyzer>();
 builder.Services.AddSingleton<EditorialLearningService>();
