@@ -6,7 +6,8 @@ namespace CortaFeStudio.Api.Services;
 
 public sealed class EditorialAnalyzer(
     EditorialLearningService learning,
-    EditorialScoringService scoring)
+    EditorialScoringService scoring,
+    EditorialCandidateSelector selector)
 {
     private static readonly string[] Spiritual =
     [
@@ -94,54 +95,11 @@ public sealed class EditorialAnalyzer(
                 pool.Add(clip);
         }
 
-        if (!string.IsNullOrWhiteSpace(options.Topic))
-        {
-            var focused = pool
-                .Where(clip =>
-                    clip.Reasons.Any(reason =>
-                        reason.StartsWith(
-                            "relacionado ao tema")))
-                .ToList();
-
-            if (focused.Count > 0)
-                pool = focused;
-        }
-
-        var targetPool =
-            Math.Clamp(
-                options.ClipCount * 4,
-                options.ClipCount,
-                40);
-
-        var diverse =
-            new List<ClipCandidate>();
-
-        foreach (var clip in pool
-                     .OrderByDescending(candidate =>
-                         candidate.Score)
-                     .Take(targetPool * 3))
-        {
-            if (diverse.Any(candidate =>
-                    Overlap(candidate, clip) > .24 ||
-                    Similar(
-                        candidate.Transcript,
-                        clip.Transcript) > .72))
-            {
-                continue;
-            }
-
-            diverse.Add(clip);
-
-            if (diverse.Count >= targetPool)
-                break;
-        }
+        var selected =
+            selector.Select(pool, options);
 
         return RefineWordBoundaries(
-            diverse
-                .Take(options.ClipCount)
-                .OrderByDescending(clip =>
-                    clip.Score)
-                .ToList(),
+            selected,
             segments,
             options);
     }
@@ -210,7 +168,7 @@ public sealed class EditorialAnalyzer(
         return anchor;
     }
 
-    private static List<ClipCandidate> AnalyzeWorship(
+    private List<ClipCandidate> AnalyzeWorship(
         List<TranscriptSegment> segments,
         ProjectOptions options)
     {
@@ -292,7 +250,7 @@ public sealed class EditorialAnalyzer(
         }
 
         return RefineWordBoundaries(
-            SelectDiverse(
+            selector.SelectWorship(
                 pool,
                 options.ClipCount),
             segments,
@@ -396,38 +354,6 @@ public sealed class EditorialAnalyzer(
             "gente";
     }
 
-    private static List<ClipCandidate> SelectDiverse(
-        List<ClipCandidate> pool,
-        int count)
-    {
-        var result =
-            new List<ClipCandidate>();
-
-        foreach (var candidate in pool
-                     .OrderByDescending(
-                         clip => clip.Score))
-        {
-            if (result.Any(existing =>
-                    Overlap(
-                        existing,
-                        candidate) > .22))
-            {
-                continue;
-            }
-
-            result.Add(candidate);
-
-            if (result.Count == count)
-                break;
-        }
-
-        return result
-            .OrderByDescending(
-                candidate =>
-                    candidate.Score)
-            .ToList();
-    }
-
     private static List<TranscriptSegment> Normalize(
         List<TranscriptSegment> source) =>
         source
@@ -453,40 +379,6 @@ public sealed class EditorialAnalyzer(
         value.TrimEnd().EndsWith('?') ||
         value.TrimEnd().EndsWith('!');
 
-    private static double Overlap(
-        ClipCandidate first,
-        ClipCandidate second) =>
-        Math.Max(
-            0,
-            Math.Min(first.End, second.End) -
-            Math.Max(first.Start, second.Start)) /
-        Math.Min(
-            first.End - first.Start,
-            second.End - second.Start);
-
-    private static double Similar(
-        string first,
-        string second)
-    {
-        var firstTokens =
-            Tokenize(first).ToHashSet();
-
-        var secondTokens =
-            Tokenize(second).ToHashSet();
-
-        if (firstTokens.Count == 0 ||
-            secondTokens.Count == 0)
-        {
-            return 0;
-        }
-
-        return firstTokens
-                   .Intersect(secondTokens)
-                   .Count() /
-               (double)firstTokens
-                   .Union(secondTokens)
-                   .Count();
-    }
 
     private static List<string> Tokenize(string value) =>
         value
