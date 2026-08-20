@@ -189,8 +189,10 @@ public sealed class EditorialRankingScenarioTests : IDisposable
     }
 
     private EditorialAnalyzer CreateAnalyzer() =>
-        new(new EditorialLearningService(
-            new TestEnvironment(_root)));
+        new(
+            new EditorialLearningService(
+                new TestEnvironment(_root)),
+            new EditorialScoringService());
 
     private static List<TranscriptSegment> Segments(
         params string[] texts) =>
