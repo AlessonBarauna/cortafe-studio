@@ -97,14 +97,36 @@ public sealed class FramingKeyframe
 }
 public sealed class EditorialScoreBreakdown
 {
+    public double Base { get; set; } = 38;
     public double Hook { get; set; }
-    public double Clarity { get; set; }
-    public double Emotion { get; set; }
-    public double PracticalValue { get; set; }
+    public double OpeningAdjustment { get; set; }
     public double Completion { get; set; }
-    public double Shareability { get; set; }
+    public double Contrast { get; set; }
+    public double Conclusion { get; set; }
+    public double Structure { get; set; }
+    public double ContextPenalty { get; set; }
+    public double ProfileRelevance { get; set; }
+    public double TopicRelevance { get; set; }
+    public double LengthAdjustment { get; set; }
     public double Learning { get; set; }
-    public double Total => Math.Round(Math.Clamp(Hook + Clarity + Emotion + PracticalValue + Completion + Shareability + Learning, 0, 99), 1);
+
+    public double Total => Math.Round(
+        Math.Clamp(
+            Base +
+            Hook +
+            OpeningAdjustment +
+            Completion +
+            Contrast +
+            Conclusion +
+            Structure +
+            ContextPenalty +
+            ProfileRelevance +
+            TopicRelevance +
+            LengthAdjustment +
+            Learning,
+            0,
+            99),
+        1);
 }
 
 public sealed class UrlProjectRequest

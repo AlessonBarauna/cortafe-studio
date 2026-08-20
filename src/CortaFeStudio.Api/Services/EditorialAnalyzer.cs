@@ -51,46 +51,181 @@ public sealed class EditorialAnalyzer(EditorialLearningService learning)
         return RefineWordBoundaries(diverse.Take(options.ClipCount).OrderByDescending(c => c.Score).ToList(), segments, options);
     }
 
-    private static ClipCandidate Score(List<TranscriptSegment> parts, string text, ProjectOptions options)
+    private static ClipCandidate Score(
+    List<TranscriptSegment> parts,
+    string text,
+    ProjectOptions options)
+{
+    var lower = text.ToLowerInvariant();
+    var opening = Clean(parts[0].Text).ToLowerInvariant();
+    var ending = Clean(parts[^1].Text);
+
+    var reasons = new List<string>();
+    var breakdown = new EditorialScoreBreakdown();
+
+    var hooks = StrongHooks.Count(opening.Contains);
+
+    if (hooks > 0)
     {
-        var lower = text.ToLowerInvariant(); var opening = Clean(parts[0].Text).ToLowerInvariant(); var ending = Clean(parts[^1].Text);
-        double score = 38; var reasons = new List<string>();
-        var hooks = StrongHooks.Count(opening.Contains); if (hooks > 0) { score += Math.Min(22, hooks * 7); reasons.Add("gancho direto ao público"); }
-        var meaningfulQuestion = opening.Contains('?') && opening.Length >= 18 && !GenericOpenings.Any(opening.StartsWith);
-        if (meaningfulQuestion || StrongHooks.Any(opening.Contains)) { score += 11; reasons.Add("abertura forte"); }
-        if (TransitionOpenings.Any(opening.StartsWith)) { score -= 32; reasons.Add("penalizado: fala de transição"); }
-        if (IncompleteOpenings.Any(opening.StartsWith)) { score -= 18; reasons.Add("penalizado: início dependente"); }
-        if (GenericOpenings.Any(opening.StartsWith)) { score -= 25; reasons.Add("penalizado: abertura genérica"); }
-        if (EndsThought(ending)) { score += 10; reasons.Add("conclusão completa"); } else score -= 10;
-        var contrasts = new[] { " mas ", " porém ", " não é ", " mesmo em ", " ao contrário", " enquanto " }.Count(lower.Contains);
-        if (contrasts > 0) { score += Math.Min(16, contrasts * 5); reasons.Add("contraste memorável"); }
-        var conclusion = Conclusions.Count(lower.Contains); if (conclusion > 0) { score += Math.Min(12, conclusion * 4); reasons.Add("desenvolve uma conclusão"); }
-        var structure = StructureScore(parts, lower, out var structureReason); score += structure; if (structureReason is not null) reasons.Insert(0, structureReason);
-        if (ContextDependence.Any(opening.Contains)) { score -= 18; reasons.Add("penalizado: depende do contexto anterior"); }
-        var profile = EditorialProfiles.Get(options.ContentType); var profileWords = profile.Signals;
-        var profileHits = profileWords.Count(lower.Contains); if (profileHits > 1) { score += Math.Min(15, profileHits * 2.5); reasons.Add($"relevante para {ProfileLabel(options.ContentType)}"); }
-        if (!string.IsNullOrWhiteSpace(options.Topic))
+        breakdown.Hook += Math.Min(22, hooks * 7);
+        reasons.Add("gancho direto ao público");
+    }
+
+    var meaningfulQuestion =
+        opening.Contains('?') &&
+        opening.Length >= 18 &&
+        !GenericOpenings.Any(opening.StartsWith);
+
+    if (meaningfulQuestion || StrongHooks.Any(opening.Contains))
+    {
+        breakdown.OpeningAdjustment += 11;
+        reasons.Add("abertura forte");
+    }
+
+    if (TransitionOpenings.Any(opening.StartsWith))
+    {
+        breakdown.OpeningAdjustment -= 32;
+        reasons.Add("penalizado: fala de transição");
+    }
+
+    if (IncompleteOpenings.Any(opening.StartsWith))
+    {
+        breakdown.OpeningAdjustment -= 18;
+        reasons.Add("penalizado: início dependente");
+    }
+
+    if (GenericOpenings.Any(opening.StartsWith))
+    {
+        breakdown.OpeningAdjustment -= 25;
+        reasons.Add("penalizado: abertura genérica");
+    }
+
+    if (EndsThought(ending))
+    {
+        breakdown.Completion += 10;
+        reasons.Add("conclusão completa");
+    }
+    else
+    {
+        breakdown.Completion -= 10;
+    }
+
+    var contrasts = new[]
+    {
+        " mas ",
+        " porém ",
+        " não é ",
+        " mesmo em ",
+        " ao contrário",
+        " enquanto "
+    }.Count(lower.Contains);
+
+    if (contrasts > 0)
+    {
+        breakdown.Contrast += Math.Min(16, contrasts * 5);
+        reasons.Add("contraste memorável");
+    }
+
+    var conclusion = Conclusions.Count(lower.Contains);
+
+    if (conclusion > 0)
+    {
+        breakdown.Conclusion += Math.Min(12, conclusion * 4);
+        reasons.Add("desenvolve uma conclusão");
+    }
+
+    var structure = StructureScore(
+        parts,
+        lower,
+        out var structureReason);
+
+    breakdown.Structure = structure;
+
+    if (structureReason is not null)
+        reasons.Insert(0, structureReason);
+
+    if (ContextDependence.Any(opening.Contains))
+    {
+        breakdown.ContextPenalty -= 18;
+        reasons.Add("penalizado: depende do contexto anterior");
+    }
+
+    var profile = EditorialProfiles.Get(options.ContentType);
+
+    var profileHits = profile.Signals.Count(lower.Contains);
+
+    if (profileHits > 1)
+    {
+        breakdown.ProfileRelevance +=
+            Math.Min(15, profileHits * 2.5);
+
+        reasons.Add(
+            $"relevante para {ProfileLabel(options.ContentType)}");
+    }
+
+    if (!string.IsNullOrWhiteSpace(options.Topic))
+    {
+        var foldedText = Fold(text);
+
+        var terms = Tokenize(Fold(options.Topic))
+            .Where(term => term.Length > 2)
+            .ToArray();
+
+        var hits = terms.Count(foldedText.Contains);
+
+        if (hits > 0)
         {
-            var foldedText = Fold(text); var terms = Tokenize(Fold(options.Topic)).Where(t => t.Length > 2).ToArray(); var hits = terms.Count(foldedText.Contains);
-            if (hits > 0) { score += Math.Min(28, hits * 10); reasons.Add($"relacionado ao tema “{options.Topic}”"); } else score -= 12;
+            breakdown.TopicRelevance +=
+                Math.Min(28, hits * 10);
+
+            reasons.Add(
+                $"relacionado ao tema “{options.Topic}”");
         }
-        var wordCount = Tokenize(text).Count; if (wordCount is >= 65 and <= 190) score += 7; else if (wordCount < 35) score -= 18;
-        var title = MakeTitle(text, options.ContentType); var breakdown = BuildBreakdown(opening, ending, lower, profile);
-        return new ClipCandidate { Start = parts[0].Start, End = parts[^1].End, Score = breakdown.Total, ScoreBreakdown = breakdown, HookSentence = Clean(parts[0].Text), Transcript = text, Title = title, CoverText = string.Join(' ', title.ToUpperInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(6)), Caption = $"{title}. {profile.CaptionSuffix} ✨", Hashtags = profile.Hashtags.ToList(), EditorialProfile = options.ContentType, Reasons = reasons.Distinct().Take(4).ToList() };
-    }
-    private static EditorialScoreBreakdown BuildBreakdown(string opening, string ending, string text, EditorialProfileDefinition profile)
-    {
-        var hook = Math.Min(20, (StrongHooks.Any(opening.Contains) ? 14 : 5) + (opening.Contains('?') ? 6 : 0));
-        var dependent = TransitionOpenings.Any(opening.StartsWith) || IncompleteOpenings.Any(opening.StartsWith) || ContextDependence.Any(opening.Contains);
-        return new EditorialScoreBreakdown
+        else
         {
-            Hook = hook, Clarity = dependent ? 8 : 20,
-            Emotion = Math.Min(15, profile.Signals.Count(text.Contains) * 2 + (text.Contains('!') ? 5 : 2)),
-            PracticalValue = Math.Min(15, new[] { "faça", "comece", "aprenda", "passo", "prática", "como", "decida" }.Count(text.Contains) * 4 + 3),
-            Completion = EndsThought(ending) ? (Conclusions.Any(text.Contains) ? 15 : 9) : 2,
-            Shareability = Math.Min(15, new[] { " mas ", "verdade", "nunca", "sempre", "ninguém", "todo mundo" }.Count(text.Contains) * 3 + 4)
-        };
+            breakdown.TopicRelevance -= 12;
+        }
     }
+
+    var wordCount = Tokenize(text).Count;
+
+    if (wordCount is >= 65 and <= 190)
+    {
+        breakdown.LengthAdjustment += 7;
+    }
+    else if (wordCount < 35)
+    {
+        breakdown.LengthAdjustment -= 18;
+    }
+
+    var title = MakeTitle(text, options.ContentType);
+
+    return new ClipCandidate
+    {
+        Start = parts[0].Start,
+        End = parts[^1].End,
+        Score = breakdown.Total,
+        ScoreBreakdown = breakdown,
+        HookSentence = Clean(parts[0].Text),
+        Transcript = text,
+        Title = title,
+        CoverText = string.Join(
+            ' ',
+            title
+                .ToUpperInvariant()
+                .Split(
+                    ' ',
+                    StringSplitOptions.RemoveEmptyEntries)
+                .Take(6)),
+        Caption = $"{title}. {profile.CaptionSuffix} ✨",
+        Hashtags = profile.Hashtags.ToList(),
+        EditorialProfile = options.ContentType,
+        Reasons = reasons
+            .Distinct()
+            .Take(5)
+            .ToList()
+    };
+}
 
     private static List<TranscriptSegment> BuildWindow(List<TranscriptSegment> segments, int startIndex, ProjectOptions options)
     {
