@@ -73,7 +73,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         await Stage(p, ProjectStatus.Analyzing, 82, $"Preparando {p.Clips.Count} candidatos");
         await Parallel.ForEachAsync(p.Clips, new ParallelOptions { MaxDegreeOfParallelism = 2, CancellationToken = ct }, async (clip, token) =>
         {
-            await EnrichWithOllama(clip, p.Options.ContentType, token);
+            await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, token);
             await CreateCoverAsync(p, clip, token);
         });
         p.Status = ProjectStatus.Ready; p.Progress = 100; p.CompletedAt = DateTime.UtcNow; p.Stage = $"{p.Clips.Count} cortes prontos para revisar"; await store.SaveAsync(p);
@@ -193,23 +193,6 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         return string.Join(' ', title.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(6));
     }
 
-    private async Task EnrichWithOllama(ClipCandidate clip, string type, CancellationToken ct)
-    {
-        try
-        {
-            var prompt = $"Você é editor de conteúdo {type}. Responda SOMENTE JSON com title, coverText, caption e hashtags (array). Português do Brasil, título chamativo sem clickbait falso, capa até 6 palavras. Transcrição: {clip.Transcript}";
-            var payload = JsonSerializer.Serialize(new { model = "qwen2.5:3b", prompt, stream = false, format = "json" });
-            using var content = new StringContent(payload, Encoding.UTF8, "application/json"); using var response = await http.CreateClient().PostAsync("http://localhost:11434/api/generate", content, ct);
-            if (!response.IsSuccessStatusCode) return;
-            using var outer = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct)); var raw = outer.RootElement.GetProperty("response").GetString(); if (raw is null) return;
-            using var doc = JsonDocument.Parse(raw); var root = doc.RootElement;
-            clip.Title = root.TryGetProperty("title", out var title) ? title.GetString() ?? clip.Title : clip.Title;
-            clip.CoverText = root.TryGetProperty("coverText", out var cover) ? cover.GetString() ?? clip.CoverText : clip.CoverText;
-            clip.Caption = root.TryGetProperty("caption", out var caption) ? caption.GetString() ?? clip.Caption : clip.Caption;
-            if (root.TryGetProperty("hashtags", out var tags) && tags.ValueKind == JsonValueKind.Array) clip.Hashtags = tags.EnumerateArray().Select(x => x.GetString()).Where(x => x is not null).Cast<string>().ToList();
-        } catch { }
-    }
-
     private async Task CreateCoverAsync(VideoProject p, ClipCandidate clip, CancellationToken ct)
     {
         var dir = store.ProjectDirectory(p.Id); var cover = $"cover-{clip.Id}.jpg"; var timestamp = clip.CoverTimestamp ?? clip.Start + Math.Min(3, (clip.End - clip.Start) / 2);
@@ -261,7 +244,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         p.Options.ApplyAutomaticDuration();
         p.Status = ProjectStatus.Analyzing; p.Progress = 72; p.Stage = "Refazendo o ranking sem transcrever novamente"; await store.SaveAsync(p);
         p.Clips = editorial.Analyze(p.Transcript, p.Options);
-        foreach (var clip in p.Clips) { await EnrichWithOllama(clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
+        foreach (var clip in p.Clips) { await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
         await RenderAllAsync(p, ct);
         p.Status = ProjectStatus.Ready; p.Progress = 100; p.Stage = $"{p.Clips.Count} novos cortes renderizados"; await store.SaveAsync(p);
     }
@@ -272,7 +255,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         p.Options.ApplyAutomaticDuration();
         p.Status = ProjectStatus.Analyzing; p.Progress = 78; p.Stage = "Aplicando análise editorial"; await store.SaveAsync(p);
         p.Clips = editorial.Analyze(p.Transcript, p.Options);
-        foreach (var clip in p.Clips) { await EnrichWithOllama(clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
+        foreach (var clip in p.Clips) { await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
         if (render) await RenderAllAsync(p, ct);
         p.Status = ProjectStatus.Ready; p.Progress = 100; p.Stage = $"{p.Clips.Count} candidatos editoriais prontos"; await store.SaveAsync(p);
     }
