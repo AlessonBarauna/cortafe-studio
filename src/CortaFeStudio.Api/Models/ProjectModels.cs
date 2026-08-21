@@ -67,6 +67,7 @@ public sealed class ClipCandidate
     public double Score { get; set; }
     public string HookSentence { get; set; } = "";
     public EditorialScoreBreakdown ScoreBreakdown { get; set; } = new();
+    public SocialScoreBreakdown SocialScore { get; set; } = new();
     public string Transcript { get; set; } = "";
     public string Title { get; set; } = "Momento que merece ser ouvido";
     public string CoverText { get; set; } = "OUÇA ISSO";
@@ -94,6 +95,13 @@ public sealed class FramingKeyframe
 {
     public double Time { get; set; }
     public double X { get; set; } = .5;
+}
+public sealed class SocialScoreBreakdown
+{
+    public double Hook { get; set; }
+    public double Retention { get; set; }
+    public double Conclusion { get; set; }
+    public double Potential { get; set; }
 }
 public sealed class EditorialScoreBreakdown
 {
