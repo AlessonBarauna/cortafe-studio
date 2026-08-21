@@ -33,13 +33,22 @@ public sealed class RenderFilterFactoryTests
     }
 
     [Fact]
-    public void Audio_NormalizaVozEReduzRuidoComFades()
+    public void Audio_AplicaTratamentoProfissionalComCompressaoELimiter()
     {
         var filter = RenderFilterFactory.Audio(60);
-        Assert.Contains("afftdn=nf=-25", filter);
-        Assert.Contains("loudnorm=I=-16", filter);
+
+        Assert.Contains("highpass=f=70", filter);
+        Assert.Contains("lowpass=f=15000", filter);
+        Assert.Contains("afftdn=nf=-28", filter);
+        Assert.Contains("acompressor=threshold=0.125:ratio=2.5", filter);
+        Assert.Contains("loudnorm=I=-16:LRA=9:TP=-1.5", filter);
+        Assert.Contains("alimiter=limit=0.95", filter);
+        Assert.Contains("level=disabled", filter);
         Assert.Contains("afade=t=in", filter);
         Assert.Contains("afade=t=out:st=59.82", filter);
+
+        Assert.True(filter.IndexOf("acompressor", StringComparison.Ordinal) < filter.IndexOf("loudnorm", StringComparison.Ordinal));
+        Assert.True(filter.IndexOf("loudnorm", StringComparison.Ordinal) < filter.IndexOf("alimiter", StringComparison.Ordinal));
     }
 
     [Theory]
