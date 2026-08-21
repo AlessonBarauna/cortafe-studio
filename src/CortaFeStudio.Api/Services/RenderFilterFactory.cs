@@ -17,9 +17,29 @@ public static class RenderFilterFactory
     public static string Framing(ClipCandidate clip)
     {
         var (width, height) = Dimensions(clip.OutputPreset);
-        return clip.LayoutMode == "blur"
+        var baseFraming = clip.LayoutMode == "blur"
             ? $"split=2[bg][fg];[bg]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},gblur=sigma=34,eq=brightness=-0.18[back];[fg]scale={width}:-2[front];[back][front]overlay=(W-w)/2:(H-h)/2"
             : $"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}:{CropX(clip, width)}:{CropY(clip.CropFocus, height)}";
+
+        var moments = PunchInPlanner.Plan(clip);
+        return moments.Count == 0 ? baseFraming : $"{baseFraming},{PunchIn(moments, width, height)}";
+    }
+
+    public static string PunchIn(IReadOnlyList<PunchInMoment> moments, int width, int height)
+    {
+        if (moments.Count == 0) return "null";
+        var expression = "1";
+        foreach (var moment in moments.Take(3))
+        {
+            var start = Scalar(moment.Start);
+            var end = Scalar(moment.End);
+            var amount = Scalar(Math.Clamp(moment.Scale - 1, .02, .08));
+            var duration = Scalar(Math.Max(.2, moment.End - moment.Start));
+            expression += $"+if(between(t\\,{start}\\,{end})\\,{amount}*sin(PI*(t-{start})/{duration})\\,0)";
+        }
+
+        return $"scale=w='trunc(iw*({expression})/2)*2':h='trunc(ih*({expression})/2)*2':eval=frame," +
+               $"crop={width}:{height}:(iw-{width})/2:(ih-{height})/2";
     }
 
     public static (int Width, int Height) Dimensions(string? preset) => preset switch
