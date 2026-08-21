@@ -16,10 +16,24 @@ socialCenter = async function () {
   </article>`).join('');
 };
 
+function publicationDescription(clip, caption) {
+  const tags = (clip?.hashtags || [])
+    .map(tag => String(tag || '').trim())
+    .filter(Boolean)
+    .slice(0, 7);
+
+  const cleanCaption = String(caption || '').trim();
+  if (!tags.length) return cleanCaption;
+
+  return `${cleanCaption}\n\n${tags.join(' ')}`.trim();
+}
+
 publishClip = async function (projectId, clipId, platform) {
   const card = document.querySelector(`[data-clip="${clipId}"]`);
   const title = card.querySelector('[name="title"]').value;
-  const description = card.querySelector('[name="caption"]').value;
+  const caption = card.querySelector('[name="caption"]').value;
+  const clip = current?.clips?.find(item => item.id === clipId);
+  const description = publicationDescription(clip, caption);
   const privacy = platform === 'tikTok' ? 'private' : (prompt('Visibilidade: private, unlisted ou public', 'private') || 'private');
   const schedule = prompt('Agendar? Informe data e hora (ex.: 15/08/2026 19:30) ou deixe vazio para publicar agora:', '');
   let publishAt = null;
@@ -31,7 +45,11 @@ publishClip = async function (projectId, clipId, platform) {
   }
   try {
     toast(schedule ? 'Salvando agendamento…' : `Enviando para ${platform}…`);
-    const result = await api(`/api/projects/${projectId}/clips/${clipId}/publish`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ platform, title, description, privacy, publishAt }) });
+    const result = await api(`/api/projects/${projectId}/clips/${clipId}/publish`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform, title, description, privacy, publishAt })
+    });
     toast(result.status === 'scheduled' ? 'Publicação agendada' : 'Publicação concluída');
   } catch (error) { toast(error.message); }
 };
