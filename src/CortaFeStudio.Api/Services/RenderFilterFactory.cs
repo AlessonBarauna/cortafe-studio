@@ -5,7 +5,15 @@ namespace CortaFeStudio.Api.Services;
 
 public static class RenderFilterFactory
 {
-    public const string ProfessionalAudio = "highpass=f=70,lowpass=f=15000,afftdn=nf=-25,loudnorm=I=-16:LRA=11:TP=-1.5,afade=t=in:st=0:d=0.12";
+    public const string ProfessionalAudio =
+        "highpass=f=70," +
+        "lowpass=f=15000," +
+        "afftdn=nf=-28," +
+        "acompressor=threshold=0.125:ratio=2.5:attack=20:release=180:makeup=1.35," +
+        "loudnorm=I=-16:LRA=9:TP=-1.5," +
+        "alimiter=limit=0.95:attack=5:release=50:level=disabled," +
+        "afade=t=in:st=0:d=0.12";
+
     public static string Framing(ClipCandidate clip)
     {
         var (width, height) = Dimensions(clip.OutputPreset);
