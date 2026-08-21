@@ -17,7 +17,7 @@ public sealed class LongVideoEditorialAnalyzer(EditorialAnalyzer analyzer)
                 .OrderByDescending(clip => clip.Score)
                 .ToList();
 
-            RefineHooks(selected, transcript, options);
+            RefineAndScore(selected, transcript, options);
             return selected;
         }
 
@@ -58,7 +58,7 @@ public sealed class LongVideoEditorialAnalyzer(EditorialAnalyzer analyzer)
             .OrderByDescending(clip => clip.Score)
             .ToList();
 
-        RefineHooks(result, transcript, options);
+        RefineAndScore(result, transcript, options);
         return result;
     }
 
@@ -75,13 +75,16 @@ public sealed class LongVideoEditorialAnalyzer(EditorialAnalyzer analyzer)
         return chunks;
     }
 
-    private static void RefineHooks(
+    private static void RefineAndScore(
         IEnumerable<ClipCandidate> clips,
         IReadOnlyList<TranscriptSegment> transcript,
         ProjectOptions options)
     {
-        foreach (var clip in clips)
+        var materialized = clips as IList<ClipCandidate> ?? clips.ToList();
+        foreach (var clip in materialized)
             HookBoundaryRefiner.Refine(clip, transcript, options);
+
+        SocialScoreService.Apply(materialized, options);
     }
 
     private static ProjectOptions CopyOptions(ProjectOptions source, int clipCount) => new()
