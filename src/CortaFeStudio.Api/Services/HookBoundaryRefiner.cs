@@ -96,7 +96,10 @@ public static class HookBoundaryRefiner
         ProjectOptions options)
     {
         var current = segments
-            .Where(segment => segment.End >= clip.End - 1.2 && segment.Start <= clip.End + .3)
+            .Where(segment =>
+                segment.End >= clip.End - 1.2 &&
+                segment.End <= clip.End + .3 &&
+                segment.Start <= clip.End)
             .OrderBy(segment => segment.End)
             .LastOrDefault();
 
