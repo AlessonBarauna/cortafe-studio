@@ -101,7 +101,7 @@ public static class SubtitleFormatter
     {
         var folded = Fold(value)
             .Trim(' ', ',', '.', '?', '!', ':', ';', '-', '—', '"', '\'', '(', ')');
-        return folded.Length >= 3 && EmphasisWords.Contains(folded);
+        return EmphasisWords.Contains(folded);
     }
 
     private static string Escape(string value) =>
