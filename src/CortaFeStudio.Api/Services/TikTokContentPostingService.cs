@@ -41,12 +41,16 @@ public sealed class TikTokContentPostingService(IHttpClientFactory http)
 
     public async Task PublishAsync(
         string path,
+        double durationSeconds,
         string accessToken,
         PublishRequest request,
         PublicationRecord record,
         CancellationToken ct = default)
     {
         var creator = await CreatorInfoAsync(accessToken, ct);
+        if (creator.MaxVideoPostDurationSec > 0 && durationSeconds > creator.MaxVideoPostDurationSec + .1)
+            throw new InvalidOperationException($"Esta conta TikTok permite vídeos de até {creator.MaxVideoPostDurationSec} segundos.");
+
         var privacy = ResolvePrivacy(request.Privacy, creator.PrivacyLevelOptions);
         var size = new FileInfo(path).Length;
         var chunk = ChunkPlan(size);
@@ -124,7 +128,6 @@ public sealed class TikTokContentPostingService(IHttpClientFactory http)
 
         if (allowed.Contains(normalized, StringComparer.OrdinalIgnoreCase))
             return normalized;
-
         if (allowed.Contains("SELF_ONLY", StringComparer.OrdinalIgnoreCase))
             return "SELF_ONLY";
 
@@ -137,23 +140,17 @@ public sealed class TikTokContentPostingService(IHttpClientFactory http)
         if (videoSize < MinChunkSize) return (videoSize, 1);
 
         var chunkSize = Math.Min(PreferredChunkSize, MaxChunkSize);
-        var total = (int)(videoSize / chunkSize);
-        if (total == 0) total = 1;
+        var total = Math.Max(1, (int)(videoSize / chunkSize));
         if (total > 1000)
         {
             chunkSize = (long)Math.Ceiling(videoSize / 1000d);
             chunkSize = Math.Min(Math.Max(chunkSize, MinChunkSize), MaxChunkSize);
-            total = (int)(videoSize / chunkSize);
+            total = Math.Max(1, (int)(videoSize / chunkSize));
         }
-        return (chunkSize, Math.Max(1, total));
+        return (chunkSize, total);
     }
 
-    private async Task UploadChunksAsync(
-        string uploadUrl,
-        string path,
-        long chunkSize,
-        PublicationRecord record,
-        CancellationToken ct)
+    private async Task UploadChunksAsync(string uploadUrl, string path, long chunkSize, PublicationRecord record, CancellationToken ct)
     {
         var total = record.TotalBytes;
         await using var stream = File.OpenRead(path);
@@ -192,7 +189,6 @@ public sealed class TikTokContentPostingService(IHttpClientFactory http)
     {
         if (!response.IsSuccessStatusCode)
             throw new InvalidOperationException($"Não foi possível {action} no TikTok: {raw}");
-
         try
         {
             using var doc = JsonDocument.Parse(raw);
@@ -206,7 +202,6 @@ public sealed class TikTokContentPostingService(IHttpClientFactory http)
         }
         catch (JsonException)
         {
-            // O status HTTP já foi validado; algumas respostas de upload não possuem JSON.
         }
     }
 }
