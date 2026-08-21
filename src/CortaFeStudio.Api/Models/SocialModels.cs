@@ -15,6 +15,17 @@ public sealed class SocialCredential
 }
 public sealed record SocialConfigurationRequest(SocialPlatform Platform, string ClientId, string ClientSecret, string? PublicBaseUrl);
 public sealed record PublishRequest(SocialPlatform Platform, string Title, string Description, string Privacy = "private", DateTimeOffset? PublishAt = null);
+public sealed class TikTokCreatorInfo
+{
+    public string? Username { get; set; }
+    public string? Nickname { get; set; }
+    public string? AvatarUrl { get; set; }
+    public List<string> PrivacyLevelOptions { get; set; } = [];
+    public bool CommentDisabled { get; set; }
+    public bool DuetDisabled { get; set; }
+    public bool StitchDisabled { get; set; }
+    public int MaxVideoPostDurationSec { get; set; } = 180;
+}
 public sealed class PublicationRecord
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..12];
