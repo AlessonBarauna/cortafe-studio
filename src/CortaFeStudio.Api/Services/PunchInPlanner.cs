@@ -14,39 +14,30 @@ public static class PunchInPlanner
         "a verdade é", "presta atenção", "você precisa"
     ];
 
-    public static IReadOnlyList<PunchInMoment> Plan(
-        ClipCandidate clip,
-        IReadOnlyList<TranscriptSegment> transcript)
+    public static IReadOnlyList<PunchInMoment> Plan(ClipCandidate clip)
     {
         if (clip.EditorialProfile == "louvor") return [];
-
         var duration = clip.End - clip.Start;
-        if (duration < 18) return [];
+        if (duration < 18 || string.IsNullOrWhiteSpace(clip.Transcript)) return [];
 
-        var candidates = transcript
-            .Where(segment => segment.End >= clip.Start && segment.Start <= clip.End)
-            .Select(segment => new
-            {
-                Segment = segment,
-                Relative = Math.Max(0, segment.Start - clip.Start),
-                Score = ImpactScore(segment.Text)
-            })
-            .Where(item => item.Score >= 5 && item.Relative <= duration - 2)
-            .OrderByDescending(item => item.Score)
-            .ThenBy(item => item.Relative)
-            .ToList();
+        var words = clip.Transcript.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length < 12) return [];
+
+        var candidates = new List<(double Relative, int Score)>();
+        for (var i = 0; i < words.Length; i++)
+        {
+            var window = string.Join(' ', words.Skip(Math.Max(0, i - 2)).Take(5));
+            var score = ImpactScore(window);
+            if (score < 5) continue;
+            var relative = i / (double)Math.Max(1, words.Length - 1) * duration;
+            if (relative <= duration - 2) candidates.Add((relative, score));
+        }
 
         var selected = new List<PunchInMoment>();
+        var opening = candidates.Where(c => c.Relative <= 8).OrderByDescending(c => c.Score).FirstOrDefault();
+        if (opening.Score > 0) AddMoment(selected, opening.Relative, opening.Score >= 12 ? 1.065 : 1.05, duration);
 
-        var opening = candidates
-            .Where(item => item.Relative <= 8)
-            .OrderByDescending(item => item.Score)
-            .FirstOrDefault();
-
-        if (opening is not null)
-            AddMoment(selected, opening.Relative, opening.Score >= 12 ? 1.065 : 1.05, duration);
-
-        foreach (var candidate in candidates)
+        foreach (var candidate in candidates.OrderByDescending(c => c.Score).ThenBy(c => c.Relative))
         {
             if (selected.Count >= 3) break;
             if (selected.Any(existing => Math.Abs(existing.Start - candidate.Relative) < 8)) continue;
@@ -60,7 +51,6 @@ public static class PunchInPlanner
     {
         var value = text.Trim().ToLowerInvariant();
         if (value.Length == 0) return 0;
-
         var score = ImpactTerms.Count(value.Contains) * 5;
         if (value.Contains('?')) score += 4;
         if (value.Contains('!')) score += 3;
