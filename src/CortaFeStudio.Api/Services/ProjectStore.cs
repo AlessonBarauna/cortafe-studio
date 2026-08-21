@@ -30,6 +30,18 @@ public sealed class ProjectStore
     public VideoProject? Get(string id) => _projects.GetValueOrDefault(id);
     public string ProjectDirectory(string id) => Path.Combine(_root, id);
 
+    public VideoProject? FindYouTubeProject(string url)
+    {
+        var videoId = YouTubeVideoId(url);
+        if (videoId is null) return null;
+
+        return _projects.Values
+            .Where(project => project.SourceKind == SourceKind.YouTube)
+            .Where(project => YouTubeVideoId(project.Source) == videoId)
+            .OrderByDescending(project => project.CreatedAt)
+            .FirstOrDefault();
+    }
+
     public async Task<VideoProject> CreateAsync(string? name, SourceKind kind, string source, ProjectOptions? options)
     {
         var projectOptions = options ?? new(); projectOptions.ApplyAutomaticDuration();
@@ -110,5 +122,34 @@ public sealed class ProjectStore
     {
         var root = Path.GetFullPath(ProjectDirectory(id)); var candidate = Path.GetFullPath(Path.Combine(root, path.Replace('/', Path.DirectorySeparatorChar)));
         return candidate.StartsWith(root, StringComparison.OrdinalIgnoreCase) && File.Exists(candidate) ? candidate : null;
+    }
+
+    private static string? YouTubeVideoId(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || !Uri.TryCreate(value, UriKind.Absolute, out var uri))
+            return null;
+
+        var host = uri.Host.ToLowerInvariant();
+        if (host == "youtu.be")
+            return uri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+
+        if (host is not ("youtube.com" or "www.youtube.com" or "m.youtube.com"))
+            return null;
+
+        var parts = uri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2 && parts[0] is "shorts" or "live" or "embed")
+            return parts[1];
+
+        if (uri.AbsolutePath.Equals("/watch", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var pair in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var pieces = pair.Split('=', 2);
+                if (pieces.Length == 2 && pieces[0] == "v")
+                    return Uri.UnescapeDataString(pieces[1]);
+            }
+        }
+
+        return null;
     }
 }
