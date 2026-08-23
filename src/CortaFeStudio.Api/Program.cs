@@ -16,6 +16,7 @@ builder.Services.AddSingleton<ToolUpdateService>();
 builder.Services.AddSingleton<AudioAnalyzer>();
 builder.Services.AddSingleton<VideoEnhancementService>();
 builder.Services.AddSingleton<HardwareEncoderDetector>();
+builder.Services.AddSingleton<ClipVariantService>();
 builder.Services.AddSingleton<MediaPipeline>();
 builder.Services.AddSingleton<EditorialScoringService>();
 builder.Services.AddSingleton<EditorialCandidateSelector>();

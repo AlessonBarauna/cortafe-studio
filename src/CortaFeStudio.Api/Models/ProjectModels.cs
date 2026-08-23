@@ -90,6 +90,21 @@ public sealed class ClipCandidate
     public string CoverPosition { get; set; } = "bottom";
     public double? CoverTimestamp { get; set; }
     public string? EditedTranscript { get; set; }
+    public List<ClipVariant> Variants { get; set; } = [];
+    public string? WinningVariantId { get; set; }
+}
+public sealed class ClipVariant
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..10];
+    public string Label { get; set; } = "A";
+    public double Start { get; set; }
+    public double End { get; set; }
+    public string HookSentence { get; set; } = "";
+    public double PunchInIntensity { get; set; } = 1;
+    public string SubtitleDensity { get; set; } = "balanced";
+    public double SocialScore { get; set; }
+    public double VariantScore { get; set; }
+    public bool Winner { get; set; }
 }
 public sealed class FramingKeyframe
 {
