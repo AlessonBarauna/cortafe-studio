@@ -5,7 +5,7 @@ using CortaFeStudio.Api.Models;
 
 namespace CortaFeStudio.Api.Services;
 
-public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpClientFactory http, LongVideoEditorialAnalyzer editorial)
+public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpClientFactory http, LongVideoEditorialAnalyzer editorial, AudioAnalyzer audioAnalyzer, ILogger<MediaPipeline> logger)
 {
     public async Task ProcessAsync(VideoProject p, CancellationToken ct)
     {
@@ -214,8 +214,10 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         var output = $"clip-{clip.Id}.mp4"; var escaped = ass.Replace("\\", "/").Replace(":", "\\:").Replace("'", "\\'");
         var framing = RenderFilterFactory.Framing(clip);
         var filter = $"{framing},subtitles='{escaped}'";
-        var audio = RenderFilterFactory.Audio(clip.End - clip.Start);
-        await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-ss", F(clip.Start), "-to", F(clip.End), "-i", Path.Combine(dir, p.LocalMedia!), "-vf", filter, "-af", audio, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", Path.Combine(dir, output)], dir, ct);
+        var audioAnalysis = await audioAnalyzer.AnalyzeAsync(Path.Combine(dir, p.LocalMedia!), clip.Start, clip.End - clip.Start, p.Options.ContentType, ct);
+        var audio = AudioFilterFactory.Create(audioAnalysis, clip.End - clip.Start);
+        logger.LogInformation("[Audio] project={ProjectId} clip={ClipId} profile={Profile} meanDb={MeanDb} peakDb={PeakDb}", p.Id, clip.Id, audio.Profile, audioAnalysis.MeanVolumeDb, audioAnalysis.PeakVolumeDb);
+        await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-ss", F(clip.Start), "-to", F(clip.End), "-i", Path.Combine(dir, p.LocalMedia!), "-vf", filter, "-af", audio.Filter, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", Path.Combine(dir, output)], dir, ct);
         clip.VideoPath = output;
     }
 
@@ -318,10 +320,8 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         }
         if (words.Count > 0)
         {
-            for (var i = 0; i < words.Count;)
+            foreach (var group in SubtitleFormatter.SemanticUnits(words))
             {
-                var group = new List<TranscriptWord> { words[i++] };
-                while (i < words.Count && group.Count < 5 && words[i].End - group[0].Start <= 2.8) group.Add(words[i++]);
                 var start = Math.Max(0, group[0].Start - clip.Start); var end = Math.Min(clip.End - clip.Start, group[^1].End - clip.Start + .08);
                 var karaoke = SubtitleFormatter.Karaoke(group, clip, width);
                 sb.AppendLine($"Dialogue: 0,{AssTime(start)},{AssTime(end)},Impacto,,0,0,0,,{karaoke}");

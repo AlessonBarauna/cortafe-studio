@@ -6,6 +6,11 @@ namespace CortaFeStudio.Api.Services;
 
 public static class SubtitleFormatter
 {
+    private static readonly HashSet<string> Connectors = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "a", "e", "o", "as", "os", "de", "da", "do", "das", "dos", "em", "no", "na", "nos", "nas",
+        "que", "se", "com", "por", "para", "um", "uma", "mas", "ou"
+    };
     private static readonly HashSet<string> EmphasisWords = new(StringComparer.OrdinalIgnoreCase)
     {
         "deus", "jesus", "fe", "graca", "amor", "verdade", "proposito", "promessa",
@@ -27,6 +32,11 @@ public static class SubtitleFormatter
         var (font, size, primary, secondary, outline, shadow) = clip.SubtitleStyle switch
         {
             "clean" => ("Arial", 54, "&H00FFFFFF", "&H00FFFFFF", 3, 0),
+            "podcast" => ("Arial", 56, "&H00FFFFFF", "&H00F0B44D", 4, 1),
+            "sermon" => ("Arial Black", 62, "&H00FFFFFF", "&H0000B7FF", 5, 2),
+            "motivational" => ("Arial Black", 64, "&H00FFFFFF", "&H0048D7FF", 5, 2),
+            "minimal" => ("Arial", 50, "&H00FFFFFF", "&H00FFFFFF", 2, 0),
+            "worship" => ("Georgia", 57, "&H00FFFFFF", "&H00E8C58B", 4, 1),
             "bold" => ("Arial Black", 66, "&H00FFFFFF", "&H0000B7FF", 6, 2),
             _ => ("Arial", 62, "&H00FFFFFF", "&H0000B7FF", 5, 2)
         };
@@ -66,7 +76,40 @@ public static class SubtitleFormatter
             wordsOnLine++;
         }
 
-        return string.Concat(parts);
+        var animation = clip.SubtitleStyle == "minimal" ? "{\\fad(70,90)}" : "{\\fad(55,75)\\fscx98\\fscy98\\t(0,100,\\fscx100\\fscy100)}";
+        return animation + string.Concat(parts);
+    }
+
+    public static IReadOnlyList<IReadOnlyList<TranscriptWord>> SemanticUnits(IReadOnlyList<TranscriptWord> source)
+    {
+        var words = source.Where(word => !string.IsNullOrWhiteSpace(word.Word)).OrderBy(word => word.Start).ToList();
+        var units = new List<List<TranscriptWord>>();
+        for (var index = 0; index < words.Count;)
+        {
+            var unit = new List<TranscriptWord>();
+            while (index < words.Count && unit.Count < 5)
+            {
+                var word = words[index++]; unit.Add(word);
+                var pause = index < words.Count ? words[index].Start - word.End : 0;
+                var punctuation = word.Word.TrimEnd().EndsWithAny('.', '!', '?', ':', ';');
+                if (unit.Count >= 2 && (pause >= .42 || punctuation)) break;
+                if (unit.Count >= 4 && index < words.Count && !IsConnector(words[index].Word)) break;
+            }
+            if (unit.Count == 1 && units.Count > 0 && units[^1].Count < 5 && !IsConnector(unit[0].Word)) units[^1].Add(unit[0]);
+            else units.Add(unit);
+        }
+
+        for (var index = 0; index < units.Count - 1; index++)
+        {
+            var current = units[index]; var next = units[index + 1];
+            if (current.Count > 2 && next.Count < 5 && IsConnector(current[^1].Word)) { next.Insert(0, current[^1]); current.RemoveAt(current.Count - 1); }
+            if (next.Count == 1 && current.Count < 5) { current.Add(next[0]); units.RemoveAt(index + 1); index--; }
+        }
+        if (units.Count > 1 && units[0].Count == 1 && units[1].Count < 5)
+        {
+            units[1].Insert(0, units[0][0]); units.RemoveAt(0);
+        }
+        return units;
     }
 
     public static string Plain(string text, int width)
@@ -101,8 +144,12 @@ public static class SubtitleFormatter
     {
         var folded = Fold(value)
             .Trim(' ', ',', '.', '?', '!', ':', ';', '-', '—', '"', '\'', '(', ')');
-        return EmphasisWords.Contains(folded);
+        if (EmphasisWords.Contains(folded)) return true;
+        return folded.Length >= 8 &&
+            (folded.EndsWith("dade", StringComparison.Ordinal) || folded.EndsWith("cao", StringComparison.Ordinal) || folded.EndsWith("mente", StringComparison.Ordinal));
     }
+
+    private static bool IsConnector(string value) => Connectors.Contains(Fold(value).Trim(' ', ',', '.', '?', '!', ':', ';', '-', '—', '"', '\'', '(', ')'));
 
     private static string Escape(string value) =>
         value.Replace("\n", " ").Replace("{", "(").Replace("}", ")");
@@ -118,4 +165,9 @@ public static class SubtitleFormatter
         }
         return builder.ToString().Normalize(NormalizationForm.FormC);
     }
+}
+
+file static class SubtitleStringExtensions
+{
+    public static bool EndsWithAny(this string value, params char[] endings) => value.Length > 0 && endings.Contains(value[^1]);
 }

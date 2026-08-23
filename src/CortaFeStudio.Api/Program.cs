@@ -13,6 +13,7 @@ builder.Services.Configure<FormOptions>(o => o.MultipartBodyLengthLimit = 20L * 
 builder.Services.AddSingleton<ProjectStore>();
 builder.Services.AddSingleton<ToolService>();
 builder.Services.AddSingleton<ToolUpdateService>();
+builder.Services.AddSingleton<AudioAnalyzer>();
 builder.Services.AddSingleton<MediaPipeline>();
 builder.Services.AddSingleton<EditorialScoringService>();
 builder.Services.AddSingleton<EditorialCandidateSelector>();
