@@ -5,6 +5,7 @@ public enum ProductionStatus
     Queued,
     Analyzing,
     Rendering,
+    QualityCheck,
     AwaitingApproval,
     Ready,
     Scheduled,
@@ -36,6 +37,8 @@ public sealed class ProductionItem
     public double SocialScore { get; set; }
     public bool Approved { get; set; }
     public bool Rendered { get; set; }
+    public int? QualityScore { get; set; }
+    public QualityStatus? QualityStatus { get; set; }
     public List<ProductionPublication> Publications { get; set; } = [];
 }
 

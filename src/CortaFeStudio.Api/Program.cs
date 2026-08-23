@@ -17,6 +17,7 @@ builder.Services.AddSingleton<AudioAnalyzer>();
 builder.Services.AddSingleton<VideoEnhancementService>();
 builder.Services.AddSingleton<HardwareEncoderDetector>();
 builder.Services.AddSingleton<ClipVariantService>();
+builder.Services.AddSingleton<QualityGateService>();
 builder.Services.AddSingleton<MediaPipeline>();
 builder.Services.AddSingleton<EditorialScoringService>();
 builder.Services.AddSingleton<EditorialCandidateSelector>();
@@ -70,6 +71,17 @@ api.MapGet("/projects", (ProjectStore store) => store.List());
 api.MapGet("/queue", (ProjectQueue queue) => queue.Status());
 api.MapGet("/storage", (StorageService storage) => storage.Report());
 api.MapGet("/render/encoder", async (HardwareEncoderDetector detector, CancellationToken ct) => await detector.DetectAsync(ct));
+api.MapGet("/projects/{projectId}/clips/{clipId}/quality", async (string projectId, string clipId, ProjectStore store, QualityGateService quality, CancellationToken ct) =>
+{
+    var project = store.Get(projectId); var clip = project?.Clips.FirstOrDefault(item => item.Id == clipId);
+    return project is null || clip is null ? Results.NotFound() : Results.Ok(await quality.ValidateAsync(project, clip, ct));
+});
+api.MapPost("/projects/{projectId}/clips/{clipId}/quality/repair", async (string projectId, string clipId, ProjectStore store, MediaPipeline pipeline, QualityGateService quality, CancellationToken ct) =>
+{
+    var project = store.Get(projectId); var clip = project?.Clips.FirstOrDefault(item => item.Id == clipId);
+    if (project is null || clip is null) return Results.NotFound();
+    await pipeline.RenderClipAsync(project, clip, ct); return Results.Ok(await quality.ValidateAsync(project, clip, ct));
+});
 api.MapGet("/production", (ProductionBatchService production) => production.List());
 api.MapGet("/production/{id}", (string id, ProductionBatchService production) =>
     production.Get(id) is { } batch ? Results.Ok(batch) : Results.NotFound());

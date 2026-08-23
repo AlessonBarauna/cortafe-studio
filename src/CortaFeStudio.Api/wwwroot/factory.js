@@ -1,6 +1,6 @@
 let factoryPoller;
 
-function factoryStatusLabel(value){return ({queued:'Na fila',analyzing:'Analisando',rendering:'Renderizando',awaitingApproval:'Aguardando aprovação',ready:'Pronto',scheduled:'Agendado',published:'Publicado',failed:'Falhou',cancelled:'Cancelado'})[value]||value}
+function factoryStatusLabel(value){return ({queued:'Na fila',analyzing:'Analisando',rendering:'Renderizando',qualityCheck:'Controle de qualidade',awaitingApproval:'Aguardando aprovação',ready:'Pronto',scheduled:'Agendado',published:'Publicado',failed:'Falhou',cancelled:'Cancelado'})[value]||value}
 
 async function factoryCenter(){
   clearInterval(poller); clearInterval(factoryPoller); template('#factoryTemplate');

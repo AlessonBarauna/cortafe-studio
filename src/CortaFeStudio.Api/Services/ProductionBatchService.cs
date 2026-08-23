@@ -82,6 +82,10 @@ public sealed class ProductionBatchService
         foreach (var clip in project.Clips) clip.Approved = batch.Items.Any(item => item.ClipId == clip.Id && item.Approved);
         await _projects.SaveAsync(project);
         if (request.Render) await RenderAsync(batch, project, selected, ct);
+        if (batch.Items.Any(item => item.Approved && item.QualityStatus == QualityStatus.Blocked))
+        {
+            batch.Status = ProductionStatus.AwaitingApproval; batch.Stage = "Quality Gate bloqueou um ou mais cortes"; batch.Progress = 100; await SaveAsync(); return batch;
+        }
         if (request.Schedule) await ScheduleAsync(batch, project);
         batch.Status = batch.Items.Any(item => !item.Approved) ? ProductionStatus.AwaitingApproval : ProductionStatus.Ready;
         batch.Stage = "Cortes aprovados para publicacao"; batch.Progress = 100; batch.CompletedAt = DateTime.UtcNow;
@@ -121,6 +125,10 @@ public sealed class ProductionBatchService
             batch.Status = ProductionStatus.AwaitingApproval; batch.Progress = 100; batch.Stage = $"{batch.Items.Count} cortes aguardando aprovacao"; await SaveAsync(); return;
         }
         if (batch.Settings.AutoRender) await RenderAsync(batch, project, batch.Items, ct);
+        if (batch.Items.Any(item => item.Approved && item.QualityStatus == QualityStatus.Blocked))
+        {
+            batch.Status = ProductionStatus.AwaitingApproval; batch.Progress = 100; batch.Stage = "Quality Gate bloqueou um ou mais cortes"; await SaveAsync(); return;
+        }
         if (batch.Settings.AutoSchedule && batch.Settings.AutoPublish) await ScheduleAsync(batch, project);
         batch.Status = batch.Settings.AutoSchedule && batch.Settings.AutoPublish ? ProductionStatus.Scheduled : ProductionStatus.Ready;
         batch.Progress = 100; batch.Stage = "Producao concluida"; batch.CompletedAt = DateTime.UtcNow; await SaveAsync();
@@ -132,8 +140,9 @@ public sealed class ProductionBatchService
         for (var index = 0; index < list.Count; index++)
         {
             var item = list[index]; var clip = project.Clips.First(candidate => candidate.Id == item.ClipId);
-            batch.Stage = $"Renderizando {index + 1} de {list.Count}"; batch.Progress = 75 + (int)Math.Round((index + 1d) / list.Count * 20); await SaveAsync();
+            batch.Status = ProductionStatus.Rendering; batch.Stage = $"Renderizando {index + 1} de {list.Count}"; batch.Progress = 75 + (int)Math.Round((index + 1d) / list.Count * 20); await SaveAsync();
             await _pipeline.RenderClipAsync(project, clip, ct); item.Rendered = true;
+            batch.Status = ProductionStatus.QualityCheck; item.QualityScore = clip.QualityReport?.Score; item.QualityStatus = clip.QualityReport?.Status;
         }
         await _projects.SaveAsync(project);
     }
