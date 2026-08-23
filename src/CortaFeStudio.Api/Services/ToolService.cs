@@ -76,6 +76,17 @@ public sealed class ToolService(IWebHostEnvironment env)
         return output.Trim();
     }
 
+    public async Task<string> CaptureDiagnosticAsync(string command, IEnumerable<string> args, string? workDir = null, CancellationToken ct = default)
+    {
+        var psi = new ProcessStartInfo(command) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = workDir ?? Root };
+        foreach (var arg in args) psi.ArgumentList.Add(arg);
+        using var process = Process.Start(psi) ?? throw new InvalidOperationException($"Nao foi possivel iniciar {command}.");
+        var stdout = process.StandardOutput.ReadToEndAsync(ct); var stderr = process.StandardError.ReadToEndAsync(ct);
+        await process.WaitForExitAsync(ct); var output = await stdout; var diagnostic = await stderr;
+        if (process.ExitCode != 0) throw new InvalidOperationException(FriendlyError(command, diagnostic));
+        return output + Environment.NewLine + diagnostic;
+    }
+
     private static string FriendlyError(string command, string error)
     {
         if (Path.GetFileName(command).StartsWith("yt-dlp", StringComparison.OrdinalIgnoreCase))
