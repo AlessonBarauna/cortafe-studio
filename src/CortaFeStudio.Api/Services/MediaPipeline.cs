@@ -320,10 +320,8 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         }
         if (words.Count > 0)
         {
-            for (var i = 0; i < words.Count;)
+            foreach (var group in SubtitleFormatter.SemanticUnits(words))
             {
-                var group = new List<TranscriptWord> { words[i++] };
-                while (i < words.Count && group.Count < 5 && words[i].End - group[0].Start <= 2.8) group.Add(words[i++]);
                 var start = Math.Max(0, group[0].Start - clip.Start); var end = Math.Min(clip.End - clip.Start, group[^1].End - clip.Start + .08);
                 var karaoke = SubtitleFormatter.Karaoke(group, clip, width);
                 sb.AppendLine($"Dialogue: 0,{AssTime(start)},{AssTime(end)},Impacto,,0,0,0,,{karaoke}");
