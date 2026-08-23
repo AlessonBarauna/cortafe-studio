@@ -9,16 +9,16 @@ public sealed class ProductionBatchService
     private readonly ProjectStore _projects;
     private readonly ProjectQueue _queue;
     private readonly MediaPipeline _pipeline;
-    private readonly SocialService _social;
+    private readonly ContentCalendarService _calendar;
     private readonly ClipVariantService _variants;
     private readonly string _file;
     private readonly Dictionary<string, ProductionBatch> _batches = [];
     private readonly SemaphoreSlim _lock = new(1, 1);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
-    public ProductionBatchService(IWebHostEnvironment env, ProjectStore projects, ProjectQueue queue, MediaPipeline pipeline, SocialService social, ClipVariantService variants)
+    public ProductionBatchService(IWebHostEnvironment env, ProjectStore projects, ProjectQueue queue, MediaPipeline pipeline, ContentCalendarService calendar, ClipVariantService variants)
     {
-        _projects = projects; _queue = queue; _pipeline = pipeline; _social = social; _variants = variants;
+        _projects = projects; _queue = queue; _pipeline = pipeline; _calendar = calendar; _variants = variants;
         _file = Path.Combine(env.ContentRootPath, "storage", "production-batches.json");
         if (!File.Exists(_file)) return;
         try
@@ -149,16 +149,13 @@ public sealed class ProductionBatchService
 
     private async Task ScheduleAsync(ProductionBatch batch, VideoProject project)
     {
-        var schedule = BuildSchedule(batch.Settings, batch.Items.Count);
-        for (var index = 0; index < batch.Items.Count; index++)
+        var approved = batch.Items.Where(item => item.Approved && item.Rendered).ToList();
+        var clips = project.Clips.Where(clip => approved.Any(item => item.ClipId == clip.Id)).ToList();
+        var scheduled = await _calendar.ScheduleAsync(project, clips, batch.Settings.Platforms, new SchedulingStrategy { PostsPerDay = batch.Settings.PostsPerDay, PreferredTimes = batch.Settings.PostingTimes, StartDate = batch.Settings.StartDate });
+        foreach (var calendarItem in scheduled)
         {
-            var item = batch.Items[index]; if (!item.Approved || !item.Rendered) continue;
-            var clip = project.Clips.First(candidate => candidate.Id == item.ClipId);
-            foreach (var platform in batch.Settings.Platforms.Distinct())
-            {
-                var record = await _social.PublishAsync(project.Id, clip.Id, new PublishRequest(platform, clip.Title, clip.Caption, "private", schedule[index]));
-                item.Publications.Add(new ProductionPublication { Platform = platform, ScheduledAt = schedule[index], Status = record.Status, PublicationId = record.Id });
-            }
+            var item = batch.Items.First(candidate => candidate.ClipId == calendarItem.ClipId);
+            item.Publications.Add(new ProductionPublication { Platform = calendarItem.Platform, ScheduledAt = calendarItem.ScheduledAt, Status = calendarItem.Status, PublicationId = calendarItem.PublicationId });
         }
     }
 
