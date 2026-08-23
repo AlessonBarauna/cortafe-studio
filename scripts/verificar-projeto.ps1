@@ -1,11 +1,12 @@
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
+$ArtifactsPath = Join-Path $ProjectRoot '.artifacts'
 
 Write-Host 'Compilando backend...'
-dotnet build (Join-Path $ProjectRoot 'CortaFeStudio.sln') -c Release --no-restore
+dotnet build (Join-Path $ProjectRoot 'CortaFeStudio.sln') -c Release --no-restore --artifacts-path $ArtifactsPath
 
 Write-Host 'Executando testes automatizados...'
-dotnet test (Join-Path $ProjectRoot 'CortaFeStudio.sln') -c Release --no-build
+dotnet test (Join-Path $ProjectRoot 'CortaFeStudio.sln') -c Release --no-build --artifacts-path $ArtifactsPath
 
 Write-Host 'Validando JavaScript...'
 Get-ChildItem (Join-Path $ProjectRoot 'src\CortaFeStudio.Api\wwwroot') -Filter '*.js' | ForEach-Object {

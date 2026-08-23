@@ -10,14 +10,15 @@ public sealed class ProductionBatchService
     private readonly ProjectQueue _queue;
     private readonly MediaPipeline _pipeline;
     private readonly SocialService _social;
+    private readonly ClipVariantService _variants;
     private readonly string _file;
     private readonly Dictionary<string, ProductionBatch> _batches = [];
     private readonly SemaphoreSlim _lock = new(1, 1);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
-    public ProductionBatchService(IWebHostEnvironment env, ProjectStore projects, ProjectQueue queue, MediaPipeline pipeline, SocialService social)
+    public ProductionBatchService(IWebHostEnvironment env, ProjectStore projects, ProjectQueue queue, MediaPipeline pipeline, SocialService social, ClipVariantService variants)
     {
-        _projects = projects; _queue = queue; _pipeline = pipeline; _social = social;
+        _projects = projects; _queue = queue; _pipeline = pipeline; _social = social; _variants = variants;
         _file = Path.Combine(env.ContentRootPath, "storage", "production-batches.json");
         if (!File.Exists(_file)) return;
         try
@@ -95,11 +96,18 @@ public sealed class ProductionBatchService
 
     private async Task PrepareAsync(ProductionBatch batch, VideoProject project, CancellationToken ct)
     {
-        batch.Items = project.Clips
+        var selected = project.Clips
             .OrderByDescending(clip => clip.SocialScore.Potential)
             .ThenByDescending(clip => clip.Score)
             .Where(clip => clip.SocialScore.Potential >= batch.Settings.MinimumSocialScore)
-            .Take(batch.Settings.FinalVideoCount)
+            .Take(batch.Settings.FinalVideoCount).ToList();
+        foreach (var clip in selected)
+        {
+            var variants = _variants.Generate(clip, project.Transcript, project.Options, batch.Settings.VariantCount);
+            _variants.ApplyWinner(clip, variants);
+            clip.SocialScore = SocialScoreService.Calculate(clip, project.Options);
+        }
+        batch.Items = selected
             .Select(clip => new ProductionItem { ClipId = clip.Id, Title = clip.Title, SocialScore = clip.SocialScore.Potential, Approved = batch.Settings.AutoApprove })
             .ToList();
         if (batch.Items.Count == 0)
