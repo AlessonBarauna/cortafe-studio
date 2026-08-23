@@ -93,6 +93,7 @@ public sealed class ClipCandidate
     public List<ClipVariant> Variants { get; set; } = [];
     public string? WinningVariantId { get; set; }
     public QualityReport? QualityReport { get; set; }
+    public PlatformMetadata PlatformMetadata { get; set; } = new();
 }
 public sealed class ClipVariant
 {

@@ -101,6 +101,16 @@ api.MapPost("/production/{id}/cancel", async (string id, ProductionBatchService 
     await production.CancelAsync(id) ? Results.Ok() : Results.NotFound());
 api.MapGet("/projects/{id}", (string id, ProjectStore store) =>
     store.Get(id) is { } project ? Results.Ok(project) : Results.NotFound());
+api.MapGet("/projects/{projectId}/clips/{clipId}/metadata", (string projectId, string clipId, ProjectStore store) =>
+{
+    var project = store.Get(projectId); var clip = project?.Clips.FirstOrDefault(item => item.Id == clipId);
+    return project is null || clip is null ? Results.NotFound() : Results.Ok(clip.PlatformMetadata);
+});
+api.MapPost("/projects/{projectId}/clips/{clipId}/metadata/regenerate", async (string projectId, string clipId, ProjectStore store, IHttpClientFactory http, CancellationToken ct) =>
+{
+    var project = store.Get(projectId); var clip = project?.Clips.FirstOrDefault(item => item.Id == clipId); if (project is null || clip is null) return Results.NotFound();
+    await ShortFormMetadataService.EnrichAsync(http, clip, project.Options.ContentType, ct); await store.SaveAsync(project); return Results.Ok(clip.PlatformMetadata);
+});
 api.MapDelete("/projects/{id}", async (string id, ProjectStore store) =>
 {
     var project = store.Get(id); if (project is null) return Results.NotFound();
