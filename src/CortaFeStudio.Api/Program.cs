@@ -26,6 +26,8 @@ builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "storage", "keys")))
     .SetApplicationName("CortaFeStudio");
 builder.Services.AddSingleton<SocialService>();
+builder.Services.AddSingleton<ProductionBatchService>();
+builder.Services.AddHostedService<ProductionBatchWorker>();
 builder.Services.AddSingleton<DiagnosticsService>();
 builder.Services.AddSingleton<StorageService>();
 builder.Services.AddSingleton<FramingService>();
@@ -63,6 +65,22 @@ api.MapPost("/tools/yt-dlp/update", async (ToolUpdateService updates, Cancellati
 api.MapGet("/projects", (ProjectStore store) => store.List());
 api.MapGet("/queue", (ProjectQueue queue) => queue.Status());
 api.MapGet("/storage", (StorageService storage) => storage.Report());
+api.MapGet("/production", (ProductionBatchService production) => production.List());
+api.MapGet("/production/{id}", (string id, ProductionBatchService production) =>
+    production.Get(id) is { } batch ? Results.Ok(batch) : Results.NotFound());
+api.MapPost("/production", async (CreateProductionBatchRequest request, ProductionBatchService production) =>
+{
+    if (!IsYouTubeUrl(request.Url)) return Results.BadRequest(new { error = "Informe um link valido do YouTube." });
+    var batch = await production.CreateAsync(request);
+    return Results.Accepted($"/api/production/{batch.Id}", batch);
+});
+api.MapPost("/production/{id}/approve", async (string id, ProductionApprovalRequest request, ProductionBatchService production, CancellationToken ct) =>
+{
+    try { return await production.ApproveAsync(id, request, ct) is { } batch ? Results.Ok(batch) : Results.NotFound(); }
+    catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+api.MapPost("/production/{id}/cancel", async (string id, ProductionBatchService production) =>
+    await production.CancelAsync(id) ? Results.Ok() : Results.NotFound());
 api.MapGet("/projects/{id}", (string id, ProjectStore store) =>
     store.Get(id) is { } project ? Results.Ok(project) : Results.NotFound());
 api.MapDelete("/projects/{id}", async (string id, ProjectStore store) =>
