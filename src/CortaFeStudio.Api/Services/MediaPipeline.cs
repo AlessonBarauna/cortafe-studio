@@ -5,7 +5,7 @@ using CortaFeStudio.Api.Models;
 
 namespace CortaFeStudio.Api.Services;
 
-public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpClientFactory http, LongVideoEditorialAnalyzer editorial, AudioAnalyzer audioAnalyzer, VideoEnhancementService videoEnhancement, ILogger<MediaPipeline> logger)
+public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpClientFactory http, LongVideoEditorialAnalyzer editorial, AudioAnalyzer audioAnalyzer, VideoEnhancementService videoEnhancement, HardwareEncoderDetector encoderDetector, ILogger<MediaPipeline> logger)
 {
     public async Task ProcessAsync(VideoProject p, CancellationToken ct)
     {
@@ -220,8 +220,23 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         var audioAnalysis = await audioAnalyzer.AnalyzeAsync(Path.Combine(dir, p.LocalMedia!), clip.Start, clip.End - clip.Start, p.Options.ContentType, ct);
         var audio = AudioFilterFactory.Create(audioAnalysis, clip.End - clip.Start);
         logger.LogInformation("[Audio] project={ProjectId} clip={ClipId} profile={Profile} meanDb={MeanDb} peakDb={PeakDb}", p.Id, clip.Id, audio.Profile, audioAnalysis.MeanVolumeDb, audioAnalysis.PeakVolumeDb);
-        await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-ss", F(clip.Start), "-to", F(clip.End), "-i", Path.Combine(dir, p.LocalMedia!), "-vf", filter, "-af", audio.Filter, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", Path.Combine(dir, output)], dir, ct);
+        var encoder = await encoderDetector.DetectAsync(ct);
+        try { await RenderWithEncoderAsync(encoder); }
+        catch (Exception ex) when (encoder.HardwareAccelerated)
+        {
+            logger.LogWarning(ex, "[Encoder] {Codec} falhou durante o render; repetindo com libx264", encoder.Codec);
+            encoderDetector.Invalidate(); await RenderWithEncoderAsync(HardwareEncoderDetector.Cpu);
+        }
         clip.VideoPath = output;
+
+        async Task RenderWithEncoderAsync(RenderEncoderProfile profile)
+        {
+            var arguments = new List<string> { "-y", "-ss", F(clip.Start), "-to", F(clip.End), "-i", Path.Combine(dir, p.LocalMedia!), "-vf", filter, "-af", audio.Filter, "-c:v", profile.Codec };
+            arguments.AddRange(profile.Arguments);
+            arguments.AddRange(["-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", Path.Combine(dir, output)]);
+            logger.LogInformation("[Encoder] project={ProjectId} clip={ClipId} codec={Codec}", p.Id, clip.Id, profile.Codec);
+            await tools.RunAsync(tools.Find("ffmpeg"), arguments, dir, ct);
+        }
     }
 
     public async Task RenderAllAsync(VideoProject p, CancellationToken ct = default)

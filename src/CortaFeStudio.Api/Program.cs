@@ -15,6 +15,7 @@ builder.Services.AddSingleton<ToolService>();
 builder.Services.AddSingleton<ToolUpdateService>();
 builder.Services.AddSingleton<AudioAnalyzer>();
 builder.Services.AddSingleton<VideoEnhancementService>();
+builder.Services.AddSingleton<HardwareEncoderDetector>();
 builder.Services.AddSingleton<MediaPipeline>();
 builder.Services.AddSingleton<EditorialScoringService>();
 builder.Services.AddSingleton<EditorialCandidateSelector>();
@@ -67,6 +68,7 @@ api.MapPost("/tools/yt-dlp/update", async (ToolUpdateService updates, Cancellati
 api.MapGet("/projects", (ProjectStore store) => store.List());
 api.MapGet("/queue", (ProjectQueue queue) => queue.Status());
 api.MapGet("/storage", (StorageService storage) => storage.Report());
+api.MapGet("/render/encoder", async (HardwareEncoderDetector detector, CancellationToken ct) => await detector.DetectAsync(ct));
 api.MapGet("/production", (ProductionBatchService production) => production.List());
 api.MapGet("/production/{id}", (string id, ProductionBatchService production) =>
     production.Get(id) is { } batch ? Results.Ok(batch) : Results.NotFound());
