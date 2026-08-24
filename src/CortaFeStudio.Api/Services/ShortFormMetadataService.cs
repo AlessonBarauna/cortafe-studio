@@ -84,7 +84,38 @@ public static class ShortFormMetadataService
         {
             // O metadata heurístico continua disponível quando o Ollama não responde.
         }
+        finally
+        {
+            ApplyPlatformMetadata(clip, contentType);
+        }
     }
+
+    public static void ApplyPlatformMetadata(ClipCandidate clip, string contentType)
+    {
+        ApplyFallbacks(clip, contentType);
+        var tags = NormalizeHashtags(clip.Hashtags, contentType);
+        var nicheTags = tags.Take(5).ToList();
+        var youtubeTitle = NormalizeTitle(clip.Title);
+        var youtubeCta = contentType == "aula" ? "Salve para revisar depois." : "Compartilhe com alguém que precisa ouvir isso.";
+        var instagramFirstLine = clip.HookSentence.Trim();
+        if (string.IsNullOrWhiteSpace(instagramFirstLine)) instagramFirstLine = clip.CoverText;
+        instagramFirstLine = NormalizeTitle(instagramFirstLine);
+        var instagramCta = contentType == "podcast" ? "Qual é a sua leitura sobre isso?" : "O que essa mensagem despertou em você?";
+        clip.PlatformMetadata = new PlatformMetadata
+        {
+            YouTube = new YouTubeMetadata { Title = youtubeTitle[..Math.Min(100, youtubeTitle.Length)], Description = NormalizeCaption($"{clip.Caption}\n\n{youtubeCta}\n\n{string.Join(' ', nicheTags)}"), Hashtags = nicheTags, CallToAction = youtubeCta },
+            Instagram = new InstagramMetadata { FirstLine = instagramFirstLine, Caption = NormalizeCaption($"{instagramFirstLine}\n\n{clip.Caption}\n\n{instagramCta}"), Hashtags = nicheTags, CallToAction = instagramCta },
+            TikTok = new TikTokMetadata { Caption = NormalizeCaption($"{instagramFirstLine}\n\n{clip.Caption}"), Hashtags = nicheTags.Take(4).ToList(), CallToAction = instagramCta },
+            GeneratedAt = DateTime.UtcNow
+        };
+    }
+
+    public static (string Title, string Description) ForPlatform(ClipCandidate clip, SocialPlatform platform) => platform switch
+    {
+        SocialPlatform.YouTube => (clip.PlatformMetadata.YouTube.Title, clip.PlatformMetadata.YouTube.Description),
+        SocialPlatform.Instagram => (clip.PlatformMetadata.Instagram.FirstLine, clip.PlatformMetadata.Instagram.Caption + "\n\n" + string.Join(' ', clip.PlatformMetadata.Instagram.Hashtags)),
+        _ => (clip.Title, clip.PlatformMetadata.TikTok.Caption + "\n\n" + string.Join(' ', clip.PlatformMetadata.TikTok.Hashtags))
+    };
 
     public static string NormalizeTitle(string? value)
     {

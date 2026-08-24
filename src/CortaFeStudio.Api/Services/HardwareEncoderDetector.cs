@@ -32,7 +32,7 @@ public sealed class HardwareEncoderDetector(ToolService tools, ILogger<HardwareE
     {
         try
         {
-            var arguments = new List<string> { "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=black:s=128x128:r=10:d=.4", "-frames:v", "4", "-c:v", profile.Codec };
+            var arguments = new List<string> { "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=black:s=128x128:r=10:d=0.4", "-frames:v", "4", "-c:v", profile.Codec };
             arguments.AddRange(profile.Arguments); arguments.AddRange(["-f", "null", "-"]);
             await tools.RunAsync(tools.Find("ffmpeg"), arguments, null, ct); return true;
         }

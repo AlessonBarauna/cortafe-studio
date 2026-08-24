@@ -93,6 +93,9 @@ public sealed class ClipCandidate
     public List<ClipVariant> Variants { get; set; } = [];
     public string? WinningVariantId { get; set; }
     public QualityReport? QualityReport { get; set; }
+    public PlatformMetadata PlatformMetadata { get; set; } = new();
+    public bool SilenceTrimmingEnabled { get; set; } = true;
+    public SilenceTrimPlan? SilenceTrimPlan { get; set; }
 }
 public sealed class ClipVariant
 {
@@ -165,7 +168,7 @@ public sealed class UrlBatchProjectRequest
     public string? Name { get; set; }
     public ProjectOptions? Options { get; set; }
 }
-public record ClipUpdate(double? Start, double? End, string? Title, string? CoverText, string? Caption, bool? Approved, string? CropFocus, string? SubtitleStyle, string? CoverAccent, string? CoverPosition, double? CoverTimestamp, string? EditedTranscript, double? CropX, string? LayoutMode, string? OutputPreset);
+public record ClipUpdate(double? Start, double? End, string? Title, string? CoverText, string? Caption, bool? Approved, string? CropFocus, string? SubtitleStyle, string? CoverAccent, string? CoverPosition, double? CoverTimestamp, string? EditedTranscript, double? CropX, string? LayoutMode, string? OutputPreset, bool? SilenceTrimmingEnabled);
 public record SplitClipRequest(double At);
 public record RestartFromRequest(string Stage);
 public record CleanupProjectRequest(bool DeleteSource = false);
