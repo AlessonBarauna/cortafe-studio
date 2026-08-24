@@ -1,4 +1,6 @@
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using CortaFeStudio.Api.Models;
@@ -14,7 +16,7 @@ public sealed class SocialService
     private readonly ProjectStore _projects;
     private readonly QualityGateService _quality;
     private readonly Dictionary<SocialPlatform, SocialCredential> _accounts = [];
-    private readonly Dictionary<string, SocialPlatform> _states = [];
+    private readonly Dictionary<string, PendingAuthorization> _states = [];
     private readonly List<PublicationRecord> _history = [];
     private readonly ProductionWorkLimiter _workLimiter;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
@@ -72,28 +74,35 @@ public sealed class SocialService
     public string AuthorizationUrl(SocialPlatform platform, string baseUrl)
     {
         var account = RequireConfigured(platform);
-        var state = Guid.NewGuid().ToString("N");
-        _states[state] = platform;
+        foreach (var expired in _states.Where(item => item.Value.CreatedAt < DateTimeOffset.UtcNow.AddMinutes(-10)).Select(item => item.Key).ToList()) _states.Remove(expired);
+        var state = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
+        string? verifier = null; string? challenge = null;
+        if (platform == SocialPlatform.TikTok)
+        {
+            verifier = Convert.ToHexString(RandomNumberGenerator.GetBytes(48)).ToLowerInvariant();
+            challenge = Convert.ToHexString(SHA256.HashData(Encoding.ASCII.GetBytes(verifier))).ToLowerInvariant();
+        }
+        _states[state] = new PendingAuthorization(platform, verifier, DateTimeOffset.UtcNow);
         var redirect = Uri.EscapeDataString(Callback(platform, baseUrl));
         return platform switch
         {
             SocialPlatform.YouTube => $"https://accounts.google.com/o/oauth2/v2/auth?client_id={Uri.EscapeDataString(account.ClientId)}&redirect_uri={redirect}&response_type=code&scope={Uri.EscapeDataString("https://www.googleapis.com/auth/youtube.upload")}&access_type=offline&prompt=consent&state={state}",
             SocialPlatform.Instagram => $"https://www.instagram.com/oauth/authorize?enable_fb_login=0&force_authentication=1&client_id={Uri.EscapeDataString(account.ClientId)}&redirect_uri={redirect}&response_type=code&scope=instagram_business_basic,instagram_business_content_publish&state={state}",
-            SocialPlatform.TikTok => $"https://www.tiktok.com/v2/auth/authorize/?client_key={Uri.EscapeDataString(account.ClientId)}&redirect_uri={redirect}&response_type=code&scope=user.info.basic,video.publish&state={state}",
+            SocialPlatform.TikTok => $"https://www.tiktok.com/v2/auth/authorize/?client_key={Uri.EscapeDataString(account.ClientId)}&redirect_uri={redirect}&response_type=code&scope=user.info.basic,video.publish&state={state}&code_challenge={challenge}&code_challenge_method=S256",
             _ => throw new ArgumentOutOfRangeException(nameof(platform))
         };
     }
 
     public async Task CompleteOAuthAsync(SocialPlatform platform, string code, string state, string baseUrl)
     {
-        if (!_states.Remove(state, out var expected) || expected != platform)
+        if (!_states.Remove(state, out var pending) || pending.Platform != platform || pending.CreatedAt < DateTimeOffset.UtcNow.AddMinutes(-10))
             throw new InvalidOperationException("A solicitação de conexão expirou. Tente conectar novamente.");
         var account = RequireConfigured(platform);
         var fields = platform switch
         {
             SocialPlatform.YouTube => new Dictionary<string, string> { ["client_id"] = account.ClientId, ["client_secret"] = account.ClientSecret, ["code"] = code, ["grant_type"] = "authorization_code", ["redirect_uri"] = Callback(platform, baseUrl) },
             SocialPlatform.Instagram => new Dictionary<string, string> { ["client_id"] = account.ClientId, ["client_secret"] = account.ClientSecret, ["code"] = code, ["grant_type"] = "authorization_code", ["redirect_uri"] = Callback(platform, baseUrl) },
-            _ => new Dictionary<string, string> { ["client_key"] = account.ClientId, ["client_secret"] = account.ClientSecret, ["code"] = code, ["grant_type"] = "authorization_code", ["redirect_uri"] = Callback(platform, baseUrl) }
+            _ => new Dictionary<string, string> { ["client_key"] = account.ClientId, ["client_secret"] = account.ClientSecret, ["code"] = code, ["grant_type"] = "authorization_code", ["redirect_uri"] = Callback(platform, baseUrl), ["code_verifier"] = pending.CodeVerifier! }
         };
         var endpoint = platform switch
         {
@@ -272,14 +281,19 @@ public sealed class SocialService
     private async Task PublishTikTokAsync(string path, PublishRequest request, PublicationRecord record)
     {
         var account = RequireConnected(SocialPlatform.TikTok);
+        var creator = await QueryTikTokCreatorAsync(account);
+        var privacy = TikTokPublishingPolicy.PrivacyLevel(request.Privacy);
+        if (!creator.PrivacyLevels.Contains(privacy, StringComparer.Ordinal))
+            throw new InvalidOperationException("A privacidade escolhida não está disponível para esta conta TikTok. Reconecte a conta e tente novamente.");
         using var client = _http.CreateClient();
+        client.Timeout = TimeSpan.FromMinutes(10);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", account.AccessToken);
         var size = new FileInfo(path).Length;
         var caption = request.Description[..Math.Min(2200, request.Description.Length)];
-        var payload = JsonSerializer.Serialize(new { post_info = new { title = caption, privacy_level = request.Privacy == "public" ? "PUBLIC_TO_EVERYONE" : "SELF_ONLY", disable_duet = false, disable_comment = false, disable_stitch = false, video_cover_timestamp_ms = 1000 }, source_info = new { source = "FILE_UPLOAD", video_size = size, chunk_size = size, total_chunk_count = 1 } });
+        var payload = JsonSerializer.Serialize(new { post_info = new { title = caption, privacy_level = privacy, disable_duet = creator.DuetDisabled, disable_comment = creator.CommentDisabled, disable_stitch = creator.StitchDisabled, video_cover_timestamp_ms = 1000 }, source_info = new { source = "FILE_UPLOAD", video_size = size, chunk_size = size, total_chunk_count = 1 } });
         using var initialized = await client.PostAsync("https://open.tiktokapis.com/v2/post/publish/video/init/", new StringContent(payload, Encoding.UTF8, "application/json"));
         var raw = await initialized.Content.ReadAsStringAsync();
-        if (!initialized.IsSuccessStatusCode) throw new InvalidOperationException(raw);
+        EnsureTikTokSuccess(initialized, raw, "iniciar o envio do vídeo");
         using var doc = JsonDocument.Parse(raw);
         var data = doc.RootElement.GetProperty("data");
         var uploadUrl = data.GetProperty("upload_url").GetString()!;
@@ -290,6 +304,58 @@ public sealed class SocialService
         content.Headers.ContentRange = new ContentRangeHeaderValue(0, size - 1, size);
         using var uploaded = await client.PutAsync(uploadUrl, content);
         if (!uploaded.IsSuccessStatusCode) throw new InvalidOperationException(await uploaded.Content.ReadAsStringAsync());
+        record.Progress = 100; record.PlatformStatus = "PROCESSING_UPLOAD"; await SaveAsync();
+        for (var attempt = 0; attempt < 60; attempt++)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(5));
+            using var statusRequest = new HttpRequestMessage(HttpMethod.Post, "https://open.tiktokapis.com/v2/post/publish/status/fetch/") { Content = JsonContent.Create(new { publish_id = record.ExternalId }) };
+            statusRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", account.AccessToken);
+            using var statusResponse = await client.SendAsync(statusRequest); var statusRaw = await statusResponse.Content.ReadAsStringAsync();
+            EnsureTikTokSuccess(statusResponse, statusRaw, "consultar o processamento do vídeo");
+            using var statusDocument = JsonDocument.Parse(statusRaw); var statusData = statusDocument.RootElement.GetProperty("data");
+            record.PlatformStatus = statusData.TryGetProperty("status", out var status) ? status.GetString() : record.PlatformStatus; record.UpdatedAt = DateTimeOffset.UtcNow; await SaveAsync();
+            if (record.PlatformStatus == "PUBLISH_COMPLETE") return;
+            if (record.PlatformStatus == "FAILED")
+            {
+                var reason = statusData.TryGetProperty("fail_reason", out var failure) ? failure.GetString() : "erro desconhecido";
+                throw new InvalidOperationException($"O TikTok não conseguiu publicar o vídeo: {reason}");
+            }
+        }
+        throw new InvalidOperationException("O TikTok ainda não concluiu o processamento. Tente atualizar o status em alguns minutos.");
+    }
+
+    private async Task<TikTokCreatorInfo> QueryTikTokCreatorAsync(SocialCredential account)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://open.tiktokapis.com/v2/post/publish/creator_info/query/") { Content = JsonContent.Create(new { }) };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", account.AccessToken);
+        using var response = await _http.CreateClient().SendAsync(request); var raw = await response.Content.ReadAsStringAsync();
+        EnsureTikTokSuccess(response, raw, "consultar as opções de publicação");
+        using var document = JsonDocument.Parse(raw); var data = document.RootElement.GetProperty("data");
+        var privacy = data.TryGetProperty("privacy_level_options", out var options) ? options.EnumerateArray().Select(item => item.GetString()).Where(item => !string.IsNullOrWhiteSpace(item)).Cast<string>().ToArray() : ["SELF_ONLY"];
+        return new TikTokCreatorInfo(privacy, data.TryGetProperty("comment_disabled", out var comment) && comment.GetBoolean(), data.TryGetProperty("duet_disabled", out var duet) && duet.GetBoolean(), data.TryGetProperty("stitch_disabled", out var stitch) && stitch.GetBoolean());
+    }
+
+    private static void EnsureTikTokSuccess(HttpResponseMessage response, string raw, string action)
+    {
+        if (!response.IsSuccessStatusCode) throw TikTokError(action, raw);
+        try
+        {
+            using var document = JsonDocument.Parse(raw);
+            if (document.RootElement.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.Object && error.TryGetProperty("code", out var code) && code.GetString() is { } value && value != "ok") throw TikTokError(action, raw);
+        }
+        catch (JsonException) { throw new InvalidOperationException($"O TikTok retornou uma resposta inválida ao {action}."); }
+    }
+
+    private static Exception TikTokError(string action, string raw)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(raw); var root = document.RootElement; string? message = root.TryGetProperty("error_description", out var oauth) ? oauth.GetString() : null; string? code = null; string? logId = null;
+            if (root.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.Object) { message ??= error.TryGetProperty("message", out var api) ? api.GetString() : null; code = error.TryGetProperty("code", out var errorCode) ? errorCode.GetString() : null; logId = error.TryGetProperty("log_id", out var log) ? log.GetString() : null; }
+            var details = string.Join("; ", new[] { code, logId is null ? null : $"log {logId}" }.Where(value => !string.IsNullOrWhiteSpace(value)));
+            return new InvalidOperationException($"O TikTok recusou {action}{(details.Length > 0 ? $" ({details})" : "")}: {message ?? "erro desconhecido"}");
+        }
+        catch (JsonException) { return new InvalidOperationException($"O TikTok recusou {action}."); }
     }
 
     private async Task<string?> ResolveAccountAsync(SocialPlatform platform, SocialCredential account)
@@ -367,4 +433,6 @@ public sealed class SocialService
         await File.WriteAllTextAsync(_file, _protector.Protect(JsonSerializer.Serialize(_accounts.Values, JsonOptions)));
         await File.WriteAllTextAsync(_file + ".history", _protector.Protect(JsonSerializer.Serialize(_history, JsonOptions)));
     }
+    private sealed record PendingAuthorization(SocialPlatform Platform, string? CodeVerifier, DateTimeOffset CreatedAt);
+    private sealed record TikTokCreatorInfo(string[] PrivacyLevels, bool CommentDisabled, bool DuetDisabled, bool StitchDisabled);
 }
