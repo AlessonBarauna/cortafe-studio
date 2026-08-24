@@ -40,6 +40,7 @@ builder.Services.AddHostedService<ProductionBatchWorker>();
 builder.Services.AddSingleton<DiagnosticsService>();
 builder.Services.AddSingleton<StorageService>();
 builder.Services.AddSingleton<StorageCapacityService>();
+builder.Services.AddSingleton<SilenceTrimmingService>();
 builder.Services.AddSingleton<FramingService>();
 builder.Services.AddSingleton<ClipExportService>();
 builder.Services.AddSingleton<LocalSecurityService>();
@@ -215,6 +216,7 @@ api.MapPut("/projects/{id}/clips/{clipId}", async (string id, string clipId, Cli
         clip.CropX = Math.Clamp(update.CropX ?? clip.CropX, 0, 1);
         clip.LayoutMode = update.LayoutMode ?? clip.LayoutMode;
         if (update.OutputPreset is "vertical" or "portrait" or "square" or "landscape") clip.OutputPreset = update.OutputPreset;
+        clip.SilenceTrimmingEnabled = update.SilenceTrimmingEnabled ?? clip.SilenceTrimmingEnabled;
     });
     return updated is null ? Results.NotFound() : Results.Ok(updated);
 });
