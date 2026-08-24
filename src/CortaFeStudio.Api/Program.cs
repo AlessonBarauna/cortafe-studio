@@ -216,6 +216,32 @@ api.MapPost("/projects/{id}/clips/manual", async (string id, ManualClipRequest r
         return Results.BadRequest(new { error = ex.Message });
     }
 });
+api.MapGet("/projects/{id}/clips/{clipId}/subtitles", (string id, string clipId, ProjectStore store) =>
+{
+    var project = store.Get(id); var clip = project?.Clips.FirstOrDefault(item => item.Id == clipId);
+    return project is null || clip is null ? Results.NotFound() : Results.Ok(SubtitleTrackService.Ensure(clip, project.Transcript));
+});
+api.MapPut("/projects/{id}/clips/{clipId}/subtitles", async (string id, string clipId, SubtitleTrack request, ProjectStore store) =>
+{
+    var project = store.Get(id); var clip = project?.Clips.FirstOrDefault(item => item.Id == clipId);
+    if (project is null || clip is null) return Results.NotFound();
+    try
+    {
+        clip.SubtitleTrack = SubtitleTrackService.Validate(request, clip.End - clip.Start);
+        clip.SubtitleStyle = clip.SubtitleTrack.Style;
+        await store.SaveAsync(project);
+        return Results.Ok(clip.SubtitleTrack);
+    }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+api.MapPost("/projects/{id}/clips/{clipId}/subtitles/regenerate", async (string id, string clipId, ProjectStore store) =>
+{
+    var project = store.Get(id); var clip = project?.Clips.FirstOrDefault(item => item.Id == clipId);
+    if (project is null || clip is null) return Results.NotFound();
+    clip.SubtitleTrack = SubtitleTrackService.Create(clip, project.Transcript);
+    await store.SaveAsync(project);
+    return Results.Ok(clip.SubtitleTrack);
+});
 api.MapDelete("/projects/{id}/clips/{clipId}", async (string id, string clipId, ProjectStore store) =>
     await store.DeleteClipAsync(id, clipId) ? Results.NoContent() : Results.NotFound());
 api.MapPost("/projects/{id}/clips/{clipId}/analyze-framing", async (string id, string clipId, ProjectStore store, FramingService framing) =>

@@ -58,7 +58,7 @@ function seekPreview(seconds) { const video = previewVideo(); if (video) video.c
 function togglePreview() { const video = previewVideo(); if (!video) return toast('Renderize o corte para visualizar o vídeo final'); video.paused ? video.play() : video.pause(); }
 function markPreview(edge) {
   const video = previewVideo(), card = activeEditorCard(), clip = current?.clips.find(item => item.id === professionalClipId); if (!video || !card || !clip) return toast('Renderize o corte antes de marcar pelo monitor');
-  const absolute = clip.start + video.currentTime; const field = card.querySelector(`[name="${edge}"]`); const timeline = card.querySelector(`[name="timeline${edge[0].toUpperCase() + edge.slice(1)}"]`);
+  const absolute = video.dataset.sourcePreview ? video.currentTime : clip.start + video.currentTime; const field = card.querySelector(`[name="${edge}"]`); const timeline = card.querySelector(`[name="timeline${edge[0].toUpperCase() + edge.slice(1)}"]`);
   if (field) field.value = absolute.toFixed(1); if (timeline) { timeline.value = absolute.toFixed(1); syncTimeline(timeline, edge); }
   toast(edge === 'start' ? 'Entrada marcada no quadro atual' : 'Saída marcada no quadro atual');
 }

@@ -210,12 +210,19 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
 
     public async Task RenderClipAsync(VideoProject p, ClipCandidate clip, CancellationToken ct = default)
     {
-        var dir = store.ProjectDirectory(p.Id); var ass = Path.Combine(dir, $"captions-{clip.Id}.ass"); await File.WriteAllTextAsync(ass, BuildAss(p.Transcript, clip), Encoding.UTF8, ct);
-        var output = $"clip-{clip.Id}.mp4"; var escaped = ass.Replace("\\", "/").Replace(":", "\\:").Replace("'", "\\'");
+        var dir = store.ProjectDirectory(p.Id);
+        var subtitleTrack = SubtitleTrackService.Ensure(clip, p.Transcript);
+        string? ass = null;
+        if (subtitleTrack.Enabled)
+        {
+            ass = Path.Combine(dir, $"captions-{clip.Id}.ass");
+            await File.WriteAllTextAsync(ass, BuildAss(p.Transcript, clip), Encoding.UTF8, ct);
+        }
+        var output = $"clip-{clip.Id}.mp4";
         var framing = RenderFilterFactory.Framing(clip);
         var videoAnalysis = await videoEnhancement.AnalyzeAsync(Path.Combine(dir, p.LocalMedia!), clip.Start, clip.End - clip.Start, ct);
         var enhancement = VideoEnhancementService.CreateProfile(videoAnalysis);
-        var filter = $"{enhancement.Filter},{framing},subtitles='{escaped}'";
+        var filter = ComposeVideoFilter(enhancement.Filter, framing, ass);
         logger.LogInformation("[Video] project={ProjectId} clip={ClipId} enhancement={Enhancement} luma={Luma} saturation={Saturation}", p.Id, clip.Id, enhancement.Kind, videoAnalysis.LumaAverage, videoAnalysis.SaturationAverage);
         var audioAnalysis = await audioAnalyzer.AnalyzeAsync(Path.Combine(dir, p.LocalMedia!), clip.Start, clip.End - clip.Start, p.Options.ContentType, ct);
         var audio = AudioFilterFactory.Create(audioAnalysis, clip.End - clip.Start);
@@ -321,11 +328,18 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         catch { return false; }
     }
 
-    private static string BuildAss(List<TranscriptSegment> segments, ClipCandidate clip)
+    public static string BuildAss(List<TranscriptSegment> segments, ClipCandidate clip)
     {
         var (width, height) = RenderFilterFactory.Dimensions(clip.OutputPreset);
         var style = SubtitleFormatter.Style(clip, width, height);
         var sb = new StringBuilder($"[Script Info]\nScriptType: v4.00+\nPlayResX: {width}\nPlayResY: {height}\nWrapStyle: 2\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\n{style}\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n");
+        var track = SubtitleTrackService.Ensure(clip, segments);
+        if (track.Blocks.Count > 0)
+        {
+            foreach (var block in track.Blocks.Where(block => block.Enabled && !string.IsNullOrWhiteSpace(block.Text)))
+                sb.AppendLine($"Dialogue: 0,{AssTime(block.Start)},{AssTime(block.End)},Impacto,,0,0,0,,{SubtitleFormatter.Plain(block.Text, width)}");
+            return sb.ToString();
+        }
         var words = segments.SelectMany(s => s.Words).Where(w => w.End >= clip.Start && w.Start <= clip.End).OrderBy(w => w.Start).ToList();
         if (!string.IsNullOrWhiteSpace(clip.EditedTranscript) && words.Count > 0)
         {
@@ -349,6 +363,12 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         else foreach (var s in segments.Where(s => s.End >= clip.Start && s.Start <= clip.End))
             sb.AppendLine($"Dialogue: 0,{AssTime(Math.Max(0, s.Start - clip.Start))},{AssTime(Math.Min(clip.End - clip.Start, s.End - clip.Start))},Impacto,,0,0,0,,{SubtitleFormatter.Plain(s.Text, width)}");
         return sb.ToString();
+    }
+    public static string ComposeVideoFilter(string enhancement, string framing, string? subtitleFile)
+    {
+        var filter = $"{enhancement},{framing}";
+        if (string.IsNullOrWhiteSpace(subtitleFile)) return filter;
+        return $"{filter},subtitles='{EscapeFilterPath(subtitleFile)}'";
     }
     private static string EscapeAss(string value) => value.Replace("\n", " ").Replace("{", "(").Replace("}", ")");
     private static string EscapeFilterPath(string value) => value.Replace("\\", "/").Replace(":", "\\:").Replace("'", "\\'");
