@@ -52,7 +52,7 @@ public sealed class ClipExportService(ProjectStore store)
                 var hashtags = string.Join(' ', clip.Hashtags); var postText = $"{clip.Title}\n\n{clip.Caption}\n\n{hashtags}".Trim();
                 var textEntry = archive.CreateEntry($"legendas/{index + 1:00}-{safeTitle}.txt", CompressionLevel.Optimal);
                 await using (var writer = new StreamWriter(textEntry.Open(), new UTF8Encoding(false))) await writer.WriteAsync(postText.AsMemory(), ct);
-                csv.AppendLine(string.Join(';', index + 1, Csv(fileName), Csv(clip.Title), Csv(clip.Caption), Csv(hashtags), Math.Round(clip.End - clip.Start, 1)));
+                csv.AppendLine(string.Join(';', index + 1, Csv(fileName), Csv(clip.Title), Csv(clip.Caption), Csv(hashtags), Math.Round((clip.End - clip.Start) / RenderFilterFactory.NormalizePlaybackSpeed(clip.PlaybackSpeed), 1)));
             }
             var manifest = archive.CreateEntry("programacao-tiktok-studio.csv", CompressionLevel.Optimal);
             await using (var writer = new StreamWriter(manifest.Open(), new UTF8Encoding(true))) await writer.WriteAsync(csv.ToString().AsMemory(), ct);

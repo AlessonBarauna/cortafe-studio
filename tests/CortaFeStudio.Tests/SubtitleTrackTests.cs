@@ -117,6 +117,26 @@ public sealed class SubtitleTrackTests
     }
 
     [Fact]
+    public void BuildAss_AjustaTempoDaLegendaAoAcelerarCorte()
+    {
+        var clip = new ClipCandidate
+        {
+            Start = 0, End = 10, PlaybackSpeed = 1.5,
+            SubtitleTrack = new SubtitleTrack { Blocks = [new SubtitleBlock { Start = 1.5, End = 3, Text = "Mensagem acelerada" }] }
+        };
+        var ass = MediaPipeline.BuildAss([], clip);
+        Assert.Contains("0:00:01.00", ass);
+        Assert.Contains("0:00:02.00", ass);
+    }
+
+    [Fact]
+    public void ComposeVideoFilter_AceleraQuadrosAntesDaLegenda()
+    {
+        var filter = MediaPipeline.ComposeVideoFilter("null", "scale=1080:1920", "captions.ass", playbackSpeed: 1.25);
+        Assert.Contains("setpts=PTS/1.25,subtitles=", filter);
+    }
+
+    [Fact]
     public void ComposeVideoFilter_NaoUsaFiltroAssQuandoDesativado()
     {
         var filter = MediaPipeline.ComposeVideoFilter("eq=contrast=1", "scale=1080:1920", null);

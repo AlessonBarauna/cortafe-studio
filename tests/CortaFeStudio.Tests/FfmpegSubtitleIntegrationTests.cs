@@ -56,6 +56,19 @@ public sealed class FfmpegSubtitleIntegrationTests : IDisposable
         Assert.Equal(0, result);
     }
 
+    [Fact]
+    public async Task Ffmpeg_AceleraVideoEAudioSemPerderSincronia()
+    {
+        if (!FfmpegAvailable()) return;
+        Directory.CreateDirectory(_directory);
+        var video = MediaPipeline.ComposeVideoFilter("null", "scale=320:568", null, playbackSpeed: 1.5);
+        var audio = AudioFilterFactory.Create(new AudioAnalysis { Profile = AudioProfile.VoiceClean }, 1.5, 1.5).Filter;
+
+        var result = await RunAsync(["-v", "error", "-f", "lavfi", "-i", "color=c=gray:s=320x568:d=1.5", "-f", "lavfi", "-i", "sine=frequency=440:duration=1.5", "-vf", video, "-af", audio, "-shortest", "-f", "null", "-"]);
+
+        Assert.Equal(0, result);
+    }
+
     private bool FfmpegAvailable()
     {
         try { using var process = Process.Start(new ProcessStartInfo(Ffmpeg, "-version") { UseShellExecute = false, CreateNoWindow = true }); return process is not null && process.WaitForExit(3000) && process.ExitCode == 0; }

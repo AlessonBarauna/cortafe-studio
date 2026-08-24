@@ -121,4 +121,12 @@ public sealed class RenderFilterFactoryTests
         Assert.Contains("*(t-2)/2", filter);
         Assert.Contains("iw*(", filter);
     }
+
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(1.25, 1.25)]
+    [InlineData(1.5, 1.5)]
+    [InlineData(2, 1)]
+    public void NormalizePlaybackSpeed_AceitaSomenteVelocidadesSeguras(double value, double expected) =>
+        Assert.Equal(expected, RenderFilterFactory.NormalizePlaybackSpeed(value));
 }

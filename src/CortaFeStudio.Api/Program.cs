@@ -31,8 +31,6 @@ builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "storage", "keys")))
     .SetApplicationName("CortaFeStudio");
 builder.Services.AddSingleton<SocialService>();
-builder.Services.AddSingleton<ProductionBatchService>();
-builder.Services.AddHostedService<ProductionBatchWorker>();
 builder.Services.AddSingleton<DiagnosticsService>();
 builder.Services.AddSingleton<StorageService>();
 builder.Services.AddSingleton<FramingService>();
@@ -84,22 +82,6 @@ api.MapPost("/projects/{projectId}/clips/{clipId}/quality/repair", async (string
     if (project is null || clip is null) return Results.NotFound();
     await pipeline.RenderClipAsync(project, clip, ct); return Results.Ok(await quality.ValidateAsync(project, clip, ct));
 });
-api.MapGet("/production", (ProductionBatchService production) => production.List());
-api.MapGet("/production/{id}", (string id, ProductionBatchService production) =>
-    production.Get(id) is { } batch ? Results.Ok(batch) : Results.NotFound());
-api.MapPost("/production", async (CreateProductionBatchRequest request, ProductionBatchService production) =>
-{
-    if (!IsYouTubeUrl(request.Url)) return Results.BadRequest(new { error = "Informe um link valido do YouTube." });
-    var batch = await production.CreateAsync(request);
-    return Results.Accepted($"/api/production/{batch.Id}", batch);
-});
-api.MapPost("/production/{id}/approve", async (string id, ProductionApprovalRequest request, ProductionBatchService production, CancellationToken ct) =>
-{
-    try { return await production.ApproveAsync(id, request, ct) is { } batch ? Results.Ok(batch) : Results.NotFound(); }
-    catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); }
-});
-api.MapPost("/production/{id}/cancel", async (string id, ProductionBatchService production) =>
-    await production.CancelAsync(id) ? Results.Ok() : Results.NotFound());
 api.MapGet("/projects/{id}", (string id, ProjectStore store) =>
     store.Get(id) is { } project ? Results.Ok(project) : Results.NotFound());
 api.MapDelete("/projects/{id}", async (string id, ProjectStore store) =>
@@ -223,6 +205,7 @@ api.MapPut("/projects/{id}/clips/{clipId}", async (string id, string clipId, Cli
         clip.WatermarkEnabled = update.WatermarkEnabled ?? clip.WatermarkEnabled;
         clip.WatermarkText = update.WatermarkText?.Trim() ?? clip.WatermarkText;
         clip.WatermarkOpacity = update.WatermarkOpacity is null ? clip.WatermarkOpacity : Math.Clamp(update.WatermarkOpacity.Value, .1, 1);
+        clip.PlaybackSpeed = p.Options.ContentType == "louvor" ? 1 : update.PlaybackSpeed is 1.25 or 1.5 ? update.PlaybackSpeed.Value : 1;
         RenderStateService.MarkIfChanged(clip, previousFingerprint);
     });
     return updated is null ? Results.NotFound() : Results.Ok(updated);

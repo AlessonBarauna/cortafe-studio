@@ -42,7 +42,7 @@ public sealed partial class AudioAnalyzer(ToolService tools, ILogger<AudioAnalyz
 
 public static class AudioFilterFactory
 {
-    public static AudioProcessingProfile Create(AudioAnalysis analysis, double duration)
+    public static AudioProcessingProfile Create(AudioAnalysis analysis, double duration, double playbackSpeed = 1)
     {
         var core = analysis.Profile switch
         {
@@ -54,7 +54,10 @@ public static class AudioFilterFactory
             AudioProfile.VoiceWithMusic => "highpass=f=55,lowpass=f=17500,acompressor=threshold=0.17:ratio=1.6:attack=30:release=260:makeup=1.1,loudnorm=I=-15:LRA=11:TP=-1.3",
             _ => "highpass=f=70,lowpass=f=15500,afftdn=nf=-35,equalizer=f=3000:t=q:w=1.2:g=1,acompressor=threshold=0.125:ratio=2.3:attack=20:release=180:makeup=1.3,loudnorm=I=-16:LRA=9:TP=-1.5"
         };
-        var end = Math.Max(.12, duration - .18).ToString("0.###", CultureInfo.InvariantCulture);
-        return new AudioProcessingProfile { Profile = analysis.Profile, TargetLoudness = analysis.Profile is AudioProfile.Worship or AudioProfile.Music ? "-14 LUFS" : "-16 LUFS", Filter = $"{core},alimiter=limit=0.95:attack=5:release=50:level=disabled,afade=t=in:st=0:d=0.12,afade=t=out:st={end}:d=0.18" };
+        var speed = RenderFilterFactory.NormalizePlaybackSpeed(playbackSpeed);
+        var effectiveDuration = duration / speed;
+        var end = Math.Max(.12, effectiveDuration - .18).ToString("0.###", CultureInfo.InvariantCulture);
+        var tempo = speed > 1 ? $",atempo={speed.ToString("0.##", CultureInfo.InvariantCulture)}" : "";
+        return new AudioProcessingProfile { Profile = analysis.Profile, TargetLoudness = analysis.Profile is AudioProfile.Worship or AudioProfile.Music ? "-14 LUFS" : "-16 LUFS", Filter = $"{core},alimiter=limit=0.95:attack=5:release=50:level=disabled{tempo},afade=t=in:st=0:d=0.12,afade=t=out:st={end}:d=0.18" };
     }
 }

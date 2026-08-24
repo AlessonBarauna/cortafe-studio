@@ -5,6 +5,7 @@ namespace CortaFeStudio.Api.Services;
 
 public static class RenderFilterFactory
 {
+    public static double NormalizePlaybackSpeed(double speed) => speed is 1.25 or 1.5 ? speed : 1;
     public const string ProfessionalAudio =
         "highpass=f=70," +
         "lowpass=f=15000," +

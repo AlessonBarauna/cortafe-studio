@@ -106,6 +106,7 @@ public sealed class ClipCandidate
     public QualityReport? QualityReport { get; set; }
     public string? LastRenderFingerprint { get; set; }
     public bool RenderOutdated { get; set; }
+    public double PlaybackSpeed { get; set; } = 1;
 }
 public sealed class CandidateAnalysisReport
 {
@@ -179,6 +180,8 @@ public sealed class EditorialScoreBreakdown
     public double ProfileRelevance { get; set; }
     public double TopicRelevance { get; set; }
     public double LengthAdjustment { get; set; }
+    public double Impact { get; set; }
+    public double Clarity { get; set; }
     public double Learning { get; set; }
 
     public double Total => Math.Round(
@@ -194,6 +197,8 @@ public sealed class EditorialScoreBreakdown
             ProfileRelevance +
             TopicRelevance +
             LengthAdjustment +
+            Impact +
+            Clarity +
             Learning,
             0,
             99),
@@ -212,7 +217,7 @@ public sealed class UrlBatchProjectRequest
     public string? Name { get; set; }
     public ProjectOptions? Options { get; set; }
 }
-public record ClipUpdate(double? Start, double? End, string? Title, string? CoverText, string? Caption, bool? Approved, string? CropFocus, string? SubtitleStyle, string? CoverAccent, string? CoverPosition, double? CoverTimestamp, string? EditedTranscript, double? CropX, string? LayoutMode, string? OutputPreset, bool? BrandFrameEnabled = null, string? BrandTheme = null, bool? WatermarkEnabled = null, string? WatermarkText = null, double? WatermarkOpacity = null);
+public record ClipUpdate(double? Start, double? End, string? Title, string? CoverText, string? Caption, bool? Approved, string? CropFocus, string? SubtitleStyle, string? CoverAccent, string? CoverPosition, double? CoverTimestamp, string? EditedTranscript, double? CropX, string? LayoutMode, string? OutputPreset, bool? BrandFrameEnabled = null, string? BrandTheme = null, bool? WatermarkEnabled = null, string? WatermarkText = null, double? WatermarkOpacity = null, double? PlaybackSpeed = null);
 public record ManualClipRequest(double Start, double End);
 public record SplitClipRequest(double At);
 public record RestartFromRequest(string Stage);

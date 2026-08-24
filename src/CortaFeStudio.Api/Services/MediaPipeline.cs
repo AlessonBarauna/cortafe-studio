@@ -222,6 +222,8 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
     public async Task RenderClipAsync(VideoProject p, ClipCandidate clip, CancellationToken ct = default)
     {
         var dir = store.ProjectDirectory(p.Id);
+        var speed = p.Options.ContentType == "louvor" ? 1 : RenderFilterFactory.NormalizePlaybackSpeed(clip.PlaybackSpeed);
+        clip.PlaybackSpeed = speed;
         var subtitleTrack = SubtitleTrackService.Ensure(clip, p.Transcript);
         string? ass = null;
         if (subtitleTrack.Enabled)
@@ -237,10 +239,10 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         var branding = RenderFilterFactory.Branding(clip, EscapeFilterPath(watermarkFile), watermarkFont);
         var videoAnalysis = await videoEnhancement.AnalyzeAsync(Path.Combine(dir, p.LocalMedia!), clip.Start, clip.End - clip.Start, ct);
         var enhancement = VideoEnhancementService.CreateProfile(videoAnalysis);
-        var filter = ComposeVideoFilter(enhancement.Filter, framing, ass, branding, RenderFilterFactory.CreativeLook(clip.End - clip.Start));
+        var filter = ComposeVideoFilter(enhancement.Filter, framing, ass, branding, RenderFilterFactory.CreativeLook(clip.End - clip.Start), speed);
         logger.LogInformation("[Video] project={ProjectId} clip={ClipId} enhancement={Enhancement} luma={Luma} saturation={Saturation}", p.Id, clip.Id, enhancement.Kind, videoAnalysis.LumaAverage, videoAnalysis.SaturationAverage);
         var audioAnalysis = await audioAnalyzer.AnalyzeAsync(Path.Combine(dir, p.LocalMedia!), clip.Start, clip.End - clip.Start, p.Options.ContentType, ct);
-        var audio = AudioFilterFactory.Create(audioAnalysis, clip.End - clip.Start);
+        var audio = AudioFilterFactory.Create(audioAnalysis, clip.End - clip.Start, speed);
         logger.LogInformation("[Audio] project={ProjectId} clip={ClipId} profile={Profile} meanDb={MeanDb} peakDb={PeakDb}", p.Id, clip.Id, audio.Profile, audioAnalysis.MeanVolumeDb, audioAnalysis.PeakVolumeDb);
         var encoder = await encoderDetector.DetectAsync(ct);
         try { await RenderWithEncoderAsync(encoder); }
@@ -351,6 +353,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
 
     public static string BuildAss(List<TranscriptSegment> segments, ClipCandidate clip)
     {
+        var playbackSpeed = RenderFilterFactory.NormalizePlaybackSpeed(clip.PlaybackSpeed);
         var (width, height) = RenderFilterFactory.Dimensions(clip.OutputPreset);
         var style = SubtitleFormatter.Style(clip, width, height);
         var sb = new StringBuilder($"[Script Info]\nScriptType: v4.00+\nPlayResX: {width}\nPlayResY: {height}\nWrapStyle: 2\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\n{style}\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n");
@@ -361,7 +364,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
             {
                 var timing = SubtitleTrackService.EffectiveTiming(block, track, clip.End - clip.Start);
                 if (timing is null) continue;
-                sb.AppendLine($"Dialogue: 0,{AssTime(timing.Value.Start)},{AssTime(timing.Value.End)},Impacto,,0,0,0,,{SubtitleFormatter.Plain(block.Text, width)}");
+                sb.AppendLine($"Dialogue: 0,{AssTime(timing.Value.Start / playbackSpeed)},{AssTime(timing.Value.End / playbackSpeed)},Impacto,,0,0,0,,{SubtitleFormatter.Plain(block.Text, width)}");
             }
             return sb.ToString();
         }
@@ -382,16 +385,17 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
             {
                 var start = Math.Max(0, group[0].Start - clip.Start); var end = Math.Min(clip.End - clip.Start, group[^1].End - clip.Start + .08);
                 var karaoke = SubtitleFormatter.Karaoke(group, clip, width);
-                sb.AppendLine($"Dialogue: 0,{AssTime(start)},{AssTime(end)},Impacto,,0,0,0,,{karaoke}");
+                sb.AppendLine($"Dialogue: 0,{AssTime(start / playbackSpeed)},{AssTime(end / playbackSpeed)},Impacto,,0,0,0,,{karaoke}");
             }
         }
         else foreach (var s in segments.Where(s => s.End >= clip.Start && s.Start <= clip.End))
-            sb.AppendLine($"Dialogue: 0,{AssTime(Math.Max(0, s.Start - clip.Start))},{AssTime(Math.Min(clip.End - clip.Start, s.End - clip.Start))},Impacto,,0,0,0,,{SubtitleFormatter.Plain(s.Text, width)}");
+            sb.AppendLine($"Dialogue: 0,{AssTime(Math.Max(0, s.Start - clip.Start) / playbackSpeed)},{AssTime(Math.Min(clip.End - clip.Start, s.End - clip.Start) / playbackSpeed)},Impacto,,0,0,0,,{SubtitleFormatter.Plain(s.Text, width)}");
         return sb.ToString();
     }
-    public static string ComposeVideoFilter(string enhancement, string framing, string? subtitleFile, string? branding = null, string? creativeLook = null)
+    public static string ComposeVideoFilter(string enhancement, string framing, string? subtitleFile, string? branding = null, string? creativeLook = null, double playbackSpeed = 1)
     {
-        var filter = string.Join(',', new[] { enhancement, framing, creativeLook, branding }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        var playback = RenderFilterFactory.NormalizePlaybackSpeed(playbackSpeed) > 1 ? $"setpts=PTS/{F(playbackSpeed)}" : null;
+        var filter = string.Join(',', new[] { enhancement, framing, creativeLook, branding, playback }.Where(value => !string.IsNullOrWhiteSpace(value)));
         if (string.IsNullOrWhiteSpace(subtitleFile)) return filter;
         return $"{filter},subtitles='{EscapeFilterPath(subtitleFile)}'";
     }

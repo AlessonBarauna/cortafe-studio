@@ -3,12 +3,14 @@ const clipCardWithEditorial = clipCard;
 clipCard = function (project, clip, index) {
   const option = (value, current, label) => `<option value="${value}" ${value === current ? 'selected' : ''}>${label}</option>`;
   const timestamp = clip.coverTimestamp ?? Math.min(clip.end, clip.start + 3);
+  const speedControl = project.options.contentType === 'louvor' ? '' : `<label>Velocidade do corte<select class="form-select" name="playbackSpeed">${option('1', String(clip.playbackSpeed || 1), 'Normal · 1x')}${option('1.25', String(clip.playbackSpeed), 'Dinâmico · 1,25x')}${option('1.5', String(clip.playbackSpeed), 'Rápido · 1,50x')}</select><small class="text-secondary d-block mt-1">${Math.round((clip.end-clip.start)/(clip.playbackSpeed||1))} s no vídeo final</small></label>`;
   const controls = `<details class="editor-tools mt-3" onclick="event.stopPropagation()">
     <summary>Direção visual</summary>
     <div class="editor-grid mt-3">
       <label>Foco do vídeo<select class="form-select" name="cropFocus">${option('top', clip.cropFocus, 'Superior')}${option('center', clip.cropFocus || 'center', 'Central')}${option('bottom', clip.cropFocus, 'Inferior')}</select></label>
       <label>Composição<select class="form-select" name="layoutMode">${option('fill', clip.layoutMode || 'fill', 'Preencher 9:16')}${option('blur', clip.layoutMode, 'Fundo desfocado')}</select></label>
       <label>Formato de saída<select class="form-select" name="outputPreset">${option('vertical', clip.outputPreset || 'vertical', 'Vertical · 1080×1920')}${option('portrait', clip.outputPreset, 'Feed retrato · 1080×1350')}${option('square', clip.outputPreset, 'Quadrado · 1080×1080')}${option('landscape', clip.outputPreset, 'Horizontal · 1920×1080')}</select></label>
+      ${speedControl}
       <label>Posição horizontal<input class="form-range" name="cropX" type="range" min="0" max="1" step=".01" value="${clip.cropX ?? .5}"></label>
       <label>Estilo da legenda<select class="form-select" name="subtitleStyle">${option('impact', clip.subtitleStyle || 'impact', 'Impacto')}${option('clean', clip.subtitleStyle, 'Limpa')}${option('podcast', clip.subtitleStyle, 'Podcast')}${option('sermon', clip.subtitleStyle, 'Pregação')}${option('motivational', clip.subtitleStyle, 'Motivacional')}${option('minimal', clip.subtitleStyle, 'Minimalista')}${option('worship', clip.subtitleStyle, 'Louvor')}${option('bold', clip.subtitleStyle, 'Palco')}</select></label>
       <label>Posição na capa<select class="form-select" name="coverPosition">${option('top', clip.coverPosition, 'Superior')}${option('center', clip.coverPosition, 'Centro')}${option('bottom', clip.coverPosition || 'bottom', 'Inferior')}</select></label>
@@ -27,7 +29,7 @@ saveClip = async function (project, card) {
     start: +value('start'), end: +value('end'), title: value('title'), coverText: value('coverText'),
     caption: value('caption'), approved: true, cropFocus: value('cropFocus'),
     subtitleStyle: value('subtitleStyle'), coverAccent: value('coverAccent'),
-    coverPosition: value('coverPosition'), coverTimestamp: +value('coverTimestamp'), cropX: +value('cropX'), layoutMode: value('layoutMode'), outputPreset: value('outputPreset')
+    coverPosition: value('coverPosition'), coverTimestamp: +value('coverTimestamp'), cropX: +value('cropX'), layoutMode: value('layoutMode'), outputPreset: value('outputPreset'), playbackSpeed: +(value('playbackSpeed') || 1)
   };
   await api(`/api/projects/${project.id}/clips/${clip.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   Object.assign(clip, body);

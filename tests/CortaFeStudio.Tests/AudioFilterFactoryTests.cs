@@ -41,6 +41,17 @@ public sealed class AudioFilterFactoryTests
     }
 
     [Theory]
+    [InlineData(1.25, "atempo=1.25", "st=47.82")]
+    [InlineData(1.5, "atempo=1.5", "st=39.82")]
+    public void Create_AceleraAudioEMantemFadeNoFinalReal(double speed, string tempo, string fade)
+    {
+        var profile = AudioFilterFactory.Create(new AudioAnalysis { Profile = AudioProfile.VoiceClean }, 60, speed);
+        Assert.Contains(tempo, profile.Filter);
+        Assert.Contains(fade, profile.Filter);
+        Assert.True(profile.Filter.IndexOf("atempo", StringComparison.Ordinal) < profile.Filter.IndexOf("afade", StringComparison.Ordinal));
+    }
+
+    [Theory]
     [InlineData(AudioProfile.VoiceClean)]
     [InlineData(AudioProfile.VoiceNoisy)]
     [InlineData(AudioProfile.VoiceWithMusic)]

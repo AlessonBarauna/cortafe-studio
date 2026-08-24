@@ -86,7 +86,7 @@ public static class HookBoundaryRefiner
         clip.Reasons = clip.Reasons
             .Prepend("abertura ajustada para um gancho mais forte")
             .Distinct()
-            .Take(5)
+            .Take(8)
             .ToList();
     }
 
@@ -117,7 +117,7 @@ public static class HookBoundaryRefiner
         clip.Reasons = clip.Reasons
             .Append("final preservado até concluir a ideia")
             .Distinct()
-            .Take(5)
+            .Take(8)
             .ToList();
     }
 

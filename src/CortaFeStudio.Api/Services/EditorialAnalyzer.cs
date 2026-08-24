@@ -106,7 +106,7 @@ public sealed class EditorialAnalyzer(
 
             clip.Reasons = clip.Reasons
                 .Distinct()
-                .Take(5)
+                .Take(8)
                 .ToList();
 
             if (clip.Score >= 45) pool.Add(clip);

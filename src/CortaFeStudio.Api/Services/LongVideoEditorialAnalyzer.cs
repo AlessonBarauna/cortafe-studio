@@ -35,7 +35,7 @@ public sealed class LongVideoEditorialAnalyzer(EditorialAnalyzer analyzer)
             Merge(report, chunkAnalysis.Report);
             foreach (var clip in chunkAnalysis.Clips)
             {
-                clip.Reasons = clip.Reasons.Prepend($"bloco {index + 1} de {chunks.Count} do vídeo").Distinct().Take(5).ToList();
+                clip.Reasons = clip.Reasons.Prepend($"bloco {index + 1} de {chunks.Count} do vídeo").Distinct().Take(8).ToList();
                 candidates.Add((clip, index));
             }
         }

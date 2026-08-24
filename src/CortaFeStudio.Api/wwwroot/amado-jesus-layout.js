@@ -12,7 +12,6 @@
       <span class="aj-menu-label">Workspace</span>
       <button data-aj-route="home"><i>⌂</i><span>Início</span></button>
       <button data-aj-route="new"><i>＋</i><span>Novo projeto</span></button>
-      <button data-aj-route="factory"><i>▦</i><span>Produção em lote</span></button>
       <span class="aj-menu-label">Gerenciar</span>
       <button data-aj-route="social"><i>↗</i><span>Publicar no TikTok</span></button>
       <button data-aj-route="diagnostics"><i>◇</i><span>Diagnóstico</span></button>
@@ -20,7 +19,7 @@
     <div class="aj-sidebar-card"><span>FLUXO ATIVO</span><strong>TikTok Studio</strong><small>Crie, revise e exporte seus cortes em um só lugar.</small></div>`;
   document.body.insertBefore(sidebar, document.body.firstChild);
 
-  const routes = { home: () => home(), new: () => newProject(), factory: () => factoryCenter(), social: () => socialCenter(), diagnostics: () => diagnosticsCenter() };
+  const routes = { home: () => home(), new: () => newProject(), social: () => socialCenter(), diagnostics: () => diagnosticsCenter() };
   sidebar.querySelectorAll('[data-aj-route]').forEach(button => button.addEventListener('click', () => routes[button.dataset.ajRoute]?.()));
 
   function setActive(route) {
@@ -63,8 +62,6 @@
   };
   const originalNewProject = window.newProject;
   window.newProject = function () { setActive('new'); return originalNewProject(); };
-  const originalFactory = window.factoryCenter;
-  window.factoryCenter = async function () { setActive('factory'); return originalFactory(); };
   const originalSocial = window.socialCenter;
   window.socialCenter = async function () { setActive('social'); return originalSocial(); };
   const originalDiagnostics = window.diagnosticsCenter;
