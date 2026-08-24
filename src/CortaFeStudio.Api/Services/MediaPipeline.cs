@@ -58,14 +58,18 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
                 await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-i", media, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", audio], dir, ct);
                 await Checkpoint(p, "audio", "Áudio extraído");
             }
-            await Stage(p, ProjectStatus.Transcribing, 35, "Transcrevendo com IA local");
-            await tools.RunAsync(tools.Find("python"), [Path.Combine(tools.Root, "scripts", "transcribe.py"), audio, transcriptFile, p.Options.WhisperModel], dir, ct);
+            var worshipMode = p.Options.ContentType == "louvor";
+            await Stage(p, ProjectStatus.Transcribing, 35, worshipMode ? "Transcrevendo canto em modo para louvor" : "Transcrevendo com IA local");
+            await tools.RunAsync(tools.Find("python"), [Path.Combine(tools.Root, "scripts", "transcribe.py"), audio, transcriptFile, p.Options.WhisperModel, p.Options.ContentType], dir, ct);
             p.Transcript = JsonSerializer.Deserialize<List<TranscriptSegment>>(await File.ReadAllTextAsync(transcriptFile, ct), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
             p.TranscriptSource = $"Faster-Whisper ({p.Options.WhisperModel})";
             if (p.SourceKind == SourceKind.YouTube && (p.Options.ContentType == "louvor" || p.Transcript.Sum(x => x.Text.Length) < 120))
                 await TryLoadYouTubeCaptionsAsync(p, allowAutomatic: true, ct);
         }
-        if (p.Transcript.Count == 0) throw new InvalidOperationException("A transcrição não produziu conteúdo utilizável.");
+        if (p.Transcript.Count == 0)
+            throw new InvalidOperationException(p.Options.ContentType == "louvor"
+                ? "Não foi possível reconhecer voz ou canto neste áudio. Tente o modelo Small ou Medium para melhorar o reconhecimento musical."
+                : "Não foi possível reconhecer fala neste áudio, mesmo após a tentativa sem filtro de voz.");
         await Checkpoint(p, "transcript", "Transcrição disponível");
         await Stage(p, ProjectStatus.Analyzing, 72, "Encontrando momentos de impacto");
         p.Options.ApplyAutomaticDuration();
