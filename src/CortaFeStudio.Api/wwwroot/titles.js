@@ -1,0 +1,9 @@
+const titleClipCardBase = clipCard;
+clipCard = function(project, clip, index) {
+  const html = titleClipCardBase(project, clip, index);
+  return html.replace(/(<input[^>]+name="title"[^>]*>)/, `$1<div class="title-tools"><span data-title-count>${(clip.title || '').length} / 100</span><button type="button" onclick="suggestClipTitles('${project.id}','${clip.id}',this)">✨ Sugerir novo título</button></div><div class="title-suggestions d-none"></div>`);
+};
+
+document.addEventListener('input', event => { if (event.target.matches('[name="title"]')) { const count=event.target.closest('.clip-card')?.querySelector('[data-title-count]'); if(count) count.textContent=`${event.target.value.length} / 100`; } });
+async function suggestClipTitles(projectId,clipId,button){button.disabled=true;button.textContent='Criando sugestões…';try{const result=await api(`/api/projects/${projectId}/clips/${clipId}/title-suggestions`,{method:'POST'}),container=button.closest('.clip-card').querySelector('.title-suggestions');container.innerHTML=result.suggestions.length?result.suggestions.map(title=>`<button type="button" onclick="chooseTitleSuggestion(this)">${escapeHtml(title)}</button>`).join(''):'<small class="text-secondary">Não encontramos outra frase forte neste trecho.</small>';container.classList.remove('d-none')}catch(error){toast(error.message)}finally{button.disabled=false;button.textContent='✨ Sugerir novo título'}}
+function chooseTitleSuggestion(button){const card=button.closest('.clip-card'),input=card.querySelector('[name="title"]');input.value=button.textContent.trim();input.dispatchEvent(new Event('input',{bubbles:true}));card.querySelectorAll('.title-suggestions button').forEach(item=>item.classList.toggle('selected',item===button));toast('Título escolhido; clique em Salvar para persistir');}

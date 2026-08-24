@@ -33,15 +33,14 @@ builder.Services.AddDataProtection()
     .SetApplicationName("CortaFeStudio");
 builder.Services.AddSingleton<SocialService>();
 builder.Services.AddSingleton<ContentCalendarService>();
-builder.Services.AddSingleton<ProductionBatchService>();
-builder.Services.AddSingleton<ProductionPipeline>();
 builder.Services.AddSingleton<ProductionWorkLimiter>();
-builder.Services.AddHostedService<ProductionBatchWorker>();
 builder.Services.AddSingleton<DiagnosticsService>();
 builder.Services.AddSingleton<StorageService>();
 builder.Services.AddSingleton<StorageCapacityService>();
 builder.Services.AddSingleton<SilenceTrimmingService>();
 builder.Services.AddSingleton<FramingService>();
+builder.Services.AddSingleton<ManualClipService>();
+builder.Services.AddSingleton<WaveformService>();
 builder.Services.AddSingleton<ClipExportService>();
 builder.Services.AddSingleton<LocalSecurityService>();
 builder.Services.AddHostedService<PublicationScheduler>();
@@ -52,7 +51,7 @@ var app = builder.Build();
 app.UseExceptionHandler();
 app.Use(async (context, next) =>
 {
-    if (!IPAddress.IsLoopback(context.Connection.RemoteIpAddress ?? IPAddress.Loopback)) { context.Response.StatusCode = 403; await context.Response.WriteAsJsonAsync(new { error = "O CortaFé aceita acesso somente deste computador." }); return; }
+    if (!IPAddress.IsLoopback(context.Connection.RemoteIpAddress ?? IPAddress.Loopback)) { context.Response.StatusCode = 403; await context.Response.WriteAsJsonAsync(new { error = "O Amado Jesus Studio aceita acesso somente deste computador." }); return; }
     var security = context.RequestServices.GetRequiredService<LocalSecurityService>(); var path = context.Request.Path;
     if (security.Enabled && path.StartsWithSegments("/api") && !path.StartsWithSegments("/api/security") && !security.ValidSession(context.Request.Cookies["cortafe-session"])) { context.Response.StatusCode = 401; await context.Response.WriteAsJsonAsync(new { error = "Sessão local expirada." }); return; }
     await next();
@@ -90,24 +89,6 @@ api.MapPost("/projects/{projectId}/clips/{clipId}/quality/repair", async (string
     if (project is null || clip is null) return Results.NotFound();
     await pipeline.RenderClipAsync(project, clip, ct); return Results.Ok(await quality.ValidateAsync(project, clip, ct));
 });
-api.MapGet("/production", (ProductionBatchService production) => production.List());
-api.MapGet("/production/{id}", (string id, ProductionBatchService production) =>
-    production.Get(id) is { } batch ? Results.Ok(batch) : Results.NotFound());
-api.MapPost("/production", async (CreateProductionBatchRequest request, ProductionBatchService production) =>
-{
-    if (!IsYouTubeUrl(request.Url)) return Results.BadRequest(new { error = "Informe um link valido do YouTube." });
-    var batch = await production.CreateAsync(request);
-    return Results.Accepted($"/api/production/{batch.Id}", batch);
-});
-api.MapPost("/production/{id}/approve", async (string id, ProductionApprovalRequest request, ProductionBatchService production, CancellationToken ct) =>
-{
-    try { return await production.ApproveAsync(id, request, ct) is { } batch ? Results.Ok(batch) : Results.NotFound(); }
-    catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); }
-});
-api.MapPost("/production/{id}/cancel", async (string id, ProductionBatchService production) =>
-    await production.CancelAsync(id) ? Results.Ok() : Results.NotFound());
-api.MapPost("/production/{id}/retry-stage", async (string id, RetryProductionStageRequest request, ProductionBatchService production) =>
-    await production.RetryStageAsync(id, request.Stage) is { } batch ? Results.Ok(batch) : Results.NotFound());
 api.MapGet("/projects/{id}", (string id, ProjectStore store) =>
     store.Get(id) is { } project ? Results.Ok(project) : Results.NotFound());
 api.MapGet("/projects/{projectId}/clips/{clipId}/metadata", (string projectId, string clipId, ProjectStore store) =>
@@ -166,12 +147,27 @@ api.MapPost("/projects/upload", async (HttpRequest request, ProjectStore store, 
     return Results.Accepted($"/api/projects/{project.Id}", project);
 }).DisableAntiforgery();
 
-api.MapPost("/projects/{id}/retry", async (string id, ProjectStore store, ProjectQueue queue) =>
+api.MapPost("/projects/{id}/retry", async (string id, HttpRequest http, ProjectStore store, ProjectQueue queue) =>
 {
-    if (store.Get(id) is null) return Results.NotFound();
-    await store.UpdateAsync(id, p => { p.Status = ProjectStatus.Queued; p.Error = null; p.Progress = 0; });
+    var project = store.Get(id); if (project is null) return Results.NotFound();
+    if (project.Status is not (ProjectStatus.Failed or ProjectStatus.Cancelled))
+        return Results.Conflict(new { error = "Este projeto já está na fila ou em processamento." });
+    try
+    {
+        var request = http.ContentLength > 0
+            ? await http.ReadFromJsonAsync<RetryProjectRequest>() ?? new RetryProjectRequest()
+            : new RetryProjectRequest();
+        var browser = YouTubeAcquisition.WithBrowserSession([], request.Browser);
+        await store.UpdateAsync(id, p =>
+        {
+            p.YouTubeCookieBrowser = browser.Count == 0 ? null : request.Browser!.Trim().ToLowerInvariant();
+            p.Status = ProjectStatus.Queued; p.Error = null; p.FailureCode = null; p.Progress = 1;
+            p.Stage = p.YouTubeCookieBrowser is null ? "Retentativa adicionada à fila" : "Aguardando acesso com a sessão do navegador";
+        });
+    }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
     await queue.EnqueueAsync(id);
-    return Results.Accepted();
+    return Results.Accepted($"/api/projects/{id}", store.Get(id));
 });
 api.MapPost("/projects/{id}/cancel", async (string id, ProjectStore store, ProjectQueue queue) =>
 {
@@ -200,9 +196,14 @@ api.MapPut("/projects/{id}/clips/{clipId}", async (string id, string clipId, Cli
     {
         var clip = p.Clips.FirstOrDefault(c => c.Id == clipId);
         if (clip is null) return;
+        var previousFingerprint = RenderStateService.Fingerprint(clip);
         clip.Start = Math.Max(0, update.Start ?? clip.Start);
         clip.End = Math.Max(clip.Start + 1, update.End ?? clip.End);
-        clip.Title = update.Title ?? clip.Title;
+        if (update.Title is not null && !string.Equals(update.Title.Trim(), clip.Title, StringComparison.Ordinal))
+        {
+            clip.Title = update.Title.Trim();
+            clip.TitleEditedByUser = true;
+        }
         clip.Caption = update.Caption ?? clip.Caption;
         clip.CoverText = update.CoverText ?? clip.CoverText;
         clip.Approved = update.Approved ?? clip.Approved;
@@ -216,9 +217,67 @@ api.MapPut("/projects/{id}/clips/{clipId}", async (string id, string clipId, Cli
         clip.CropX = Math.Clamp(update.CropX ?? clip.CropX, 0, 1);
         clip.LayoutMode = update.LayoutMode ?? clip.LayoutMode;
         if (update.OutputPreset is "vertical" or "portrait" or "square" or "landscape") clip.OutputPreset = update.OutputPreset;
+        clip.BrandFrameEnabled = update.BrandFrameEnabled ?? clip.BrandFrameEnabled;
+        clip.BrandTheme = update.BrandTheme ?? clip.BrandTheme;
+        clip.WatermarkEnabled = update.WatermarkEnabled ?? clip.WatermarkEnabled;
+        clip.WatermarkText = update.WatermarkText?.Trim() ?? clip.WatermarkText;
+        clip.WatermarkOpacity = update.WatermarkOpacity is null ? clip.WatermarkOpacity : Math.Clamp(update.WatermarkOpacity.Value, .1, 1);
+        clip.PlaybackSpeed = p.Options.ContentType == "louvor" ? 1 : update.PlaybackSpeed is 1.25 or 1.5 ? update.PlaybackSpeed.Value : 1;
         clip.SilenceTrimmingEnabled = update.SilenceTrimmingEnabled ?? clip.SilenceTrimmingEnabled;
+        RenderStateService.MarkIfChanged(clip, previousFingerprint);
     });
     return updated is null ? Results.NotFound() : Results.Ok(updated);
+});
+api.MapPost("/projects/{id}/clips/manual", async (string id, ManualClipRequest request, ProjectStore store, ManualClipService manualClips) =>
+{
+    var project = store.Get(id);
+    if (project is null) return Results.NotFound();
+    try
+    {
+        var clip = manualClips.Create(project, request.Start, request.End);
+        project.Clips.Add(clip);
+        await store.SaveAsync(project);
+        return Results.Created($"/api/projects/{id}/clips/{clip.Id}", clip);
+    }
+    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+api.MapGet("/projects/{id}/clips/{clipId}/subtitles", (string id, string clipId, ProjectStore store) =>
+{
+    var project = store.Get(id); var clip = project?.Clips.FirstOrDefault(item => item.Id == clipId);
+    return project is null || clip is null ? Results.NotFound() : Results.Ok(SubtitleTrackService.Ensure(clip, project.Transcript));
+});
+api.MapPut("/projects/{id}/clips/{clipId}/subtitles", async (string id, string clipId, SubtitleTrack request, ProjectStore store) =>
+{
+    var project = store.Get(id); var clip = project?.Clips.FirstOrDefault(item => item.Id == clipId);
+    if (project is null || clip is null) return Results.NotFound();
+    try
+    {
+        var previousFingerprint = RenderStateService.Fingerprint(clip);
+        clip.SubtitleTrack = SubtitleTrackService.Validate(request, clip.End - clip.Start);
+        clip.SubtitleStyle = clip.SubtitleTrack.Style;
+        RenderStateService.MarkIfChanged(clip, previousFingerprint);
+        await store.SaveAsync(project);
+        return Results.Ok(clip.SubtitleTrack);
+    }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+api.MapPost("/projects/{id}/clips/{clipId}/subtitles/regenerate", async (string id, string clipId, ProjectStore store) =>
+{
+    var project = store.Get(id); var clip = project?.Clips.FirstOrDefault(item => item.Id == clipId);
+    if (project is null || clip is null) return Results.NotFound();
+    clip.SubtitleTrack = SubtitleTrackService.Create(clip, project.Transcript);
+    await store.SaveAsync(project);
+    return Results.Ok(clip.SubtitleTrack);
+});
+api.MapPost("/projects/{id}/clips/{clipId}/title-suggestions", (string id, string clipId, ProjectStore store) =>
+{
+    var project = store.Get(id); var clip = project?.Clips.FirstOrDefault(item => item.Id == clipId);
+    if (project is null || clip is null) return Results.NotFound();
+    var existing = project.Clips.Where(item => item.Id != clipId).Select(item => item.Title);
+    return Results.Ok(new { suggestions = ShortFormMetadataService.GenerateTitleSuggestions(clip, project.Options.ContentType, existing) });
 });
 api.MapDelete("/projects/{id}/clips/{clipId}", async (string id, string clipId, ProjectStore store) =>
     await store.DeleteClipAsync(id, clipId) ? Results.NoContent() : Results.NotFound());
@@ -328,6 +387,24 @@ api.MapPost("/projects/{id}/recover-youtube-captions", async (string id, Project
     catch (Exception ex) { return Results.Problem(ex.Message); }
 });
 
+api.MapGet("/projects/{id}/source", (string id, ProjectStore store) =>
+{
+    var project = store.Get(id);
+    if (project is null) return Results.NotFound();
+    if (string.IsNullOrWhiteSpace(project.LocalMedia))
+        return Results.NotFound(new { error = "A mídia original não está disponível." });
+    var file = store.ResolveAsset(id, project.LocalMedia);
+    return file is null
+        ? Results.NotFound(new { error = "A mídia original foi removida do armazenamento." })
+        : Results.File(file, GetContentType(file), enableRangeProcessing: true);
+});
+api.MapGet("/projects/{id}/waveform", async (string id, WaveformService waveform, CancellationToken ct) =>
+{
+    try { return Results.Ok(new { samples = await waveform.GetAsync(id, ct) }); }
+    catch (KeyNotFoundException) { return Results.NotFound(); }
+    catch (Exception ex) when (ex is InvalidOperationException or FileNotFoundException) { return Results.BadRequest(new { error = ex.Message }); }
+});
+
 api.MapGet("/projects/{id}/assets/{**path}", (string id, string path, ProjectStore store) =>
 {
     var file = store.ResolveAsset(id, path);
@@ -339,12 +416,18 @@ api.MapGet("/projects/{id}/exports/clips.zip", async (string id, ProjectStore st
     try { var file = await exports.CreateZipAsync(project, ct); return Results.File(file, "application/zip", $"{project.Name}-cortes.zip", enableRangeProcessing: true); }
     catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
+api.MapGet("/projects/{id}/exports/tiktok-studio.zip", async (string id, ProjectStore store, ClipExportService exports, CancellationToken ct) =>
+{
+    var project = store.Get(id); if (project is null) return Results.NotFound();
+    try { var file = await exports.CreateTikTokStudioPackageAsync(project, ct); return Results.File(file, "application/zip", $"{project.Name}-tiktok-studio.zip", enableRangeProcessing: true); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
 api.MapGet("/projects/{id}/exports/project.json", (string id, ProjectStore store) =>
 {
     var project = store.Get(id); if (project is null) return Results.NotFound();
     var options = new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
-    return Results.File(JsonSerializer.SerializeToUtf8Bytes(project, options), "application/json", $"cortafe-{project.Id}.json");
+    return Results.File(JsonSerializer.SerializeToUtf8Bytes(project, options), "application/json", $"amado-jesus-{project.Id}.json");
 });
 
 api.MapGet("/social/status", (SocialService social) => social.Status());
@@ -373,23 +456,17 @@ api.MapPost("/social/publications/{id}/refresh", async (string id, SocialService
 });
 api.MapPost("/social/configure", async (SocialConfigurationRequest request, SocialService social) =>
     { await social.ConfigureAsync(request); return Results.Ok(); });
-api.MapDelete("/social/accounts/{platform}", async (string platform, SocialService social) =>
+api.MapDelete("/social/accounts/{platform}", async (SocialPlatform platform, SocialService social) => { await social.DisconnectAsync(platform); return Results.NoContent(); });
+api.MapGet("/social/connect/{platform}", (SocialPlatform platform, HttpRequest request, SocialService social) =>
 {
-    if (!TrySocialPlatform(platform, out var parsed)) return Results.BadRequest(new { error = "Plataforma social inválida." });
-    await social.DisconnectAsync(parsed); return Results.NoContent();
-});
-api.MapGet("/social/connect/{platform}", (string platform, HttpRequest request, SocialService social) =>
-{
-    if (!TrySocialPlatform(platform, out var parsed)) return Results.BadRequest(new { error = "Plataforma social inválida." });
-    try { return Results.Ok(new { url = social.AuthorizationUrl(parsed, $"{request.Scheme}://{request.Host}") }); }
+    try { return Results.Ok(new { url = social.AuthorizationUrl(platform, $"{request.Scheme}://{request.Host}") }); }
     catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
-api.MapGet("/social/callback/{platform}", async (string platform, string? code, string? state, string? error, HttpRequest request, SocialService social) =>
+api.MapGet("/social/callback/{platform}", async (SocialPlatform platform, string? code, string? state, string? error, HttpRequest request, SocialService social) =>
 {
-    if (!TrySocialPlatform(platform, out var parsed)) return Results.Content("<h1>Plataforma social inválida.</h1>", "text/html", statusCode: 400);
     if (!string.IsNullOrWhiteSpace(error)) return Results.Content($"<h1>Conexão cancelada</h1><p>{System.Net.WebUtility.HtmlEncode(error)}</p>", "text/html");
     if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(state)) return Results.BadRequest("Código OAuth ausente.");
-    try { await social.CompleteOAuthAsync(parsed, code, state, $"{request.Scheme}://{request.Host}"); return Results.Content("<script>window.opener?.postMessage('social-connected','*');window.close()</script><h1>Conta conectada.</h1>", "text/html"); }
+    try { await social.CompleteOAuthAsync(platform, code, state, $"{request.Scheme}://{request.Host}"); return Results.Content("<script>window.opener?.postMessage('social-connected','*');window.close()</script><h1>Conta conectada.</h1>", "text/html"); }
     catch (Exception ex) { return Results.Content($"<h1>Falha na conexão</h1><pre>{System.Net.WebUtility.HtmlEncode(ex.Message)}</pre>", "text/html"); }
 });
 api.MapPost("/projects/{projectId}/clips/{clipId}/publish", async (string projectId, string clipId, PublishRequest request, SocialService social) =>
@@ -408,7 +485,6 @@ static string GetContentType(string path) => Path.GetExtension(path).ToLowerInva
 };
 static bool IsYouTubeUrl(string url) => Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
     new[] { "youtube.com", "www.youtube.com", "youtu.be", "m.youtube.com" }.Contains(uri.Host.ToLowerInvariant());
-static bool TrySocialPlatform(string value, out SocialPlatform platform) => Enum.TryParse(value, ignoreCase: true, out platform);
 public record PinRequest(string Pin);
 public record BackupRequest(string Password);
 

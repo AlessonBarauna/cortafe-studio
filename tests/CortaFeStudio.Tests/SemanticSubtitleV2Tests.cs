@@ -31,7 +31,7 @@ public sealed class SemanticSubtitleV2Tests
     {
         var style = SubtitleFormatter.Style(new ClipCandidate { SubtitleStyle = styleName }, 1080, 1920);
         Assert.StartsWith("Style: Impacto,", style);
-        Assert.EndsWith(",135,135,430,1", style);
+        Assert.EndsWith(",135,135,235,1", style);
     }
 
     [Fact]

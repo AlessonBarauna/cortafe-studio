@@ -170,6 +170,21 @@ public sealed class EditorialRankingScenarioTests : IDisposable
             clip.Hashtags);
     }
 
+    [Fact]
+    public void Analyze_MedeImpactoDirecaoAoPublicoEFraseMemoravel()
+    {
+        var clip = AnalyzeSingle(
+        [
+            "Presta atenção: ninguém te contou o segredo que pode mudar sua vida?",
+            "Você precisa entender que coragem não é ausência de medo, mas a decisão de continuar.",
+            "Por isso, pare de esperar o momento perfeito, decida e comece hoje."
+        ]);
+
+        Assert.True(clip.ScoreBreakdown.Impact >= 8);
+        Assert.True(clip.ScoreBreakdown.Clarity >= 4);
+        Assert.Contains(clip.Reasons, reason => reason.Contains("impacto", StringComparison.OrdinalIgnoreCase));
+    }
+
     private ClipCandidate AnalyzeSingle(
         string[] texts,
         ProjectOptions? options = null)

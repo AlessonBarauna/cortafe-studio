@@ -17,7 +17,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         if (p.SourceKind == SourceKind.YouTube && (p.Transcript.Count == 0 || p.Duration <= 0 || p.Name == "Vídeo do YouTube"))
         {
             await Stage(p, ProjectStatus.Acquiring, 8, "Consultando duração e legendas do YouTube");
-            var metadata = await ProbeYouTubeMetadata(p.Source, ct); p.Duration = metadata.Duration;
+            var metadata = await ProbeYouTubeMetadata(p, ct); p.Duration = metadata.Duration;
             if (p.Name == "Vídeo do YouTube" && !string.IsNullOrWhiteSpace(metadata.Title)) p.Name = metadata.Title;
             if (p.Transcript.Count == 0) await TryLoadYouTubeCaptionsAsync(p, allowAutomatic: true, ct);
         }
@@ -27,12 +27,13 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
             storageCapacity.Ensure(StorageOperation.Acquisition, p.Duration);
             var template = Path.Combine(dir, "source.%(ext)s");
             await Stage(p, ProjectStatus.Acquiring, 12, p.Transcript.Count > 0 ? "Baixando vídeo; legendas já aproveitadas" : "Baixando vídeo em formato otimizado");
-            var downloadArgs = YouTubeAcquisition.DownloadArguments(tools.YouTubeArguments(), tools.Find("ffmpeg"), template, p.Source);
+            var youtubeArgs = YouTubeAcquisition.WithBrowserSession(tools.YouTubeArguments(), p.YouTubeCookieBrowser);
+            var downloadArgs = YouTubeAcquisition.DownloadArguments(youtubeArgs, tools.Find("ffmpeg"), template, p.Source);
             try { await tools.RunAsync(tools.Find("yt-dlp"), downloadArgs, dir, ct); }
             catch (InvalidOperationException ex) when (ex.Message.Contains("403", StringComparison.OrdinalIgnoreCase))
             {
                 await Stage(p, ProjectStatus.Acquiring, 14, "YouTube recusou o 1080p; tentando formato compatível");
-                var compatibleArgs = YouTubeAcquisition.CompatibleDownloadArguments(tools.YouTubeArguments(), tools.Find("ffmpeg"), template, p.Source);
+                var compatibleArgs = YouTubeAcquisition.CompatibleDownloadArguments(youtubeArgs, tools.Find("ffmpeg"), template, p.Source);
                 await tools.RunAsync(tools.Find("yt-dlp"), compatibleArgs, dir, ct);
             }
             p.LocalMedia = Path.GetFileName(Directory.EnumerateFiles(dir, "source.*").First(f => Path.GetFileName(f) != "source.audio.wav" && !f.EndsWith(".part", StringComparison.OrdinalIgnoreCase)));
@@ -59,25 +60,35 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
                 await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-i", media, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", audio], dir, ct);
                 await Checkpoint(p, "audio", "Áudio extraído");
             }
-            await Stage(p, ProjectStatus.Transcribing, 35, "Transcrevendo com IA local");
-            using (await workLimiter.EnterAsync(ProductionWorkKind.Transcription, ct)) await tools.RunAsync(tools.Find("python"), [Path.Combine(tools.Root, "scripts", "transcribe.py"), audio, transcriptFile, p.Options.WhisperModel], dir, ct);
+            var worshipMode = p.Options.ContentType == "louvor";
+            await Stage(p, ProjectStatus.Transcribing, 35, worshipMode ? "Transcrevendo canto em modo para louvor" : "Transcrevendo com IA local");
+            using (await workLimiter.EnterAsync(ProductionWorkKind.Transcription, ct))
+                await tools.RunAsync(tools.Find("python"), [Path.Combine(tools.Root, "scripts", "transcribe.py"), audio, transcriptFile, p.Options.WhisperModel, p.Options.ContentType], dir, ct);
             p.Transcript = JsonSerializer.Deserialize<List<TranscriptSegment>>(await File.ReadAllTextAsync(transcriptFile, ct), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
             p.TranscriptSource = $"Faster-Whisper ({p.Options.WhisperModel})";
             if (p.SourceKind == SourceKind.YouTube && (p.Options.ContentType == "louvor" || p.Transcript.Sum(x => x.Text.Length) < 120))
                 await TryLoadYouTubeCaptionsAsync(p, allowAutomatic: true, ct);
         }
-        if (p.Transcript.Count == 0) throw new InvalidOperationException("A transcrição não produziu conteúdo utilizável.");
+        if (p.Transcript.Count == 0)
+            throw new InvalidOperationException(p.Options.ContentType == "louvor"
+                ? "Não foi possível reconhecer voz ou canto neste áudio. Tente o modelo Small ou Medium para melhorar o reconhecimento musical."
+                : "Não foi possível reconhecer fala neste áudio, mesmo após a tentativa sem filtro de voz.");
         await Checkpoint(p, "transcript", "Transcrição disponível");
         await Stage(p, ProjectStatus.Analyzing, 72, "Encontrando momentos de impacto");
         p.Options.ApplyAutomaticDuration();
-        p.Clips = editorial.Analyze(p.Transcript, p.Options);
+        var analysis = editorial.AnalyzeWithReport(p.Transcript, p.Options);
+        p.Clips = analysis.Clips; p.CandidateAnalysis = analysis.Report;
+        foreach (var clip in p.Clips)
+            clip.BrandTheme = "amado-jesus";
         await Checkpoint(p, "analysis", $"{p.Clips.Count} candidatos encontrados");
         await Stage(p, ProjectStatus.Analyzing, 82, $"Preparando {p.Clips.Count} candidatos");
         await Parallel.ForEachAsync(p.Clips, new ParallelOptions { MaxDegreeOfParallelism = 2, CancellationToken = ct }, async (clip, token) =>
         {
-            using (await workLimiter.EnterAsync(ProductionWorkKind.Metadata, token)) await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, token);
+            using (await workLimiter.EnterAsync(ProductionWorkKind.Metadata, token))
+                await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, token);
             await CreateCoverAsync(p, clip, token);
         });
+        ShortFormMetadataService.EnsureUniqueTitles(p.Clips, p.Options.ContentType);
         p.Status = ProjectStatus.Ready; p.Progress = 100; p.CompletedAt = DateTime.UtcNow; p.Stage = $"{p.Clips.Count} cortes prontos para revisar"; await store.SaveAsync(p);
     }
 
@@ -101,11 +112,12 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         var output = await tools.CaptureAsync(tools.Find("ffprobe"), ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", media], Path.GetDirectoryName(media), ct);
         return double.TryParse(output, NumberStyles.Float, CultureInfo.InvariantCulture, out var duration) ? duration : 0;
     }
-    private async Task<(double Duration, string? Title)> ProbeYouTubeMetadata(string url, CancellationToken ct)
+    private async Task<(double Duration, string? Title)> ProbeYouTubeMetadata(VideoProject project, CancellationToken ct)
     {
         try
         {
-            var output = await tools.CaptureAsync(tools.Find("yt-dlp"), YouTubeAcquisition.MetadataArguments(tools.YouTubeArguments(), url), tools.Root, ct);
+            var common = YouTubeAcquisition.WithBrowserSession(tools.YouTubeArguments(), project.YouTubeCookieBrowser);
+            var output = await tools.CaptureAsync(tools.Find("yt-dlp"), YouTubeAcquisition.MetadataArguments(common, project.Source), tools.Root, ct);
             var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             var duration = lines.Length > 0 && double.TryParse(lines[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0;
             return (duration, lines.Length > 1 ? lines[1] : null);
@@ -164,7 +176,8 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
             var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             var meaningful = words.Count(w => w.Length > 3);
             var score = Math.Min(96, 55 + meaningful / 3d + (text.Contains("Deus", StringComparison.OrdinalIgnoreCase) ? 6 : 0) + (text.Contains("promessa", StringComparison.OrdinalIgnoreCase) ? 8 : 0));
-            pool.Add(new ClipCandidate { Start = start, End = parts[^1].End, Score = Math.Round(score, 1), Transcript = text, Title = "Promessa Maior • Momento de louvor", CoverText = "ELE CUMPRE A PROMESSA", Caption = "Uma canção para renovar a fé e lembrar das promessas de Deus. 🎶✨", Hashtags = ["#louvor", "#adoração", "#promessa", "#fé", "#worship"] });
+            var worshipTitle = ShortFormMetadataService.GenerateTitleSuggestions(new ClipCandidate { Transcript = text }, "louvor").FirstOrDefault() ?? MakeTitle(text);
+            pool.Add(new ClipCandidate { Start = start, End = parts[^1].End, Score = Math.Round(score, 1), Transcript = text, Title = worshipTitle, CoverText = ShortFormMetadataService.NormalizeCoverText(worshipTitle), Caption = $"{worshipTitle}. Uma canção para renovar a fé. 🎶✨", Hashtags = ["#louvor", "#adoração", "#promessa", "#fé", "#worship"] });
         }
         var selected = new List<ClipCandidate>();
         foreach (var clip in pool.OrderByDescending(c => c.Score))
@@ -203,7 +216,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         await File.WriteAllTextAsync(textFile, string.Join(' ', words.Take(midpoint)) + (words.Length > midpoint ? "\n" + string.Join(' ', words.Skip(midpoint)) : ""), Encoding.UTF8, ct);
         var escapedText = EscapeFilterPath(textFile); var accent = NormalizeColor(clip.CoverAccent); var y = clip.CoverPosition == "top" ? "260" : clip.CoverPosition == "center" ? "(h-text_h)/2" : "h-text_h-300"; var accentY = clip.CoverPosition == "top" ? "520" : clip.CoverPosition == "center" ? "1120" : "1680";
         var font = File.Exists(@"C:\Windows\Fonts\arialbd.ttf") ? $":fontfile='{EscapeFilterPath(@"C:\Windows\Fonts\arialbd.ttf")}'" : ":font='Arial'";
-        var filter = $"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920:0:{CropY(clip.CropFocus)},eq=contrast=1.08:saturation=1.12,drawbox=x=0:y=0:w=iw:h=ih:color=black@0.22:t=fill,drawtext=textfile='{escapedText}'{font}:fontsize=82:fontcolor=white:borderw=5:bordercolor=black@0.85:line_spacing=16:x=(w-text_w)/2:y={y},drawbox=x=90:y={accentY}:w=220:h=10:color={accent}:t=fill";
+        var filter = $"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920:0:{CropY(clip.CropFocus)},{RenderFilterFactory.CreativeLook(0)},drawbox=x=0:y=0:w=iw:h=ih:color=black@0.20:t=fill,drawtext=textfile='{escapedText}'{font}:fontsize=82:fontcolor=0xF3E8D0:borderw=5:bordercolor=black@0.85:line_spacing=16:x=(w-text_w)/2:y={y},drawbox=x=90:y={accentY}:w=220:h=8:color={accent}:t=fill";
         await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-ss", F(timestamp), "-i", Path.Combine(dir, p.LocalMedia!), "-frames:v", "1", "-vf", filter, Path.Combine(dir, cover)], dir, ct);
         clip.CoverPath = cover;
     }
@@ -214,17 +227,30 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
     {
         storageCapacity.Ensure(StorageOperation.BatchRender, clip.End - clip.Start);
         using var renderSlot = await workLimiter.EnterAsync(ProductionWorkKind.Render, ct);
-        var dir = store.ProjectDirectory(p.Id); var trimPlan = silenceTrimming.Plan(clip, p.Transcript); clip.SilenceTrimPlan = trimPlan;
-        logger.LogInformation("[Silence] project={ProjectId} clip={ClipId} cuts={Cuts} removedSeconds={Removed}", p.Id, clip.Id, trimPlan.Cuts.Count, trimPlan.RemovedDuration);
-        var ass = Path.Combine(dir, $"captions-{clip.Id}.ass"); await File.WriteAllTextAsync(ass, BuildAss(p.Transcript, clip, trimPlan), Encoding.UTF8, ct);
-        var output = $"clip-{clip.Id}.mp4"; var escaped = ass.Replace("\\", "/").Replace(":", "\\:").Replace("'", "\\'");
+        var dir = store.ProjectDirectory(p.Id);
+        var speed = p.Options.ContentType == "louvor" ? 1 : RenderFilterFactory.NormalizePlaybackSpeed(clip.PlaybackSpeed);
+        clip.PlaybackSpeed = speed;
+        var trimPlan = silenceTrimming.Plan(clip, p.Transcript);
+        clip.SilenceTrimPlan = trimPlan;
+        var subtitleTrack = SubtitleTrackService.Ensure(clip, p.Transcript);
+        string? ass = null;
+        if (subtitleTrack.Enabled)
+        {
+            ass = Path.Combine(dir, $"captions-{clip.Id}.ass");
+            await File.WriteAllTextAsync(ass, BuildAss(p.Transcript, clip, trimPlan), Encoding.UTF8, ct);
+        }
+        var output = $"clip-{clip.Id}.mp4";
         var framing = RenderFilterFactory.Framing(clip);
+        var watermarkFile = Path.Combine(dir, $"watermark-{clip.Id}.txt");
+        await File.WriteAllTextAsync(watermarkFile, clip.WatermarkText ?? "AJ  |  AMADO JESUS", Encoding.UTF8, ct);
+        var watermarkFont = File.Exists(@"C:\Windows\Fonts\arialbd.ttf") ? $":fontfile='{EscapeFilterPath(@"C:\Windows\Fonts\arialbd.ttf")}'" : ":font='Arial'";
+        var branding = RenderFilterFactory.Branding(clip, EscapeFilterPath(watermarkFile), watermarkFont);
         var videoAnalysis = await videoEnhancement.AnalyzeAsync(Path.Combine(dir, p.LocalMedia!), clip.Start, clip.End - clip.Start, ct);
         var enhancement = VideoEnhancementService.CreateProfile(videoAnalysis);
-        var filter = $"{SilenceTrimmingService.VideoPrefix(trimPlan, clip.Start)}{enhancement.Filter},{framing},subtitles='{escaped}'";
+        var filter = SilenceTrimmingService.VideoPrefix(trimPlan, clip.Start) + ComposeVideoFilter(enhancement.Filter, framing, ass, branding, RenderFilterFactory.CreativeLook(clip.End - clip.Start), speed);
         logger.LogInformation("[Video] project={ProjectId} clip={ClipId} enhancement={Enhancement} luma={Luma} saturation={Saturation}", p.Id, clip.Id, enhancement.Kind, videoAnalysis.LumaAverage, videoAnalysis.SaturationAverage);
         var audioAnalysis = await audioAnalyzer.AnalyzeAsync(Path.Combine(dir, p.LocalMedia!), clip.Start, clip.End - clip.Start, p.Options.ContentType, ct);
-        var audio = AudioFilterFactory.Create(audioAnalysis, trimPlan.FinalDuration);
+        var audio = AudioFilterFactory.Create(audioAnalysis, trimPlan.FinalDuration, speed);
         var audioFilter = SilenceTrimmingService.AudioPrefix(trimPlan, clip.Start) + audio.Filter;
         logger.LogInformation("[Audio] project={ProjectId} clip={ClipId} profile={Profile} meanDb={MeanDb} peakDb={PeakDb}", p.Id, clip.Id, audio.Profile, audioAnalysis.MeanVolumeDb, audioAnalysis.PeakVolumeDb);
         var encoder = await encoderDetector.DetectAsync(ct);
@@ -235,13 +261,15 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
             encoderDetector.Invalidate(); await RenderWithEncoderAsync(HardwareEncoderDetector.Cpu);
         }
         clip.VideoPath = output;
+        clip.LastRenderFingerprint = RenderStateService.Fingerprint(clip);
+        clip.RenderOutdated = false;
         await qualityGate.ValidateAsync(p, clip, ct);
 
         async Task RenderWithEncoderAsync(RenderEncoderProfile profile)
         {
             var arguments = new List<string> { "-y", "-ss", F(clip.Start), "-to", F(clip.End), "-i", Path.Combine(dir, p.LocalMedia!), "-vf", filter, "-af", audioFilter, "-c:v", profile.Codec };
             arguments.AddRange(profile.Arguments);
-            arguments.AddRange(["-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", Path.Combine(dir, output)]);
+            arguments.AddRange(["-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.2", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", Path.Combine(dir, output)]);
             logger.LogInformation("[Encoder] project={ProjectId} clip={ClipId} codec={Codec}", p.Id, clip.Id, profile.Codec);
             await tools.RunAsync(tools.Find("ffmpeg"), arguments, dir, ct);
         }
@@ -272,8 +300,10 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         if (p.Transcript.Count == 0) throw new InvalidOperationException("Este projeto ainda não possui transcrição para reaproveitar.");
         p.Options.ApplyAutomaticDuration();
         p.Status = ProjectStatus.Analyzing; p.Progress = 72; p.Stage = "Refazendo o ranking sem transcrever novamente"; await store.SaveAsync(p);
-        p.Clips = editorial.Analyze(p.Transcript, p.Options);
-        foreach (var clip in p.Clips) { using (await workLimiter.EnterAsync(ProductionWorkKind.Metadata, ct)) await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
+        var analysis = editorial.AnalyzeWithReport(p.Transcript, p.Options);
+        p.Clips = analysis.Clips; p.CandidateAnalysis = analysis.Report;
+        foreach (var clip in p.Clips) { clip.BrandTheme = "amado-jesus"; using (await workLimiter.EnterAsync(ProductionWorkKind.Metadata, ct)) await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
+        ShortFormMetadataService.EnsureUniqueTitles(p.Clips, p.Options.ContentType);
         await RenderAllAsync(p, ct);
         p.Status = ProjectStatus.Ready; p.Progress = 100; p.Stage = $"{p.Clips.Count} novos cortes renderizados"; await store.SaveAsync(p);
     }
@@ -283,8 +313,10 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         if (p.Transcript.Count == 0) throw new InvalidOperationException("Este projeto ainda não possui transcrição.");
         p.Options.ApplyAutomaticDuration();
         p.Status = ProjectStatus.Analyzing; p.Progress = 78; p.Stage = "Aplicando análise editorial"; await store.SaveAsync(p);
-        p.Clips = editorial.Analyze(p.Transcript, p.Options);
+        var analysis = editorial.AnalyzeWithReport(p.Transcript, p.Options);
+        p.Clips = analysis.Clips; p.CandidateAnalysis = analysis.Report;
         foreach (var clip in p.Clips) { using (await workLimiter.EnterAsync(ProductionWorkKind.Metadata, ct)) await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
+        ShortFormMetadataService.EnsureUniqueTitles(p.Clips, p.Options.ContentType);
         if (render) await RenderAllAsync(p, ct);
         p.Status = ProjectStatus.Ready; p.Progress = 100; p.Stage = $"{p.Clips.Count} candidatos editoriais prontos"; await store.SaveAsync(p);
     }
@@ -303,7 +335,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         try
         {
             foreach (var old in Directory.EnumerateFiles(dir, "youtube-captions*.json3")) File.Delete(old);
-            var args = tools.YouTubeArguments();
+            var args = YouTubeAcquisition.WithBrowserSession(tools.YouTubeArguments(), p.YouTubeCookieBrowser);
             args.AddRange(["--skip-download", "--write-subs"]);
             if (allowAutomatic) args.Add("--write-auto-subs");
             args.AddRange(["--sub-langs", "pt-BR,pt-PT,pt-orig,pt", "--sub-format", "json3", "--no-playlist", "-o", template, p.Source]);
@@ -329,11 +361,23 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         catch { return false; }
     }
 
-    private static string BuildAss(List<TranscriptSegment> segments, ClipCandidate clip, SilenceTrimPlan? trimPlan = null)
+    public static string BuildAss(List<TranscriptSegment> segments, ClipCandidate clip, SilenceTrimPlan? trimPlan = null)
     {
+        var playbackSpeed = RenderFilterFactory.NormalizePlaybackSpeed(clip.PlaybackSpeed);
         var (width, height) = RenderFilterFactory.Dimensions(clip.OutputPreset);
         var style = SubtitleFormatter.Style(clip, width, height);
         var sb = new StringBuilder($"[Script Info]\nScriptType: v4.00+\nPlayResX: {width}\nPlayResY: {height}\nWrapStyle: 2\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\n{style}\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n");
+        var track = SubtitleTrackService.Ensure(clip, segments);
+        if (track.Blocks.Count > 0)
+        {
+            foreach (var block in track.Blocks.Where(block => block.Enabled && !string.IsNullOrWhiteSpace(block.Text)))
+            {
+                var timing = SubtitleTrackService.EffectiveTiming(block, track, clip.End - clip.Start);
+                if (timing is null) continue;
+                sb.AppendLine($"Dialogue: 0,{AssTime(Adjusted(timing.Value.Start))},{AssTime(Adjusted(timing.Value.End))},Impacto,,0,0,0,,{SubtitleFormatter.Plain(block.Text, width)}");
+            }
+            return sb.ToString();
+        }
         var words = segments.SelectMany(s => s.Words).Where(w => w.End >= clip.Start && w.Start <= clip.End).OrderBy(w => w.Start).ToList();
         if (!string.IsNullOrWhiteSpace(clip.EditedTranscript) && words.Count > 0)
         {
@@ -345,24 +389,37 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
                 return new TranscriptWord { Start = timing.Start, End = timing.End, Word = text };
             }).ToList();
         }
-        if (trimPlan?.Applied == true) words = SilenceTrimmingService.AdjustWords(words, trimPlan);
         if (words.Count > 0)
         {
             foreach (var group in SubtitleFormatter.SemanticUnits(words))
             {
                 var start = Math.Max(0, group[0].Start - clip.Start); var end = Math.Min(clip.End - clip.Start, group[^1].End - clip.Start + .08);
                 var karaoke = SubtitleFormatter.Karaoke(group, clip, width);
-                sb.AppendLine($"Dialogue: 0,{AssTime(start)},{AssTime(end)},Impacto,,0,0,0,,{karaoke}");
+                sb.AppendLine($"Dialogue: 0,{AssTime(Adjusted(start))},{AssTime(Adjusted(end))},Impacto,,0,0,0,,{karaoke}");
             }
         }
         else foreach (var s in segments.Where(s => s.End >= clip.Start && s.Start <= clip.End))
-            sb.AppendLine($"Dialogue: 0,{AssTime(Math.Max(0, (trimPlan is null ? s.Start : SilenceTrimmingService.AdjustTime(s.Start, trimPlan)) - clip.Start))},{AssTime(Math.Min(trimPlan?.FinalDuration ?? clip.End - clip.Start, (trimPlan is null ? s.End : SilenceTrimmingService.AdjustTime(s.End, trimPlan)) - clip.Start))},Impacto,,0,0,0,,{SubtitleFormatter.Plain(s.Text, width)}");
+            sb.AppendLine($"Dialogue: 0,{AssTime(Adjusted(Math.Max(0, s.Start - clip.Start)))},{AssTime(Adjusted(Math.Min(clip.End - clip.Start, s.End - clip.Start)))},Impacto,,0,0,0,,{SubtitleFormatter.Plain(s.Text, width)}");
         return sb.ToString();
+
+        double Adjusted(double relative)
+        {
+            var absolute = clip.Start + relative;
+            var adjusted = trimPlan?.Applied == true ? SilenceTrimmingService.AdjustTime(absolute, trimPlan) : absolute;
+            return Math.Max(0, adjusted - clip.Start) / playbackSpeed;
+        }
+    }
+    public static string ComposeVideoFilter(string enhancement, string framing, string? subtitleFile, string? branding = null, string? creativeLook = null, double playbackSpeed = 1)
+    {
+        var playback = RenderFilterFactory.NormalizePlaybackSpeed(playbackSpeed) > 1 ? $"setpts=PTS/{F(playbackSpeed)}" : null;
+        var filter = string.Join(',', new[] { enhancement, framing, creativeLook, branding, playback }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        if (string.IsNullOrWhiteSpace(subtitleFile)) return filter;
+        return $"{filter},subtitles='{EscapeFilterPath(subtitleFile)}'";
     }
     private static string EscapeAss(string value) => value.Replace("\n", " ").Replace("{", "(").Replace("}", ")");
     private static string EscapeFilterPath(string value) => value.Replace("\\", "/").Replace(":", "\\:").Replace("'", "\\'");
     private static string CropY(string focus) => RenderFilterFactory.CropY(focus);
-    private static string NormalizeColor(string? value) => System.Text.RegularExpressions.Regex.IsMatch(value ?? "", "^#[0-9A-Fa-f]{6}$") ? "0x" + value![1..] : "0xF0B44D";
+    private static string NormalizeColor(string? value) => System.Text.RegularExpressions.Regex.IsMatch(value ?? "", "^#[0-9A-Fa-f]{6}$") ? "0x" + value![1..] : "0xC7A35A";
     private static string AssTime(double seconds) => TimeSpan.FromSeconds(seconds).ToString(@"h\:mm\:ss\.ff");
     private static string F(double number) => number.ToString("0.###", CultureInfo.InvariantCulture);
 }

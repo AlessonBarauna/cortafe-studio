@@ -39,4 +39,33 @@ public sealed class AudioFilterFactoryTests
         Assert.Contains("loudnorm=I=-14:LRA=12", profile.Filter);
         Assert.Equal("-14 LUFS", profile.TargetLoudness);
     }
+
+    [Theory]
+    [InlineData(1.25, "atempo=1.25", "st=47.82")]
+    [InlineData(1.5, "atempo=1.5", "st=39.82")]
+    public void Create_AceleraAudioEMantemFadeNoFinalReal(double speed, string tempo, string fade)
+    {
+        var profile = AudioFilterFactory.Create(new AudioAnalysis { Profile = AudioProfile.VoiceClean }, 60, speed);
+        Assert.Contains(tempo, profile.Filter);
+        Assert.Contains(fade, profile.Filter);
+        Assert.True(profile.Filter.IndexOf("atempo", StringComparison.Ordinal) < profile.Filter.IndexOf("afade", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(AudioProfile.VoiceClean)]
+    [InlineData(AudioProfile.VoiceNoisy)]
+    [InlineData(AudioProfile.VoiceWithMusic)]
+    [InlineData(AudioProfile.Worship)]
+    [InlineData(AudioProfile.Music)]
+    [InlineData(AudioProfile.Podcast)]
+    [InlineData(AudioProfile.LowVolume)]
+    [InlineData(AudioProfile.Clipped)]
+    public void Create_TodosOsPerfisRespeitamLimiteMakeupDoFfmpeg(AudioProfile audioProfile)
+    {
+        var filter = AudioFilterFactory.Create(new AudioAnalysis { Profile = audioProfile }, 60).Filter;
+        var marker = "makeup="; var start = filter.IndexOf(marker, StringComparison.Ordinal) + marker.Length;
+        var end = filter.IndexOf(',', start); var value = double.Parse(filter[start..end], System.Globalization.CultureInfo.InvariantCulture);
+
+        Assert.InRange(value, 1, 64);
+    }
 }

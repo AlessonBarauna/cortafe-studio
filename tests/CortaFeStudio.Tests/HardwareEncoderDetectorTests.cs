@@ -17,13 +17,14 @@ public sealed class HardwareEncoderDetectorTests
         var profile = HardwareEncoderDetector.Cpu;
         Assert.Equal("libx264", profile.Codec);
         Assert.False(profile.HardwareAccelerated);
-        Assert.Contains("veryfast", profile.Arguments);
+        Assert.Contains("medium", profile.Arguments);
+        Assert.Contains("18", profile.Arguments);
     }
 
     [Theory]
-    [InlineData("h264_nvenc", "p4")]
-    [InlineData("h264_qsv", "faster")]
-    [InlineData("h264_amf", "balanced")]
+    [InlineData("h264_nvenc", "p5")]
+    [InlineData("h264_qsv", "medium")]
+    [InlineData("h264_amf", "quality")]
     public void Profiles_UsamPresetCompativel(string codec, string expected)
     {
         Assert.Contains(expected, HardwareEncoderDetector.Profiles.Single(item => item.Codec == codec).Arguments);

@@ -1,11 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
     <linearGradient id="f" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#e6c36a"/>
-      <stop offset="1" stop-color="#9d6f22"/>
+      <stop stop-color="#f0d89b"/>
+      <stop offset="1" stop-color="#9d7435"/>
     </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="16" fill="#11100e"/>
-  <path d="M32 10v44M18 24h28" stroke="url(#f)" stroke-width="7" stroke-linecap="round"/>
-  <path d="M13 51h38" stroke="#f4ead2" stroke-width="3" stroke-linecap="round" opacity=".9"/>
+  <rect width="64" height="64" rx="16" fill="#0b0b10"/>
+  <text x="32" y="40" fill="url(#f)" font-family="Arial, sans-serif" font-size="26" font-weight="800" text-anchor="middle">AJ</text>
 </svg>

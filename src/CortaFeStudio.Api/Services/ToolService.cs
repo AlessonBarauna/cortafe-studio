@@ -87,12 +87,27 @@ public sealed class ToolService(IWebHostEnvironment env)
         return output + Environment.NewLine + diagnostic;
     }
 
+    public static string ClassifyFailure(string? error)
+    {
+        if (string.IsNullOrWhiteSpace(error)) return "processing-error";
+        if (error.Contains("Sign in to confirm", StringComparison.OrdinalIgnoreCase) ||
+            error.Contains("confirmação de acesso", StringComparison.OrdinalIgnoreCase)) return "youtube-auth-required";
+        if (error.Contains("cookie database", StringComparison.OrdinalIgnoreCase) ||
+            error.Contains("failed to decrypt", StringComparison.OrdinalIgnoreCase) ||
+            error.Contains("Não foi possível acessar a sessão do navegador", StringComparison.OrdinalIgnoreCase)) return "youtube-cookie-access";
+        return "processing-error";
+    }
+
     private static string FriendlyError(string command, string error)
     {
         if (Path.GetFileName(command).StartsWith("yt-dlp", StringComparison.OrdinalIgnoreCase))
         {
+            if (error.Contains("Sign in to confirm", StringComparison.OrdinalIgnoreCase))
+                return "O YouTube pediu uma confirmação de acesso. Escolha abaixo o navegador em que sua conta do YouTube está conectada e processe novamente com essa sessão.";
+            if (error.Contains("cookie database", StringComparison.OrdinalIgnoreCase) || error.Contains("failed to decrypt", StringComparison.OrdinalIgnoreCase))
+                return "Não foi possível acessar a sessão do navegador. Feche completamente o navegador escolhido e tente novamente.";
             if (error.Contains("No supported JavaScript runtime", StringComparison.OrdinalIgnoreCase))
-                return "O YouTube exige um runtime JavaScript. Instale o Node.js 22 ou superior e reinicie o CortaFé.";
+                return "O YouTube exige um runtime JavaScript. Instale o Node.js 22 ou superior e reinicie o Amado Jesus Studio.";
             if (error.Contains("HTTP Error 403", StringComparison.OrdinalIgnoreCase))
                 return "O YouTube recusou temporariamente o download (erro 403). Atualize o yt-dlp, desative VPN/proxy e tente novamente.";
         }

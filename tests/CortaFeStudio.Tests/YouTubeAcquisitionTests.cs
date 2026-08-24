@@ -32,4 +32,28 @@ public sealed class YouTubeAcquisitionTests
         Assert.Contains("duration", args);
         Assert.Contains("title", args);
     }
+
+    [Theory]
+    [InlineData("chrome")]
+    [InlineData("Edge")]
+    [InlineData("firefox")]
+    public void SessaoDoNavegador_AdicionaCookiesComBrowserValidado(string browser)
+    {
+        var args = YouTubeAcquisition.WithBrowserSession(["--force-ipv4"], browser);
+        Assert.Equal("--cookies-from-browser", args[^2]);
+        Assert.Equal(browser.ToLowerInvariant(), args[^1]);
+    }
+
+    [Fact]
+    public void SessaoDoNavegador_RejeitaValorArbitrario()
+    {
+        Assert.Throws<ArgumentException>(() => YouTubeAcquisition.WithBrowserSession([], "arquivo-injetado"));
+    }
+
+    [Fact]
+    public void FalhaAntiRobo_RecebeCodigoParaInterfaceDeRecuperacao()
+    {
+        Assert.Equal("youtube-auth-required", ToolService.ClassifyFailure("Sign in to confirm you're not a bot"));
+        Assert.Equal("youtube-cookie-access", ToolService.ClassifyFailure("Não foi possível acessar a sessão do navegador."));
+    }
 }

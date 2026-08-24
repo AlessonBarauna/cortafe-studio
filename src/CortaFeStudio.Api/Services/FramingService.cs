@@ -21,7 +21,7 @@ public sealed class FramingService(ProjectStore store, ToolService tools)
             }).ToList()
             : [];
         clip.CropFocus = clip.CropX < .38 ? "left" : clip.CropX > .62 ? "right" : "center";
-        clip.Reasons = clip.Reasons.Append(root.GetProperty("detected").GetBoolean() ? "enquadramento ajustado ao rosto" : "enquadramento central por segurança").Distinct().Take(5).ToList();
+        clip.Reasons = clip.Reasons.Append(root.GetProperty("detected").GetBoolean() ? "enquadramento ajustado ao rosto" : "enquadramento central por segurança").Distinct().Take(8).ToList();
         await store.SaveAsync(project); return clip;
     }
 }

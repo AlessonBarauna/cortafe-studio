@@ -2,11 +2,19 @@ const clipCardBeforeRenderStatus = clipCard;
 clipCard = function (project, clip, index) {
   const html = clipCardBeforeRenderStatus(project, clip, index);
   if (!clip.videoPath) return html;
+  if (clip.renderOutdated) return html.replace('<input class="form-control fs-5','<div class="render-state outdated"><span>!</span><div><strong>Alterações não renderizadas</strong><small>Salve e renderize novamente para atualizar o MP4</small></div></div><input class="form-control fs-5');
   return html.replace(
     '<input class="form-control fs-5',
     '<div class="render-state"><span>✓</span><div><strong>Vídeo pronto</strong><small>Renderizado e disponível para visualizar ou baixar</small></div></div><input class="form-control fs-5'
   );
 };
+
+document.addEventListener('input', event => {
+  const card=event.target.closest('.clip-card'); if(!card || !current?.clips.find(clip=>clip.id===card.dataset.clip)?.videoPath) return;
+  let state=card.querySelector('.render-state');
+  if(!state){state=document.createElement('div');card.prepend(state)}
+  state.className='render-state outdated';state.innerHTML='<span>!</span><div><strong>Alterações não renderizadas</strong><small>Salve e renderize novamente para atualizar o MP4</small></div>';
+});
 
 const renderProjectBeforeStatus = renderProject;
 renderProject = function (project) {
@@ -16,7 +24,7 @@ renderProject = function (project) {
   const layout = root?.querySelector('.clip-layout');
   if (!layout) return;
   const approved = project.clips.filter(clip => clip.approved).length;
-  const rendered = project.clips.filter(clip => clip.approved && clip.videoPath).length;
+  const rendered = project.clips.filter(clip => clip.approved && clip.videoPath && !clip.renderOutdated).length;
   const complete = approved > 0 && rendered === approved;
   const summary = document.createElement('div');
   summary.className = `render-summary ${complete ? 'complete' : ''}`;

@@ -22,7 +22,17 @@ public sealed class ProjectStore
         foreach (var file in Directory.EnumerateFiles(_root, "project.json", SearchOption.AllDirectories))
             try { var p = JsonSerializer.Deserialize<VideoProject>(File.ReadAllText(file), JsonOptions); if (p is not null) _projects[p.Id] = p; } catch { }
         foreach (var project in LoadDatabase()) _projects[project.Id] = project;
-        foreach (var project in _projects.Values) UpsertDatabase(project);
+        foreach (var project in _projects.Values)
+        {
+            foreach (var clip in project.Clips)
+            {
+                if (string.Equals(clip.WatermarkText, "CORTAFÉ", StringComparison.OrdinalIgnoreCase)) clip.WatermarkText = "AMADO JESUS";
+                if (string.Equals(clip.WatermarkText, "AMADO JESUS", StringComparison.OrdinalIgnoreCase)) { clip.WatermarkText = "AJ  |  AMADO JESUS"; clip.WatermarkOpacity = .82; }
+                if (clip.BrandTheme is "cortafe" or "worship" or "podcast") clip.BrandTheme = "amado-jesus";
+                if (string.Equals(clip.CoverAccent, "#F0B44D", StringComparison.OrdinalIgnoreCase) || string.Equals(clip.CoverAccent, "#8267FF", StringComparison.OrdinalIgnoreCase)) clip.CoverAccent = "#C7A35A";
+            }
+            UpsertDatabase(project);
+        }
     }
 
     public IReadOnlyList<VideoProject> List() => _projects.Values.Where(p => !p.Archived).OrderByDescending(p => p.CreatedAt).ToList();

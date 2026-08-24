@@ -24,21 +24,21 @@ public static class SubtitleFormatter
         var marginX = width >= 1600 ? 210 : 135;
         var marginV = height switch
         {
-            >= 1800 => 430,
-            >= 1300 => 310,
-            >= 1000 => 220,
-            _ => 145
+            >= 1800 => 235,
+            >= 1300 => 175,
+            >= 1000 => 145,
+            _ => 100
         };
         var (font, size, primary, secondary, outline, shadow) = clip.SubtitleStyle switch
         {
-            "clean" => ("Arial", 54, "&H00FFFFFF", "&H00FFFFFF", 3, 0),
-            "podcast" => ("Arial", 56, "&H00FFFFFF", "&H00F0B44D", 4, 1),
-            "sermon" => ("Arial Black", 62, "&H00FFFFFF", "&H0000B7FF", 5, 2),
-            "motivational" => ("Arial Black", 64, "&H00FFFFFF", "&H0048D7FF", 5, 2),
-            "minimal" => ("Arial", 50, "&H00FFFFFF", "&H00FFFFFF", 2, 0),
-            "worship" => ("Georgia", 57, "&H00FFFFFF", "&H00E8C58B", 4, 1),
-            "bold" => ("Arial Black", 66, "&H00FFFFFF", "&H0000B7FF", 6, 2),
-            _ => ("Arial", 62, "&H00FFFFFF", "&H0000B7FF", 5, 2)
+            "clean" => ("Arial", 40, "&H00FFFFFF", "&H00FFFFFF", 2, 0),
+            "podcast" => ("Arial", 43, "&H00FFFFFF", "&H00F0B44D", 3, 1),
+            "sermon" => ("Arial Black", 46, "&H00FFFFFF", "&H0000B7FF", 3, 1),
+            "motivational" => ("Arial Black", 47, "&H00FFFFFF", "&H0048D7FF", 3, 1),
+            "minimal" => ("Arial", 38, "&H00FFFFFF", "&H00FFFFFF", 2, 0),
+            "worship" => ("Georgia", 42, "&H00FFFFFF", "&H00E8C58B", 3, 1),
+            "bold" => ("Arial Black", 49, "&H00FFFFFF", "&H0000B7FF", 4, 1),
+            _ => ("Arial", 45, "&H00FFFFFF", "&H0000B7FF", 3, 1)
         };
         return $"Style: Impacto,{font},{size},{primary},{secondary},&H00120B22,&H80000000,-1,0,0,0,100,100,0,0,1,{outline},{shadow},2,{marginX},{marginX},{marginV},1";
     }

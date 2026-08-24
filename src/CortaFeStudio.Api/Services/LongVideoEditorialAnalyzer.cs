@@ -8,27 +8,34 @@ public sealed class LongVideoEditorialAnalyzer(EditorialAnalyzer analyzer)
     public const double ChunkDuration = 20 * 60;
     public const double ChunkOverlap = 60;
 
-    public List<ClipCandidate> Analyze(List<TranscriptSegment> transcript, ProjectOptions options)
+    public List<ClipCandidate> Analyze(List<TranscriptSegment> transcript, ProjectOptions options) => AnalyzeWithReport(transcript, options).Clips;
+
+    public EditorialAnalysisResult AnalyzeWithReport(List<TranscriptSegment> transcript, ProjectOptions options)
     {
         var duration = transcript.Count == 0 ? 0 : transcript.Max(segment => segment.End);
         if (duration <= LongVideoThreshold)
         {
-            var selected = analyzer.Analyze(transcript, options)
+            var analysis = analyzer.AnalyzeWithReport(transcript, options);
+            var selected = analysis.Clips
                 .OrderByDescending(clip => clip.Score)
                 .ToList();
 
             RefineAndScore(selected, transcript, options);
-            return selected;
+            analysis.Report.FinalCandidates = selected.Count;
+            return new EditorialAnalysisResult(selected, analysis.Report);
         }
 
         var chunks = BuildChunks(transcript, duration);
         var candidates = new List<(ClipCandidate Clip, int Chunk)>();
+        var report = new CandidateAnalysisReport { RequestedClips = options.ClipCount, TranscriptSegments = transcript.Count };
         for (var index = 0; index < chunks.Count; index++)
         {
             var chunkOptions = CopyOptions(options, Math.Clamp(options.ClipCount * 2, 5, 20));
-            foreach (var clip in analyzer.Analyze(chunks[index], chunkOptions))
+            var chunkAnalysis = analyzer.AnalyzeWithReport(chunks[index], chunkOptions);
+            Merge(report, chunkAnalysis.Report);
+            foreach (var clip in chunkAnalysis.Clips)
             {
-                clip.Reasons = clip.Reasons.Prepend($"bloco {index + 1} de {chunks.Count} do vídeo").Distinct().Take(5).ToList();
+                clip.Reasons = clip.Reasons.Prepend($"bloco {index + 1} de {chunks.Count} do vídeo").Distinct().Take(8).ToList();
                 candidates.Add((clip, index));
             }
         }
@@ -36,7 +43,7 @@ public sealed class LongVideoEditorialAnalyzer(EditorialAnalyzer analyzer)
         var unique = new List<(ClipCandidate Clip, int Chunk)>();
         foreach (var candidate in candidates.OrderByDescending(item => item.Clip.Score))
         {
-            if (unique.Any(item => TemporalOverlap(item.Clip, candidate.Clip) > .45)) continue;
+            if (unique.Any(item => TemporalOverlap(item.Clip, candidate.Clip) > .45)) { report.RejectedByOverlap++; continue; }
             unique.Add(candidate);
         }
 
@@ -59,7 +66,20 @@ public sealed class LongVideoEditorialAnalyzer(EditorialAnalyzer analyzer)
             .ToList();
 
         RefineAndScore(result, transcript, options);
-        return result;
+        report.RequestedClips = options.ClipCount;
+        report.TranscriptSegments = transcript.Count;
+        report.FinalCandidates = result.Count;
+        report.Warnings = report.Warnings.Distinct().ToList();
+        if (result.Count < options.ClipCount && !report.Warnings.Any(warning => warning.Contains("Editor completo"))) report.Warnings.Add("Você pode completar a seleção pelo Editor completo.");
+        return new EditorialAnalysisResult(result, report);
+    }
+
+    private static void Merge(CandidateAnalysisReport target, CandidateAnalysisReport source)
+    {
+        target.RawCandidates += source.RawCandidates; target.RejectedByDuration += source.RejectedByDuration;
+        target.RejectedByOverlap += source.RejectedByOverlap; target.RejectedByScore += source.RejectedByScore;
+        target.RejectedByContext += source.RejectedByContext; target.RejectedByIncompleteEnding += source.RejectedByIncompleteEnding;
+        target.Warnings.AddRange(source.Warnings.Where(warning => !warning.Contains("Editor completo")));
     }
 
     public static List<List<TranscriptSegment>> BuildChunks(List<TranscriptSegment> transcript, double duration)

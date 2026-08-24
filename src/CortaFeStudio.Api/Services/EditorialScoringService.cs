@@ -98,6 +98,25 @@ public sealed class EditorialScoringService
         "naquele momento"
     ];
 
+    private static readonly string[] ImpactSignals =
+    [
+        "mudou minha vida", "nunca mais", "nesse momento", "foi então", "o segredo",
+        "ninguém te contou", "você precisa", "não desista", "impossível", "milagre",
+        "decisão", "propósito", "dor", "perda", "cura", "transformação", "recomeço"
+    ];
+
+    private static readonly string[] ActionSignals =
+    [
+        "faça", "pare", "comece", "lembre", "entenda", "escute", "olhe", "pense",
+        "pergunte", "decida", "confie", "acredite"
+    ];
+
+    private static readonly string[] FillerSignals =
+    [
+        "tipo assim", "vamos lá", "é isso", "entendeu", "tá bom", "basicamente",
+        "de certa forma", "digamos assim"
+    ];
+
     public ClipCandidate Score(
         List<TranscriptSegment> parts,
         string text,
@@ -230,6 +249,24 @@ public sealed class EditorialScoringService
             }
         }
 
+        var impactHits = ImpactSignals.Count(lower.Contains);
+        var actionHits = ActionSignals.Count(lower.Contains);
+        var directAddress = new[] { " você ", " seu ", " sua ", " contigo ", " te " }.Count(lower.Contains);
+        var quotableContrast = lower.Contains(" não ") && (lower.Contains(" mas ") || lower.Contains(" e sim "));
+        breakdown.Impact = Math.Min(14, impactHits * 3.5 + actionHits * 2 + Math.Min(4, directAddress) + (quotableContrast ? 4 : 0));
+        if (breakdown.Impact >= 8) reasons.Insert(0, "alto potencial de impacto e compartilhamento");
+        else if (breakdown.Impact >= 4) reasons.Insert(0, "fala direta e memorável");
+
+        var sentences = text.Count(character => character is '.' or '?' or '!');
+        var fillerHits = FillerSignals.Count(lower.Contains);
+        var duration = Math.Max(1, parts[^1].End - parts[0].Start);
+        var wordsPerMinute = Tokenize(text).Count / duration * 60;
+        breakdown.Clarity = sentences >= 2 ? 4 : 0;
+        if (wordsPerMinute is >= 85 and <= 210) breakdown.Clarity += 4;
+        if (fillerHits > 0) breakdown.Clarity -= Math.Min(8, fillerHits * 3);
+        if (breakdown.Clarity >= 6) reasons.Insert(Math.Min(1, reasons.Count), "ritmo claro e boa densidade de ideias");
+        else if (breakdown.Clarity < 0) reasons.Add("penalizado: excesso de fala de apoio");
+
         var wordCount = Tokenize(text).Count;
 
         if (wordCount is >= 65 and <= 190)
@@ -265,7 +302,7 @@ public sealed class EditorialScoringService
             EditorialProfile = options.ContentType,
             Reasons = reasons
                 .Distinct()
-                .Take(5)
+                .Take(8)
                 .ToList()
         };
     }
