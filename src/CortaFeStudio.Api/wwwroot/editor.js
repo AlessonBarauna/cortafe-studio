@@ -14,6 +14,7 @@ clipCard = function (project, clip, index) {
       <label>Posição na capa<select class="form-select" name="coverPosition">${option('top', clip.coverPosition, 'Superior')}${option('center', clip.coverPosition, 'Centro')}${option('bottom', clip.coverPosition || 'bottom', 'Inferior')}</select></label>
       <label>Cor de destaque<input class="form-control form-control-color" name="coverAccent" type="color" value="${escapeHtml(clip.coverAccent || '#F0B44D')}"></label>
       <label>Frame da capa (segundos)<input class="form-control" name="coverTimestamp" type="number" min="${clip.start}" max="${clip.end}" step=".1" value="${timestamp}"></label>
+      <label class="d-flex align-items-center gap-2"><input class="form-check-input" name="silenceTrimmingEnabled" type="checkbox" ${clip.silenceTrimmingEnabled!==false?'checked':''}> Reduzir apenas pausas longas</label>
     </div>
     <div class="d-flex gap-2 mt-3 flex-wrap"><button type="button" class="btn btn-sm btn-outline-warning" onclick="refreshCover('${project.id}','${clip.id}')">Atualizar capa</button><button type="button" class="btn btn-sm btn-outline-light" onclick="analyzeFraming('${project.id}','${clip.id}')">Detectar rosto</button>${index === 0 ? `<a class="btn btn-sm btn-outline-light" href="/api/projects/${project.id}/exports/project.json" download>Exportar projeto JSON</a>` : ''}</div>
   </details>`;
@@ -27,7 +28,7 @@ saveClip = async function (project, card) {
     start: +value('start'), end: +value('end'), title: value('title'), coverText: value('coverText'),
     caption: value('caption'), approved: true, cropFocus: value('cropFocus'),
     subtitleStyle: value('subtitleStyle'), coverAccent: value('coverAccent'),
-    coverPosition: value('coverPosition'), coverTimestamp: +value('coverTimestamp'), cropX: +value('cropX'), layoutMode: value('layoutMode'), outputPreset: value('outputPreset')
+    coverPosition: value('coverPosition'), coverTimestamp: +value('coverTimestamp'), cropX: +value('cropX'), layoutMode: value('layoutMode'), outputPreset: value('outputPreset'), silenceTrimmingEnabled: card.querySelector('[name="silenceTrimmingEnabled"]')?.checked ?? true
   };
   await api(`/api/projects/${project.id}/clips/${clip.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   Object.assign(clip, body);
