@@ -254,7 +254,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         {
             var arguments = new List<string> { "-y", "-ss", F(clip.Start), "-to", F(clip.End), "-i", Path.Combine(dir, p.LocalMedia!), "-vf", filter, "-af", audio.Filter, "-c:v", profile.Codec };
             arguments.AddRange(profile.Arguments);
-            arguments.AddRange(["-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", Path.Combine(dir, output)]);
+            arguments.AddRange(["-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.2", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", Path.Combine(dir, output)]);
             logger.LogInformation("[Encoder] project={ProjectId} clip={ClipId} codec={Codec}", p.Id, clip.Id, profile.Codec);
             await tools.RunAsync(tools.Find("ffmpeg"), arguments, dir, ct);
         }

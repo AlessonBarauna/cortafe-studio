@@ -31,7 +31,7 @@ public sealed class SocialService
         Load();
     }
 
-    public object Status() => Enum.GetValues<SocialPlatform>().Select(platform =>
+    public object Status() => new[] { SocialPlatform.TikTok }.Select(platform =>
     {
         _accounts.TryGetValue(platform, out var account);
         return new
@@ -47,6 +47,7 @@ public sealed class SocialService
 
     public async Task ConfigureAsync(SocialConfigurationRequest request)
     {
+        EnsureTikTok(request.Platform);
         _accounts.TryGetValue(request.Platform, out var existing);
         _accounts[request.Platform] = new SocialCredential
         {
@@ -65,11 +66,13 @@ public sealed class SocialService
 
     public async Task DisconnectAsync(SocialPlatform platform)
     {
+        EnsureTikTok(platform);
         var account = RequireConfigured(platform); account.AccessToken = null; account.RefreshToken = null; account.ExpiresAt = null; account.AccountId = null; account.AccountName = null; await SaveAsync();
     }
 
     public string AuthorizationUrl(SocialPlatform platform, string baseUrl)
     {
+        EnsureTikTok(platform);
         var account = RequireConfigured(platform);
         var state = Guid.NewGuid().ToString("N");
         _states[state] = platform;
@@ -85,6 +88,7 @@ public sealed class SocialService
 
     public async Task CompleteOAuthAsync(SocialPlatform platform, string code, string state, string baseUrl)
     {
+        EnsureTikTok(platform);
         if (!_states.Remove(state, out var expected) || expected != platform)
             throw new InvalidOperationException("A solicitação de conexão expirou. Tente conectar novamente.");
         var account = RequireConfigured(platform);
@@ -116,6 +120,7 @@ public sealed class SocialService
 
     public async Task<PublicationRecord> PublishAsync(string projectId, string clipId, PublishRequest request)
     {
+        EnsureTikTok(request.Platform);
         var project = _projects.Get(projectId) ?? throw new InvalidOperationException("Projeto não encontrado.");
         var clip = project.Clips.FirstOrDefault(c => c.Id == clipId) ?? throw new InvalidOperationException("Corte não encontrado.");
         var path = string.IsNullOrWhiteSpace(clip.VideoPath) ? null : _projects.ResolveAsset(projectId, clip.VideoPath);
@@ -325,6 +330,11 @@ public sealed class SocialService
     {
         var account = RequireConfigured(platform);
         return !string.IsNullOrWhiteSpace(account.AccessToken) ? account : throw new InvalidOperationException($"Conecte a conta {platform} primeiro.");
+    }
+    private static void EnsureTikTok(SocialPlatform platform)
+    {
+        if (platform != SocialPlatform.TikTok)
+            throw new InvalidOperationException("O CortaFé está operando somente com TikTok nesta fase.");
     }
     private static string Callback(SocialPlatform platform, string baseUrl) => $"{baseUrl.TrimEnd('/')}/api/social/callback/{platform.ToString().ToLowerInvariant()}";
     private void Load()

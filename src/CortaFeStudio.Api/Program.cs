@@ -407,6 +407,12 @@ api.MapGet("/projects/{id}/exports/clips.zip", async (string id, ProjectStore st
     try { var file = await exports.CreateZipAsync(project, ct); return Results.File(file, "application/zip", $"{project.Name}-cortes.zip", enableRangeProcessing: true); }
     catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
+api.MapGet("/projects/{id}/exports/tiktok-studio.zip", async (string id, ProjectStore store, ClipExportService exports, CancellationToken ct) =>
+{
+    var project = store.Get(id); if (project is null) return Results.NotFound();
+    try { var file = await exports.CreateTikTokStudioPackageAsync(project, ct); return Results.File(file, "application/zip", $"{project.Name}-tiktok-studio.zip", enableRangeProcessing: true); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
 api.MapGet("/projects/{id}/exports/project.json", (string id, ProjectStore store) =>
 {
     var project = store.Get(id); if (project is null) return Results.NotFound();

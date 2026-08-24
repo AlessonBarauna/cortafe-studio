@@ -23,7 +23,7 @@ public sealed class ProductionSettings
     public List<string> PostingTimes { get; set; } = ["12:00", "19:00"];
     public DateOnly StartDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
     public double MinimumSocialScore { get; set; } = 75;
-    public List<SocialPlatform> Platforms { get; set; } = [SocialPlatform.YouTube, SocialPlatform.Instagram];
+    public List<SocialPlatform> Platforms { get; set; } = [SocialPlatform.TikTok];
     public bool AutoRender { get; set; }
     public bool AutoApprove { get; set; }
     public bool AutoSchedule { get; set; }

@@ -20,6 +20,22 @@ public sealed class ClipExportServiceTests : IDisposable
         using var archive = ZipFile.OpenRead(zip); Assert.Equal(2, archive.Entries.Count); Assert.All(archive.Entries, entry => Assert.EndsWith(".mp4", entry.Name));
     }
 
+    [Fact]
+    public async Task PacoteTikTokStudio_IncluiVideosCsvTextosEGuia()
+    {
+        var store = new ProjectStore(new TestEnvironment(_root)); var project = await store.CreateAsync("Campanha", SourceKind.Upload, "video.mp4", null); var directory = store.ProjectDirectory(project.Id);
+        await File.WriteAllBytesAsync(Path.Combine(directory, "clip-a.mp4"), [1, 2, 3]);
+        project.Clips = [new() { Title = "Um título chamativo", Caption = "Assista até o final.", Hashtags = ["#fe", "#reflexao"], VideoPath = "clip-a.mp4", Approved = true, Score = 92, Start = 0, End = 65 }];
+
+        var zip = await new ClipExportService(store).CreateTikTokStudioPackageAsync(project);
+
+        using var archive = ZipFile.OpenRead(zip);
+        Assert.Contains(archive.Entries, entry => entry.FullName.StartsWith("videos/") && entry.Name.EndsWith(".mp4"));
+        Assert.Contains(archive.Entries, entry => entry.FullName.StartsWith("legendas/") && entry.Name.EndsWith(".txt"));
+        Assert.Contains(archive.Entries, entry => entry.Name == "programacao-tiktok-studio.csv");
+        Assert.Contains(archive.Entries, entry => entry.Name == "LEIA-ME.txt");
+    }
+
     public void Dispose() { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); if (Directory.Exists(_root)) Directory.Delete(_root, true); }
     private sealed class TestEnvironment(string root) : IWebHostEnvironment
     {

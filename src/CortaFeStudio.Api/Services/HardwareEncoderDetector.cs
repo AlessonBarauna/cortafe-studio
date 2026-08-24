@@ -41,8 +41,8 @@ public sealed class HardwareEncoderDetector(ToolService tools, ILogger<HardwareE
 
     public static IReadOnlyList<RenderEncoderProfile> Profiles { get; } =
     [
-        new() { Name = "NVIDIA NVENC", Codec = "h264_nvenc", HardwareAccelerated = true, Arguments = ["-preset", "p4", "-cq", "21", "-b:v", "0"] },
-        new() { Name = "Intel Quick Sync", Codec = "h264_qsv", HardwareAccelerated = true, Arguments = ["-preset", "faster", "-global_quality", "21"] },
-        new() { Name = "AMD AMF", Codec = "h264_amf", HardwareAccelerated = true, Arguments = ["-quality", "balanced", "-rc", "cqp", "-qp_i", "21", "-qp_p", "21"] }
+        new() { Name = "NVIDIA NVENC", Codec = "h264_nvenc", HardwareAccelerated = true, Arguments = ["-preset", "p5", "-cq", "19", "-b:v", "0"] },
+        new() { Name = "Intel Quick Sync", Codec = "h264_qsv", HardwareAccelerated = true, Arguments = ["-preset", "medium", "-global_quality", "19"] },
+        new() { Name = "AMD AMF", Codec = "h264_amf", HardwareAccelerated = true, Arguments = ["-quality", "quality", "-rc", "cqp", "-qp_i", "19", "-qp_p", "19"] }
     ];
 }
