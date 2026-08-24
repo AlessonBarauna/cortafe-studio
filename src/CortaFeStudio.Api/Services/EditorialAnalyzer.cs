@@ -27,12 +27,21 @@ public sealed class EditorialAnalyzer(
 
     public List<ClipCandidate> Analyze(
         List<TranscriptSegment> source,
+        ProjectOptions options) => AnalyzeWithReport(source, options).Clips;
+
+    public EditorialAnalysisResult AnalyzeWithReport(
+        List<TranscriptSegment> source,
         ProjectOptions options)
     {
         var segments = Normalize(source);
+        var report = new CandidateAnalysisReport { RequestedClips = options.ClipCount, TranscriptSegments = segments.Count };
 
         if (options.ContentType == "louvor")
-            return AnalyzeWorship(segments, options);
+        {
+            var worship = AnalyzeWorship(segments, options, report);
+            CompleteReport(report, worship.Count, true);
+            return new EditorialAnalysisResult(worship, report);
+        }
 
         var pool = new List<ClipCandidate>();
 
@@ -41,7 +50,10 @@ public sealed class EditorialAnalyzer(
             var opening = Clean(segments[anchor].Text);
 
             if (opening.Length < 8)
+            {
+                report.RejectedByContext++;
                 continue;
+            }
 
             var startIndex =
                 FindNaturalStart(segments, anchor);
@@ -50,7 +62,12 @@ public sealed class EditorialAnalyzer(
                 BuildWindow(segments, startIndex, options);
 
             if (parts.Count < 3)
+            {
+                report.RejectedByIncompleteEnding++;
                 continue;
+            }
+
+            report.RawCandidates++;
 
             var duration =
                 parts[^1].End - parts[0].Start;
@@ -58,6 +75,7 @@ public sealed class EditorialAnalyzer(
             if (duration < options.MinDuration ||
                 duration > options.MaxDuration + 3)
             {
+                report.RejectedByDuration++;
                 continue;
             }
 
@@ -91,17 +109,19 @@ public sealed class EditorialAnalyzer(
                 .Take(5)
                 .ToList();
 
-            if (clip.Score >= 45)
-                pool.Add(clip);
+            if (clip.Score >= 45) pool.Add(clip);
+            else report.RejectedByScore++;
         }
 
         var selected =
-            selector.Select(pool, options);
+            selector.Select(pool, options, report);
 
-        return RefineWordBoundaries(
+        var result = RefineWordBoundaries(
             selected,
             segments,
             options);
+        CompleteReport(report, result.Count, false);
+        return new EditorialAnalysisResult(result, report);
     }
 
     private List<TranscriptSegment> BuildWindow(
@@ -170,7 +190,8 @@ public sealed class EditorialAnalyzer(
 
     private List<ClipCandidate> AnalyzeWorship(
         List<TranscriptSegment> segments,
-        ProjectOptions options)
+        ProjectOptions options,
+        CandidateAnalysisReport report)
     {
         var usable = segments
             .Where(segment =>
@@ -197,13 +218,13 @@ public sealed class EditorialAnalyzer(
                     options.MaxDuration)
                 .ToList();
 
-            if (parts.Count < 3 ||
-                parts[^1].End -
-                parts[0].Start <
-                options.MinDuration)
+            if (parts.Count < 3)
             {
+                report.RejectedByIncompleteEnding++;
                 continue;
             }
+            report.RawCandidates++;
+            if (parts[^1].End - parts[0].Start < options.MinDuration) { report.RejectedByDuration++; continue; }
 
             var text = string.Join(
                 " ",
@@ -252,9 +273,20 @@ public sealed class EditorialAnalyzer(
         return RefineWordBoundaries(
             selector.SelectWorship(
                 pool,
-                options.ClipCount),
+                options.ClipCount,
+                report),
             segments,
             options);
+    }
+
+    private static void CompleteReport(CandidateAnalysisReport report, int finalCount, bool worship)
+    {
+        report.FinalCandidates = finalCount;
+        if (report.TranscriptSegments < 3) report.Warnings.Add("Poucos segmentos foram reconhecidos na transcrição.");
+        if (report.RawCandidates == 0) report.Warnings.Add(worship ? "Não houve densidade vocal suficiente para formar trechos de louvor." : "Nenhuma janela completa atingiu os critérios editoriais.");
+        if (report.RejectedByDuration > 0) report.Warnings.Add("Alguns trechos não atingiram a duração automática de 60–75 segundos.");
+        if (report.RejectedByOverlap > 0) report.Warnings.Add("Trechos muito sobrepostos foram removidos para evitar cortes repetidos.");
+        if (finalCount < report.RequestedClips) report.Warnings.Add("Você pode completar a seleção pelo Editor completo.");
     }
 
     private static List<ClipCandidate> RefineWordBoundaries(
@@ -415,3 +447,5 @@ public sealed class EditorialAnalyzer(
                 NormalizationForm.FormC);
     }
 }
+
+public sealed record EditorialAnalysisResult(List<ClipCandidate> Clips, CandidateAnalysisReport Report);

@@ -6,9 +6,10 @@ public sealed class EditorialCandidateSelector
 {
     public List<ClipCandidate> Select(
         List<ClipCandidate> pool,
-        ProjectOptions options)
+        ProjectOptions options,
+        CandidateAnalysisReport? report = null)
     {
-        var candidates = FilterByTopic(pool, options);
+        var candidates = FilterByTopic(pool, options, report);
 
         var targetPool = Math.Clamp(
             options.ClipCount * 4,
@@ -28,7 +29,14 @@ public sealed class EditorialCandidateSelector
                     candidate.Transcript) > .72);
 
             if (conflicts)
+            {
+                if (report is not null)
+                {
+                    if (diverse.Any(existing => Overlap(existing, candidate) > .24)) report.RejectedByOverlap++;
+                    else report.RejectedByContext++;
+                }
                 continue;
+            }
 
             diverse.Add(candidate);
 
@@ -44,7 +52,8 @@ public sealed class EditorialCandidateSelector
 
     public List<ClipCandidate> SelectWorship(
         List<ClipCandidate> pool,
-        int count)
+        int count,
+        CandidateAnalysisReport? report = null)
     {
         var result = new List<ClipCandidate>();
 
@@ -54,6 +63,7 @@ public sealed class EditorialCandidateSelector
             if (result.Any(existing =>
                     Overlap(existing, candidate) > .22))
             {
+                if (report is not null) report.RejectedByOverlap++;
                 continue;
             }
 
@@ -70,7 +80,8 @@ public sealed class EditorialCandidateSelector
 
     private static List<ClipCandidate> FilterByTopic(
         List<ClipCandidate> pool,
-        ProjectOptions options)
+        ProjectOptions options,
+        CandidateAnalysisReport? report)
     {
         if (string.IsNullOrWhiteSpace(options.Topic))
             return pool;
@@ -83,9 +94,9 @@ public sealed class EditorialCandidateSelector
                         StringComparison.Ordinal)))
             .ToList();
 
-        return focused.Count > 0
-            ? focused
-            : pool;
+        if (focused.Count == 0) return pool;
+        if (report is not null) report.RejectedByContext += pool.Count - focused.Count;
+        return focused;
     }
 
     private static double Overlap(

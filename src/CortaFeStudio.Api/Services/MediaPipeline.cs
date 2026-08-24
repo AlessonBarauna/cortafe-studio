@@ -68,7 +68,8 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         await Checkpoint(p, "transcript", "Transcrição disponível");
         await Stage(p, ProjectStatus.Analyzing, 72, "Encontrando momentos de impacto");
         p.Options.ApplyAutomaticDuration();
-        p.Clips = editorial.Analyze(p.Transcript, p.Options);
+        var analysis = editorial.AnalyzeWithReport(p.Transcript, p.Options);
+        p.Clips = analysis.Clips; p.CandidateAnalysis = analysis.Report;
         await Checkpoint(p, "analysis", $"{p.Clips.Count} candidatos encontrados");
         await Stage(p, ProjectStatus.Analyzing, 82, $"Preparando {p.Clips.Count} candidatos");
         await Parallel.ForEachAsync(p.Clips, new ParallelOptions { MaxDegreeOfParallelism = 2, CancellationToken = ct }, async (clip, token) =>
@@ -273,7 +274,8 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         if (p.Transcript.Count == 0) throw new InvalidOperationException("Este projeto ainda não possui transcrição para reaproveitar.");
         p.Options.ApplyAutomaticDuration();
         p.Status = ProjectStatus.Analyzing; p.Progress = 72; p.Stage = "Refazendo o ranking sem transcrever novamente"; await store.SaveAsync(p);
-        p.Clips = editorial.Analyze(p.Transcript, p.Options);
+        var analysis = editorial.AnalyzeWithReport(p.Transcript, p.Options);
+        p.Clips = analysis.Clips; p.CandidateAnalysis = analysis.Report;
         foreach (var clip in p.Clips) { await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
         ShortFormMetadataService.EnsureUniqueTitles(p.Clips, p.Options.ContentType);
         await RenderAllAsync(p, ct);
@@ -285,7 +287,8 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         if (p.Transcript.Count == 0) throw new InvalidOperationException("Este projeto ainda não possui transcrição.");
         p.Options.ApplyAutomaticDuration();
         p.Status = ProjectStatus.Analyzing; p.Progress = 78; p.Stage = "Aplicando análise editorial"; await store.SaveAsync(p);
-        p.Clips = editorial.Analyze(p.Transcript, p.Options);
+        var analysis = editorial.AnalyzeWithReport(p.Transcript, p.Options);
+        p.Clips = analysis.Clips; p.CandidateAnalysis = analysis.Report;
         foreach (var clip in p.Clips) { await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
         ShortFormMetadataService.EnsureUniqueTitles(p.Clips, p.Options.ContentType);
         if (render) await RenderAllAsync(p, ct);

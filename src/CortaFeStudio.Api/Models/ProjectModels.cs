@@ -28,6 +28,7 @@ public sealed class VideoProject
     public List<TranscriptSegment> Transcript { get; set; } = [];
     public string? TranscriptSource { get; set; }
     public List<ClipCandidate> Clips { get; set; } = [];
+    public CandidateAnalysisReport? CandidateAnalysis { get; set; }
     public bool IsRendering { get; set; }
     public int RenderCompleted { get; set; }
     public int RenderTotal { get; set; }
@@ -96,6 +97,19 @@ public sealed class ClipCandidate
     public List<ClipVariant> Variants { get; set; } = [];
     public string? WinningVariantId { get; set; }
     public QualityReport? QualityReport { get; set; }
+}
+public sealed class CandidateAnalysisReport
+{
+    public int RequestedClips { get; set; }
+    public int TranscriptSegments { get; set; }
+    public int RawCandidates { get; set; }
+    public int RejectedByDuration { get; set; }
+    public int RejectedByOverlap { get; set; }
+    public int RejectedByScore { get; set; }
+    public int RejectedByContext { get; set; }
+    public int RejectedByIncompleteEnding { get; set; }
+    public int FinalCandidates { get; set; }
+    public List<string> Warnings { get; set; } = [];
 }
 public sealed class SubtitleTrack
 {
