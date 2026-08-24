@@ -182,6 +182,7 @@ api.MapPut("/projects/{id}/clips/{clipId}", async (string id, string clipId, Cli
     {
         var clip = p.Clips.FirstOrDefault(c => c.Id == clipId);
         if (clip is null) return;
+        var previousFingerprint = RenderStateService.Fingerprint(clip);
         clip.Start = Math.Max(0, update.Start ?? clip.Start);
         clip.End = Math.Max(clip.Start + 1, update.End ?? clip.End);
         if (update.Title is not null && !string.Equals(update.Title.Trim(), clip.Title, StringComparison.Ordinal))
@@ -202,6 +203,7 @@ api.MapPut("/projects/{id}/clips/{clipId}", async (string id, string clipId, Cli
         clip.CropX = Math.Clamp(update.CropX ?? clip.CropX, 0, 1);
         clip.LayoutMode = update.LayoutMode ?? clip.LayoutMode;
         if (update.OutputPreset is "vertical" or "portrait" or "square" or "landscape") clip.OutputPreset = update.OutputPreset;
+        RenderStateService.MarkIfChanged(clip, previousFingerprint);
     });
     return updated is null ? Results.NotFound() : Results.Ok(updated);
 });
@@ -232,8 +234,10 @@ api.MapPut("/projects/{id}/clips/{clipId}/subtitles", async (string id, string c
     if (project is null || clip is null) return Results.NotFound();
     try
     {
+        var previousFingerprint = RenderStateService.Fingerprint(clip);
         clip.SubtitleTrack = SubtitleTrackService.Validate(request, clip.End - clip.Start);
         clip.SubtitleStyle = clip.SubtitleTrack.Style;
+        RenderStateService.MarkIfChanged(clip, previousFingerprint);
         await store.SaveAsync(project);
         return Results.Ok(clip.SubtitleTrack);
     }

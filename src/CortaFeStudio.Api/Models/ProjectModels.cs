@@ -97,6 +97,8 @@ public sealed class ClipCandidate
     public List<ClipVariant> Variants { get; set; } = [];
     public string? WinningVariantId { get; set; }
     public QualityReport? QualityReport { get; set; }
+    public string? LastRenderFingerprint { get; set; }
+    public bool RenderOutdated { get; set; }
 }
 public sealed class CandidateAnalysisReport
 {

@@ -238,6 +238,8 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
             encoderDetector.Invalidate(); await RenderWithEncoderAsync(HardwareEncoderDetector.Cpu);
         }
         clip.VideoPath = output;
+        clip.LastRenderFingerprint = RenderStateService.Fingerprint(clip);
+        clip.RenderOutdated = false;
         await qualityGate.ValidateAsync(p, clip, ct);
 
         async Task RenderWithEncoderAsync(RenderEncoderProfile profile)
