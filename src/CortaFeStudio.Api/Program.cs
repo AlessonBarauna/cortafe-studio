@@ -24,6 +24,7 @@ builder.Services.AddSingleton<EditorialCandidateSelector>();
 builder.Services.AddSingleton<EditorialAnalyzer>();
 builder.Services.AddSingleton<LongVideoEditorialAnalyzer>();
 builder.Services.AddSingleton<EditorialLearningService>();
+builder.Services.AddSingleton<PerformanceLearningService>();
 builder.Services.AddSingleton<ProjectQueue>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ProjectQueue>());
 builder.Services.AddHttpClient();
@@ -295,6 +296,14 @@ api.MapPost("/projects/{id}/clips/feedback-batch", async (string id, BatchFeedba
 });
 api.MapGet("/editorial/profile", (EditorialLearningService learning) => learning.Profile());
 api.MapDelete("/editorial/profile", async (EditorialLearningService learning) => { await learning.ResetAsync(); return Results.NoContent(); });
+api.MapGet("/performance", (PerformanceLearningService learning) => learning.List());
+api.MapGet("/performance/insights", (string? profile, PerformanceLearningService learning) => learning.Insights(profile));
+api.MapPost("/performance", async (RecordPerformanceRequest request, ProjectStore store, PerformanceLearningService learning) =>
+{
+    var project = store.Get(request.ProjectId); var clip = project?.Clips.FirstOrDefault(item => item.Id == request.ClipId); if (project is null || clip is null) return Results.NotFound();
+    try { return Results.Ok(await learning.RecordAsync(project, clip, request)); }
+    catch (ArgumentOutOfRangeException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
 
 api.MapPost("/projects/{id}/render-all", async (string id, ProjectStore store, MediaPipeline pipeline) =>
 {
