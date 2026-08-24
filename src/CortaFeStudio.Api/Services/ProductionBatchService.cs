@@ -11,14 +11,16 @@ public sealed class ProductionBatchService
     private readonly MediaPipeline _pipeline;
     private readonly ContentCalendarService _calendar;
     private readonly ClipVariantService _variants;
+    private readonly ILogger<ProductionBatchService> _logger;
     private readonly string _file;
     private readonly Dictionary<string, ProductionBatch> _batches = [];
     private readonly SemaphoreSlim _lock = new(1, 1);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
-    public ProductionBatchService(IWebHostEnvironment env, ProjectStore projects, ProjectQueue queue, MediaPipeline pipeline, ContentCalendarService calendar, ClipVariantService variants)
+    public ProductionBatchService(IWebHostEnvironment env, ProjectStore projects, ProjectQueue queue, MediaPipeline pipeline, ContentCalendarService calendar, ClipVariantService variants, ILogger<ProductionBatchService> logger)
     {
         _projects = projects; _queue = queue; _pipeline = pipeline; _calendar = calendar; _variants = variants;
+        _logger = logger;
         _file = Path.Combine(env.ContentRootPath, "storage", "production-batches.json");
         if (!File.Exists(_file)) return;
         try
@@ -26,7 +28,10 @@ public sealed class ProductionBatchService
             foreach (var batch in JsonSerializer.Deserialize<List<ProductionBatch>>(File.ReadAllText(_file), JsonOptions) ?? [])
                 _batches[batch.Id] = batch;
         }
-        catch { }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Nao foi possivel carregar os lotes de producao persistidos em {File}", _file);
+        }
     }
 
     public IReadOnlyList<ProductionBatch> List() => _batches.Values.OrderByDescending(item => item.CreatedAt).ToList();

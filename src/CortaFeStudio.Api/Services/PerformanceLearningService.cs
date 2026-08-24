@@ -6,15 +6,21 @@ namespace CortaFeStudio.Api.Services;
 public sealed class PerformanceLearningService
 {
     private readonly string _file;
+    private readonly ILogger<PerformanceLearningService> _logger;
     private readonly List<ContentPerformance> _items = [];
     private readonly SemaphoreSlim _lock = new(1, 1);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
-    public PerformanceLearningService(IWebHostEnvironment environment)
+    public PerformanceLearningService(IWebHostEnvironment environment, ILogger<PerformanceLearningService> logger)
     {
+        _logger = logger;
         _file = Path.Combine(environment.ContentRootPath, "storage", "content-performance.json");
         try { if (File.Exists(_file)) _items = JsonSerializer.Deserialize<List<ContentPerformance>>(File.ReadAllText(_file), JsonOptions) ?? []; }
-        catch (Exception) { _items = []; }
+        catch (Exception ex)
+        {
+            _items = [];
+            _logger.LogWarning(ex, "Nao foi possivel carregar o historico de desempenho em {File}", _file);
+        }
     }
 
     public IReadOnlyList<ContentPerformance> List() => _items.OrderByDescending(item => item.PublishedAt).ToList();

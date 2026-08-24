@@ -46,7 +46,7 @@ public sealed class PerformanceLearningServiceTests : IDisposable
         Assert.NotEmpty(insights.Recommendations);
     }
 
-    private PerformanceLearningService Service() { Directory.CreateDirectory(_root); return new PerformanceLearningService(new TestEnvironment(_root)); }
+    private PerformanceLearningService Service() { Directory.CreateDirectory(_root); return new PerformanceLearningService(new TestEnvironment(_root), Microsoft.Extensions.Logging.Abstractions.NullLogger<PerformanceLearningService>.Instance); }
     private static VideoProject Project() => new() { Id = "project", Options = new ProjectOptions { ContentType = "pregacao" }, Clips = [new ClipCandidate { Id = "clip", Start = 0, End = 65, Title = "Promessa", EditorialProfile = "pregacao", SubtitleStyle = "sermon", Hashtags = ["#promessa"], SocialScore = new SocialScoreBreakdown { Hook = 82 } }] };
     private static RecordPerformanceRequest Request(VideoProject project, ClipCandidate clip, DateTime captured, long views, double retention) => new() { ProjectId = project.Id, ClipId = clip.Id, Platform = SocialPlatform.YouTube, PublishedAt = new DateTimeOffset(captured), Snapshot = new PerformanceSnapshot { CapturedAt = captured, Views = views, Likes = views / 10, Comments = views / 100, Shares = views / 50, RetentionPercent = retention } };
     public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
