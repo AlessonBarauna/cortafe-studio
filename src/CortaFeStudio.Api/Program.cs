@@ -31,6 +31,7 @@ builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "storage", "keys")))
     .SetApplicationName("CortaFeStudio");
 builder.Services.AddSingleton<SocialService>();
+builder.Services.AddSingleton<ContentCalendarService>();
 builder.Services.AddSingleton<ProductionBatchService>();
 builder.Services.AddHostedService<ProductionBatchWorker>();
 builder.Services.AddSingleton<DiagnosticsService>();
@@ -320,6 +321,19 @@ api.MapGet("/projects/{id}/exports/project.json", (string id, ProjectStore store
 
 api.MapGet("/social/status", (SocialService social) => social.Status());
 api.MapGet("/social/history", (SocialService social) => social.History());
+api.MapGet("/calendar", (ContentCalendarService calendar) => calendar.List());
+api.MapPost("/calendar", async (CreateCalendarRequest request, ProjectStore store, ContentCalendarService calendar) =>
+{
+    var project = store.Get(request.ProjectId); if (project is null) return Results.NotFound();
+    var clips = project.Clips.Where(clip => request.ClipIds.Count == 0 || request.ClipIds.Contains(clip.Id)).Where(clip => clip.Approved && clip.VideoPath is not null).ToList();
+    if (clips.Count == 0) return Results.BadRequest(new { error = "Selecione pelo menos um corte aprovado e renderizado." });
+    try { return Results.Ok(await calendar.ScheduleAsync(project, clips, request.Platforms, request.Strategy)); }
+    catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+api.MapPut("/calendar/{id}", async (string id, RescheduleContentRequest request, ContentCalendarService calendar) => { try { return Results.Ok(await calendar.RescheduleAsync(id, request.ScheduledAt)); } catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); } });
+api.MapDelete("/calendar/{id}", async (string id, ContentCalendarService calendar) => { try { return Results.Ok(await calendar.CancelAsync(id)); } catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); } });
+api.MapPost("/calendar/{id}/publish-now", async (string id, ContentCalendarService calendar) => { try { return Results.Ok(await calendar.PublishNowAsync(id)); } catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); } });
+api.MapPost("/calendar/{id}/retry", async (string id, ContentCalendarService calendar) => { try { return Results.Ok(await calendar.RetryAsync(id)); } catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); } });
 api.MapPost("/social/publications/{id}/retry", async (string id, SocialService social) =>
 {
     try { return Results.Ok(await social.RetryAsync(id)); }

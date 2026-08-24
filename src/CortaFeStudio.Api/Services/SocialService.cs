@@ -144,6 +144,28 @@ public sealed class SocialService
         await SaveAsync(); return record;
     }
 
+    public async Task<PublicationRecord> RescheduleAsync(string id, DateTimeOffset date)
+    {
+        var record = _history.FirstOrDefault(item => item.Id == id) ?? throw new InvalidOperationException("Publicacao nao encontrada.");
+        if (record.Status is "published" or "uploading" or "cancelled") throw new InvalidOperationException("Esta publicacao nao pode ser reagendada.");
+        if (date <= DateTimeOffset.UtcNow.AddMinutes(1)) throw new InvalidOperationException("Escolha um horario futuro ou use Publicar agora.");
+        record.Status = "scheduled"; record.ScheduledAt = date; record.Error = null; record.UpdatedAt = DateTimeOffset.UtcNow; await SaveAsync(); return record;
+    }
+
+    public async Task<PublicationRecord> CancelPublicationAsync(string id)
+    {
+        var record = _history.FirstOrDefault(item => item.Id == id) ?? throw new InvalidOperationException("Publicacao nao encontrada.");
+        if (record.Status is "published" or "uploading") throw new InvalidOperationException("Uma publicacao enviada nao pode ser cancelada localmente.");
+        record.Status = "cancelled"; record.Error = null; record.UpdatedAt = DateTimeOffset.UtcNow; await SaveAsync(); return record;
+    }
+
+    public async Task<PublicationRecord> PublishNowAsync(string id)
+    {
+        var record = _history.FirstOrDefault(item => item.Id == id) ?? throw new InvalidOperationException("Publicacao nao encontrada.");
+        if (record.Status is "published" or "uploading" or "cancelled") throw new InvalidOperationException("Esta publicacao nao pode ser enviada agora.");
+        record.Status = "queued"; record.ScheduledAt = DateTimeOffset.UtcNow; record.Error = null; await SaveAsync(); await ExecuteAsync(record); return record;
+    }
+
     public async Task ExecuteAsync(PublicationRecord record)
     {
         await _publishLock.WaitAsync();
