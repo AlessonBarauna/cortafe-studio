@@ -31,6 +31,8 @@ public sealed class ProductionBatchService
 
     public IReadOnlyList<ProductionBatch> List() => _batches.Values.OrderByDescending(item => item.CreatedAt).ToList();
     public ProductionBatch? Get(string id) => _batches.GetValueOrDefault(id);
+    public IReadOnlyList<ProductionBatch> Pending() => List().Where(item => item.Status is ProductionStatus.Queued or ProductionStatus.Analyzing or ProductionStatus.Rendering or ProductionStatus.QualityCheck or ProductionStatus.Scheduled).ToList();
+    public VideoProject? ProjectFor(ProductionBatch batch) => _projects.Get(batch.ProjectId);
 
     public async Task<ProductionBatch> CreateAsync(CreateProductionBatchRequest request)
     {
@@ -50,28 +52,28 @@ public sealed class ProductionBatchService
             ProjectId = project.Id,
             Settings = settings
         };
+        ProductionPipeline.EnsureStages(batch);
         _batches[batch.Id] = batch;
         await SaveAsync();
         await _queue.EnqueueAsync(project.Id);
         return batch;
     }
 
-    public async Task TickAsync(CancellationToken ct)
+    public async Task AdvanceAsync(ProductionBatch batch, CancellationToken ct)
     {
-        foreach (var batch in List().Where(item => item.Status is ProductionStatus.Queued or ProductionStatus.Analyzing))
+        ct.ThrowIfCancellationRequested();
+        var project = _projects.Get(batch.ProjectId);
+        if (project is null) { await FailAsync(batch, "Projeto vinculado nao encontrado."); return; }
+        if (project.Status == ProjectStatus.Failed) { await FailAsync(batch, project.Error ?? "Falha no processamento."); return; }
+        if (project.Status == ProjectStatus.Cancelled) { batch.Status = ProductionStatus.Cancelled; batch.Stage = "Producao cancelada"; await SaveAsync(); return; }
+        if (project.Status != ProjectStatus.Ready)
         {
-            ct.ThrowIfCancellationRequested();
-            var project = _projects.Get(batch.ProjectId);
-            if (project is null) { await FailAsync(batch, "Projeto vinculado nao encontrado."); continue; }
-            if (project.Status == ProjectStatus.Failed) { await FailAsync(batch, project.Error ?? "Falha no processamento."); continue; }
-            if (project.Status == ProjectStatus.Cancelled) { batch.Status = ProductionStatus.Cancelled; batch.Stage = "Producao cancelada"; await SaveAsync(); continue; }
-            if (project.Status != ProjectStatus.Ready)
-            {
-                batch.Status = ProductionStatus.Analyzing; batch.Progress = Math.Min(project.Progress, 74); batch.Stage = project.Stage; await SaveAsync(); continue;
-            }
-            await PrepareAsync(batch, project, ct);
+            batch.Status = ProductionStatus.Analyzing; batch.Progress = Math.Min(project.Progress, 74); batch.Stage = project.Stage; await SaveAsync(); return;
         }
+        await PrepareAsync(batch, project, ct);
     }
+
+    public async Task SaveBatchAsync(ProductionBatch batch) { _batches[batch.Id] = batch; await SaveAsync(); }
 
     public async Task<ProductionBatch?> ApproveAsync(string id, ProductionApprovalRequest request, CancellationToken ct)
     {
@@ -95,7 +97,19 @@ public sealed class ProductionBatchService
     public async Task<bool> CancelAsync(string id)
     {
         var batch = Get(id); if (batch is null) return false;
-        _queue.Cancel(batch.ProjectId); batch.Status = ProductionStatus.Cancelled; batch.Stage = "Producao cancelada"; await SaveAsync(); return true;
+        _queue.Cancel(batch.ProjectId); batch.Status = ProductionStatus.Cancelled; batch.Stage = "Producao cancelada"; foreach (var stage in batch.PipelineStages.Where(item => item.Status is ProductionStageStatus.Pending or ProductionStageStatus.Running)) stage.Status = ProductionStageStatus.Cancelled; await SaveAsync(); return true;
+    }
+
+    public async Task<ProductionBatch?> RetryStageAsync(string id, ProductionStageName stage)
+    {
+        var batch = Get(id); if (batch is null) return null; var index = Array.IndexOf(ProductionPipeline.StageOrder, stage);
+        foreach (var item in batch.PipelineStages.Where(item => Array.IndexOf(ProductionPipeline.StageOrder, item.Name) >= index)) { item.Status = ProductionStageStatus.Pending; item.Error = null; item.StartedAt = null; item.CompletedAt = null; }
+        batch.Error = null; batch.CompletedAt = null; batch.Status = ProductionStatus.Queued; batch.Progress = Math.Min(batch.Progress, 70); batch.Stage = $"Retomando em {stage}";
+        if (index <= Array.IndexOf(ProductionPipeline.StageOrder, ProductionStageName.CalculateSocialScores))
+        {
+            var project = _projects.Get(batch.ProjectId); if (project is not null) { project.Status = ProjectStatus.Queued; project.Error = null; await _projects.SaveAsync(project); await _queue.EnqueueAsync(project.Id); }
+        }
+        await SaveAsync(); return batch;
     }
 
     private async Task PrepareAsync(ProductionBatch batch, VideoProject project, CancellationToken ct)
@@ -200,13 +214,13 @@ public sealed class ProductionBatchService
     private static bool IsValidTime(string value) => TimeOnly.TryParseExact(value, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out _);
 }
 
-public sealed class ProductionBatchWorker(ProductionBatchService service, ILogger<ProductionBatchWorker> logger) : BackgroundService
+public sealed class ProductionBatchWorker(ProductionPipeline pipeline, ILogger<ProductionBatchWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            try { await service.TickAsync(stoppingToken); }
+            try { await pipeline.RunPendingAsync(stoppingToken); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception ex) { logger.LogError(ex, "Falha ao atualizar o modo fabrica"); }
             await Task.Delay(TimeSpan.FromSeconds(3), stoppingToken);

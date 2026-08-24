@@ -13,6 +13,18 @@ public enum ProductionStatus
     Failed,
     Cancelled
 }
+public enum ProductionStageStatus { Pending, Running, Completed, Failed, Skipped, Cancelled }
+public enum ProductionStageName { Acquire, Transcribe, Analyze, GenerateCandidates, RefineHooks, CalculateSocialScores, GenerateVariants, SelectWinners, AnalyzeAudio, AnalyzeVideo, GenerateMetadata, Render, QualityGate, Schedule, Publish }
+
+public sealed class ProductionStageState
+{
+    public ProductionStageName Name { get; set; }
+    public ProductionStageStatus Status { get; set; }
+    public int Attempts { get; set; }
+    public string? Error { get; set; }
+    public DateTime? StartedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+}
 
 public sealed class ProductionSettings
 {
@@ -65,6 +77,8 @@ public sealed class ProductionBatch
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? CompletedAt { get; set; }
+    public List<ProductionStageState> PipelineStages { get; set; } = [];
+    public string? LastPipelineCheckpoint { get; set; }
 }
 
 public sealed class CreateProductionBatchRequest
@@ -78,3 +92,4 @@ public sealed class CreateProductionBatchRequest
 }
 
 public sealed record ProductionApprovalRequest(List<string> ClipIds, bool Render = true, bool Schedule = false);
+public sealed record RetryProductionStageRequest(ProductionStageName Stage);

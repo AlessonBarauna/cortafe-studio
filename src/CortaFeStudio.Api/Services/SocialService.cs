@@ -16,10 +16,10 @@ public sealed class SocialService
     private readonly Dictionary<SocialPlatform, SocialCredential> _accounts = [];
     private readonly Dictionary<string, SocialPlatform> _states = [];
     private readonly List<PublicationRecord> _history = [];
-    private readonly SemaphoreSlim _publishLock = new(1, 1);
+    private readonly ProductionWorkLimiter _workLimiter;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
-    public SocialService(IWebHostEnvironment env, IDataProtectionProvider dataProtection, IHttpClientFactory http, ProjectStore projects, QualityGateService quality)
+    public SocialService(IWebHostEnvironment env, IDataProtectionProvider dataProtection, IHttpClientFactory http, ProjectStore projects, QualityGateService quality, ProductionWorkLimiter workLimiter)
     {
         var root = Path.Combine(env.ContentRootPath, "storage", "social");
         Directory.CreateDirectory(root);
@@ -28,6 +28,7 @@ public sealed class SocialService
         _http = http;
         _projects = projects;
         _quality = quality;
+        _workLimiter = workLimiter;
         Load();
     }
 
@@ -168,7 +169,7 @@ public sealed class SocialService
 
     public async Task ExecuteAsync(PublicationRecord record)
     {
-        await _publishLock.WaitAsync();
+        using var uploadSlot = await _workLimiter.EnterAsync(ProductionWorkKind.Upload);
         try
         {
             if (record.Status is "uploading" or "published") return;
@@ -192,7 +193,7 @@ public sealed class SocialService
             if (record.Attempts < 3) { record.Status = "scheduled"; record.ScheduledAt = DateTimeOffset.UtcNow.Add(SocialPublishingPolicy.RetryDelay(record.Attempts)); }
             else record.Status = "failed";
         }
-        finally { record.UpdatedAt = DateTimeOffset.UtcNow; await SaveAsync(); _publishLock.Release(); }
+        finally { record.UpdatedAt = DateTimeOffset.UtcNow; await SaveAsync(); }
     }
 
     public IReadOnlyList<PublicationRecord> History() => _history.OrderByDescending(x => x.CreatedAt).ToList();

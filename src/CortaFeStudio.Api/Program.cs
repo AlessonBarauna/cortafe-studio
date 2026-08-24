@@ -34,6 +34,8 @@ builder.Services.AddDataProtection()
 builder.Services.AddSingleton<SocialService>();
 builder.Services.AddSingleton<ContentCalendarService>();
 builder.Services.AddSingleton<ProductionBatchService>();
+builder.Services.AddSingleton<ProductionPipeline>();
+builder.Services.AddSingleton<ProductionWorkLimiter>();
 builder.Services.AddHostedService<ProductionBatchWorker>();
 builder.Services.AddSingleton<DiagnosticsService>();
 builder.Services.AddSingleton<StorageService>();
@@ -100,6 +102,8 @@ api.MapPost("/production/{id}/approve", async (string id, ProductionApprovalRequ
 });
 api.MapPost("/production/{id}/cancel", async (string id, ProductionBatchService production) =>
     await production.CancelAsync(id) ? Results.Ok() : Results.NotFound());
+api.MapPost("/production/{id}/retry-stage", async (string id, RetryProductionStageRequest request, ProductionBatchService production) =>
+    await production.RetryStageAsync(id, request.Stage) is { } batch ? Results.Ok(batch) : Results.NotFound());
 api.MapGet("/projects/{id}", (string id, ProjectStore store) =>
     store.Get(id) is { } project ? Results.Ok(project) : Results.NotFound());
 api.MapGet("/projects/{projectId}/clips/{clipId}/metadata", (string projectId, string clipId, ProjectStore store) =>
