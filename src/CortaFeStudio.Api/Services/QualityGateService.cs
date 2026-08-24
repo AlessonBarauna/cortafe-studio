@@ -33,7 +33,7 @@ public sealed partial class QualityGateService(ToolService tools, ProjectStore p
             if (document.RootElement.TryGetProperty("format", out var format)) facts.Duration = Double(format, "duration");
             if (!string.IsNullOrWhiteSpace(facts.AudioCodec))
             {
-                var diagnostic = await tools.CaptureDiagnosticAsync(tools.Find("ffmpeg"), ["-hide_banner", "-i", path, "-af", "ebur128=peak=true,silencedetect=noise=-38dB:d=.7", "-vf", "blackdetect=d=.5:pix_th=.10", "-f", "null", "-"], Path.GetDirectoryName(path), ct);
+                var diagnostic = await tools.CaptureDiagnosticAsync(tools.Find("ffmpeg"), ["-hide_banner", "-i", path, "-af", "ebur128=peak=true,silencedetect=noise=-38dB:d=0.7", "-vf", "blackdetect=d=0.5:pix_th=0.10", "-f", "null", "-"], Path.GetDirectoryName(path), ct);
                 facts.LoudnessLufs = Last(LoudnessRegex(), diagnostic); facts.TruePeakDb = Last(TruePeakRegex(), diagnostic);
                 facts.LongestSilence = Maximum(SilenceRegex(), diagnostic); facts.LongestBlackFrame = Maximum(BlackRegex(), diagnostic);
             }

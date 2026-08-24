@@ -69,6 +69,17 @@ public sealed class FfmpegSubtitleIntegrationTests : IDisposable
         Assert.Equal(0, result);
     }
 
+    [Fact]
+    public async Task Ffmpeg_AceitaFiltrosDaInspecaoDeQualidade()
+    {
+        if (!FfmpegAvailable()) return;
+        Directory.CreateDirectory(_directory);
+
+        var result = await RunAsync(["-v", "error", "-f", "lavfi", "-i", "color=c=black:s=320x568:d=1", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "1", "-af", "ebur128=peak=true,silencedetect=noise=-38dB:d=0.7", "-vf", "blackdetect=d=0.5:pix_th=0.10", "-f", "null", "-"]);
+
+        Assert.Equal(0, result);
+    }
+
     private bool FfmpegAvailable()
     {
         try { using var process = Process.Start(new ProcessStartInfo(Ffmpeg, "-version") { UseShellExecute = false, CreateNoWindow = true }); return process is not null && process.WaitForExit(3000) && process.ExitCode == 0; }
