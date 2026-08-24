@@ -8,7 +8,7 @@ public sealed class RenderFilterFactoryTests
     [Fact]
     public void IdentidadeVisual_IncluiMolduraTemaEMarcaDagua()
     {
-        var clip = new ClipCandidate { BrandTheme = "worship", BrandFrameEnabled = true, WatermarkEnabled = true, WatermarkText = "CORTAFÉ" };
+        var clip = new ClipCandidate { BrandTheme = "worship", BrandFrameEnabled = true, WatermarkEnabled = true, WatermarkText = "AMADO JESUS" };
         var filter = RenderFilterFactory.Branding(clip, "watermark.txt", ":font='Arial'");
 
         Assert.Contains("0xB98CFF", filter);

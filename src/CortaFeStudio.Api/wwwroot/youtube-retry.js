@@ -28,7 +28,7 @@
         <select class="form-select" id="youtubeBrowser">
           ${browsers.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}
         </select>
-        <small class="text-secondary d-block mt-2">O yt-dlp usa a sessão diretamente neste computador. O CortaFé não copia nem armazena os cookies.</small>`;
+        <small class="text-secondary d-block mt-2">O yt-dlp usa a sessão diretamente neste computador. O Amado Jesus Studio não copia nem armazena os cookies.</small>`;
       retryButton.before(sessionPanel);
       retryButton.textContent = 'Processar com sessão do navegador';
 

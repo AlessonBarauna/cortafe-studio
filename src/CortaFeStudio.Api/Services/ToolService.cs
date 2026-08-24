@@ -107,7 +107,7 @@ public sealed class ToolService(IWebHostEnvironment env)
             if (error.Contains("cookie database", StringComparison.OrdinalIgnoreCase) || error.Contains("failed to decrypt", StringComparison.OrdinalIgnoreCase))
                 return "Não foi possível acessar a sessão do navegador. Feche completamente o navegador escolhido e tente novamente.";
             if (error.Contains("No supported JavaScript runtime", StringComparison.OrdinalIgnoreCase))
-                return "O YouTube exige um runtime JavaScript. Instale o Node.js 22 ou superior e reinicie o CortaFé.";
+                return "O YouTube exige um runtime JavaScript. Instale o Node.js 22 ou superior e reinicie o Amado Jesus Studio.";
             if (error.Contains("HTTP Error 403", StringComparison.OrdinalIgnoreCase))
                 return "O YouTube recusou temporariamente o download (erro 403). Atualize o yt-dlp, desative VPN/proxy e tente novamente.";
         }

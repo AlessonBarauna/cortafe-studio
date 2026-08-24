@@ -48,7 +48,7 @@ public static class RenderFilterFactory
         {
             "worship" => (Accent: "0xB98CFF", Panel: "0x130D24"),
             "podcast" => (Accent: "0xFF5A5F", Panel: "0x171119"),
-            _ => (Accent: "0xF0B44D", Panel: "0x100E15")
+            _ => (Accent: "0x8267FF", Panel: "0x0B0B10")
         };
         var filters = new List<string>();
         if (clip.BrandFrameEnabled)

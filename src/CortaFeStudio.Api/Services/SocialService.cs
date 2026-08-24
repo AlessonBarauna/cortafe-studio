@@ -334,7 +334,7 @@ public sealed class SocialService
     private static void EnsureTikTok(SocialPlatform platform)
     {
         if (platform != SocialPlatform.TikTok)
-            throw new InvalidOperationException("O CortaFé está operando somente com TikTok nesta fase.");
+            throw new InvalidOperationException("O Amado Jesus Studio está operando somente com TikTok nesta fase.");
     }
     private static string Callback(SocialPlatform platform, string baseUrl) => $"{baseUrl.TrimEnd('/')}/api/social/callback/{platform.ToString().ToLowerInvariant()}";
     private void Load()

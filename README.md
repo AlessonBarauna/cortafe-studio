@@ -1,4 +1,4 @@
-# CortaFé Studio
+# Amado Jesus Studio
 
 Estúdio local para transformar pregações, ministrações, podcasts e aulas em cortes verticais com transcrição, legendas, capas e textos de postagem. O processamento fica no computador e não utiliza APIs pagas.
 
@@ -78,7 +78,7 @@ Para gerar um pacote autocontido que não exige .NET instalado no computador de 
 .\scripts\gerar-distribuicao-windows.ps1
 ```
 
-O ZIP será criado em `dist/CortaFeStudio-Windows-x64.zip`. O GitHub Actions valida compilação, JavaScript e ausência de arquivos privados em todos os PRs.
+O ZIP será criado em `dist/AmadoJesusStudio-Windows-x64.zip`. O GitHub Actions valida compilação, JavaScript e ausência de arquivos privados em todos os PRs.
 
 ## Modelos de transcrição
 
@@ -117,7 +117,7 @@ O sistema destina-se a conteúdo próprio ou autorizado. Links privados, transmi
 
 ## Conectar redes sociais
 
-Abra a opção **Publicar** no topo do CortaFé. As credenciais e tokens são protegidos localmente pelo ASP.NET Data Protection e não devem ser enviados por mensagem nem adicionados ao Git.
+Abra a opção **Publicar** no Amado Jesus Studio. As credenciais e tokens são protegidos localmente pelo ASP.NET Data Protection e não devem ser enviados por mensagem nem adicionados ao Git.
 
 Cadastre estes retornos nos aplicativos de desenvolvedor:
 

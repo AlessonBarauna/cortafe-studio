@@ -43,15 +43,15 @@
     const track = ensureSubtitleTrackClient(project, clip);
     const confidence = Math.round((track.confidence ?? 1) * 100);
     const badge = confidence >= 80 ? 'text-bg-success' : confidence >= 60 ? 'text-bg-warning' : 'text-bg-danger';
-    const theme = clip.brandTheme || (clip.editorialProfile === 'louvor' ? 'worship' : clip.editorialProfile === 'podcast' ? 'podcast' : 'cortafe');
+    const theme = clip.brandTheme || (clip.editorialProfile === 'louvor' ? 'worship' : clip.editorialProfile === 'podcast' ? 'podcast' : 'amado-jesus');
     const panel = `<details class="brand-editor mt-3" onclick="event.stopPropagation()">
       <summary>Identidade visual e segurança</summary>
       <div class="subtitle-quality mt-3"><span class="badge ${badge}">${confidence}% de confiança na legenda</span><small>${escapeHtml(track.qualityWarning || 'A faixa possui marcações suficientes para revisão.')}</small></div>
       <div class="brand-grid mt-3">
-        <label class="form-check form-switch"><input class="form-check-input" name="brandFrameEnabled" type="checkbox" ${clip.brandFrameEnabled !== false ? 'checked' : ''}><span>Usar moldura CortaFé</span></label>
-        <label>Tema<select class="form-select" name="brandTheme"><option value="cortafe" ${theme === 'cortafe' ? 'selected' : ''}>CortaFé Clássico</option><option value="worship" ${theme === 'worship' ? 'selected' : ''}>Louvor Atmosfera</option><option value="podcast" ${theme === 'podcast' ? 'selected' : ''}>Podcast Impacto</option></select></label>
+        <label class="form-check form-switch"><input class="form-check-input" name="brandFrameEnabled" type="checkbox" ${clip.brandFrameEnabled !== false ? 'checked' : ''}><span>Usar moldura Amado Jesus</span></label>
+        <label>Tema<select class="form-select" name="brandTheme"><option value="amado-jesus" ${theme === 'amado-jesus' || theme === 'cortafe' ? 'selected' : ''}>Amado Jesus</option><option value="worship" ${theme === 'worship' ? 'selected' : ''}>Louvor Atmosfera</option><option value="podcast" ${theme === 'podcast' ? 'selected' : ''}>Podcast Impacto</option></select></label>
         <label class="form-check form-switch"><input class="form-check-input" name="watermarkEnabled" type="checkbox" ${clip.watermarkEnabled !== false ? 'checked' : ''}><span>Exibir marca-d’água</span></label>
-        <label>Texto da marca<input class="form-control" name="watermarkText" maxlength="36" value="${escapeHtml(clip.watermarkText || 'CORTAFÉ')}"></label>
+        <label>Texto da marca<input class="form-control" name="watermarkText" maxlength="36" value="${escapeHtml(clip.watermarkText || 'AMADO JESUS')}"></label>
         <label>Transparência<input class="form-range" name="watermarkOpacity" type="range" min=".1" max="1" step=".05" value="${clip.watermarkOpacity ?? .72}"></label>
       </div>
       <small class="text-secondary">A prévia responde imediatamente. Salve e renderize para gravar a identidade no MP4.</small>
@@ -65,9 +65,9 @@
     const clip = project.clips.find(item => item.id === card.dataset.clip);
     const body = {
       brandFrameEnabled: card.querySelector('[name="brandFrameEnabled"]')?.checked ?? true,
-      brandTheme: card.querySelector('[name="brandTheme"]')?.value || 'cortafe',
+      brandTheme: card.querySelector('[name="brandTheme"]')?.value || 'amado-jesus',
       watermarkEnabled: card.querySelector('[name="watermarkEnabled"]')?.checked ?? true,
-      watermarkText: card.querySelector('[name="watermarkText"]')?.value || 'CORTAFÉ',
+      watermarkText: card.querySelector('[name="watermarkText"]')?.value || 'AMADO JESUS',
       watermarkOpacity: +(card.querySelector('[name="watermarkOpacity"]')?.value || .72)
     };
     await api(`/api/projects/${project.id}/clips/${clip.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -85,8 +85,8 @@
     if (!preview || !clip) return;
     preview.querySelector('.brand-preview')?.remove();
     if (clip.videoPath || (clip.brandFrameEnabled === false && clip.watermarkEnabled === false)) return;
-    const theme = clip.brandTheme || 'cortafe';
-    preview.insertAdjacentHTML('beforeend', `<div class="brand-preview theme-${theme}">${clip.brandFrameEnabled !== false ? '<i class="brand-top"></i><i class="brand-bottom"></i>' : ''}${clip.watermarkEnabled !== false ? `<strong style="opacity:${Math.max(.1, Math.min(1, clip.watermarkOpacity ?? .72))}">${escapeHtml(clip.watermarkText || 'CORTAFÉ')}</strong>` : ''}</div>`);
+    const theme = clip.brandTheme || 'amado-jesus';
+    preview.insertAdjacentHTML('beforeend', `<div class="brand-preview theme-${theme}">${clip.brandFrameEnabled !== false ? '<i class="brand-top"></i><i class="brand-bottom"></i>' : ''}${clip.watermarkEnabled !== false ? `<strong style="opacity:${Math.max(.1, Math.min(1, clip.watermarkOpacity ?? .72))}">${escapeHtml(clip.watermarkText || 'AMADO JESUS')}</strong>` : ''}</div>`);
   }
 
   document.addEventListener('input', event => {

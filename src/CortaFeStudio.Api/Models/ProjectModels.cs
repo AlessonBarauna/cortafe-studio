@@ -93,9 +93,9 @@ public sealed class ClipCandidate
     public string SubtitleStyle { get; set; } = "impact";
     public SubtitleTrack? SubtitleTrack { get; set; }
     public bool BrandFrameEnabled { get; set; } = true;
-    public string BrandTheme { get; set; } = "cortafe";
+    public string BrandTheme { get; set; } = "amado-jesus";
     public bool WatermarkEnabled { get; set; } = true;
-    public string WatermarkText { get; set; } = "CORTAFÉ";
+    public string WatermarkText { get; set; } = "AMADO JESUS";
     public double WatermarkOpacity { get; set; } = .72;
     public string CoverAccent { get; set; } = "#F0B44D";
     public string CoverPosition { get; set; } = "bottom";

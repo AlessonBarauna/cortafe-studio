@@ -11,7 +11,7 @@ public sealed class ToolUpdateService(ToolService tools, IHttpClientFactory http
         string? latest = null;
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest"); request.Headers.UserAgent.ParseAdd("CortaFeStudio/1.0");
+            using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest"); request.Headers.UserAgent.ParseAdd("AmadoJesusStudio/1.0");
             using var response = await http.CreateClient().SendAsync(request, ct); response.EnsureSuccessStatusCode();
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct)); latest = document.RootElement.GetProperty("tag_name").GetString()?.TrimStart();
         } catch { }

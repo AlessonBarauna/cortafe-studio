@@ -48,7 +48,7 @@ var app = builder.Build();
 app.UseExceptionHandler();
 app.Use(async (context, next) =>
 {
-    if (!IPAddress.IsLoopback(context.Connection.RemoteIpAddress ?? IPAddress.Loopback)) { context.Response.StatusCode = 403; await context.Response.WriteAsJsonAsync(new { error = "O CortaFé aceita acesso somente deste computador." }); return; }
+    if (!IPAddress.IsLoopback(context.Connection.RemoteIpAddress ?? IPAddress.Loopback)) { context.Response.StatusCode = 403; await context.Response.WriteAsJsonAsync(new { error = "O Amado Jesus Studio aceita acesso somente deste computador." }); return; }
     var security = context.RequestServices.GetRequiredService<LocalSecurityService>(); var path = context.Request.Path;
     if (security.Enabled && path.StartsWithSegments("/api") && !path.StartsWithSegments("/api/security") && !security.ValidSession(context.Request.Cookies["cortafe-session"])) { context.Response.StatusCode = 401; await context.Response.WriteAsJsonAsync(new { error = "Sessão local expirada." }); return; }
     await next();
@@ -418,7 +418,7 @@ api.MapGet("/projects/{id}/exports/project.json", (string id, ProjectStore store
     var project = store.Get(id); if (project is null) return Results.NotFound();
     var options = new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
-    return Results.File(JsonSerializer.SerializeToUtf8Bytes(project, options), "application/json", $"cortafe-{project.Id}.json");
+    return Results.File(JsonSerializer.SerializeToUtf8Bytes(project, options), "application/json", $"amado-jesus-{project.Id}.json");
 });
 
 api.MapGet("/social/status", (SocialService social) => social.Status());

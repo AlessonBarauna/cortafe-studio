@@ -97,7 +97,7 @@ async function historyView() {
   <div class="studio-panel p-3 p-lg-4 mb-4">
     <div class="row g-3 align-items-center">
       <div class="col-lg-8"><input id="historySearch" class="form-control" placeholder="Buscar por nome, link ou tipo de conteúdo"></div>
-      <div class="col-lg-4 text-lg-end"><strong>${items.length}</strong> projetos · <strong>${bytesLabel(report.totalBytes)}</strong> no CortaFé</div>
+      <div class="col-lg-4 text-lg-end"><strong>${items.length}</strong> projetos · <strong>${bytesLabel(report.totalBytes)}</strong> no Amado Jesus Studio</div>
     </div>
   </div>
   <div id="historyProjects" class="project-grid">${historyCards(items)}</div>`;
