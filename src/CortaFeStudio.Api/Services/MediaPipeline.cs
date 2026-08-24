@@ -5,7 +5,7 @@ using CortaFeStudio.Api.Models;
 
 namespace CortaFeStudio.Api.Services;
 
-public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpClientFactory http, LongVideoEditorialAnalyzer editorial, AudioAnalyzer audioAnalyzer, VideoEnhancementService videoEnhancement, HardwareEncoderDetector encoderDetector, QualityGateService qualityGate, ProductionWorkLimiter workLimiter, ILogger<MediaPipeline> logger)
+public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpClientFactory http, LongVideoEditorialAnalyzer editorial, AudioAnalyzer audioAnalyzer, VideoEnhancementService videoEnhancement, HardwareEncoderDetector encoderDetector, QualityGateService qualityGate, ProductionWorkLimiter workLimiter, StorageCapacityService storageCapacity, ILogger<MediaPipeline> logger)
 {
     public async Task ProcessAsync(VideoProject p, CancellationToken ct)
     {
@@ -24,6 +24,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         var existingMedia = !string.IsNullOrWhiteSpace(p.LocalMedia) ? Path.Combine(dir, p.LocalMedia) : null;
         if (p.SourceKind == SourceKind.YouTube && (existingMedia is null || !File.Exists(existingMedia)))
         {
+            storageCapacity.Ensure(StorageOperation.Acquisition, p.Duration);
             var template = Path.Combine(dir, "source.%(ext)s");
             await Stage(p, ProjectStatus.Acquiring, 12, p.Transcript.Count > 0 ? "Baixando vídeo; legendas já aproveitadas" : "Baixando vídeo em formato otimizado");
             var downloadArgs = YouTubeAcquisition.DownloadArguments(tools.YouTubeArguments(), tools.Find("ffmpeg"), template, p.Source);
@@ -50,6 +51,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         }
         if (!hasManualCaptions && !transcriptReady)
         {
+            storageCapacity.Ensure(StorageOperation.Transcription, p.Duration);
             await Stage(p, ProjectStatus.Transcribing, 20, "Extraindo áudio");
             var audio = Path.Combine(dir, "source.audio.wav");
             if (!File.Exists(audio) || new FileInfo(audio).Length < 1024)
@@ -210,6 +212,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
 
     public async Task RenderClipAsync(VideoProject p, ClipCandidate clip, CancellationToken ct = default)
     {
+        storageCapacity.Ensure(StorageOperation.BatchRender, clip.End - clip.Start);
         using var renderSlot = await workLimiter.EnterAsync(ProductionWorkKind.Render, ct);
         var dir = store.ProjectDirectory(p.Id); var ass = Path.Combine(dir, $"captions-{clip.Id}.ass"); await File.WriteAllTextAsync(ass, BuildAss(p.Transcript, clip), Encoding.UTF8, ct);
         var output = $"clip-{clip.Id}.mp4"; var escaped = ass.Replace("\\", "/").Replace(":", "\\:").Replace("'", "\\'");
@@ -244,6 +247,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
     public async Task RenderAllAsync(VideoProject p, CancellationToken ct = default)
     {
         var clips = p.Clips.Where(c => c.Approved).ToList(); var completed = 0;
+        if (clips.Count > 0) storageCapacity.Ensure(StorageOperation.BatchRender, clips.Average(clip => clip.End - clip.Start), clips.Count);
         p.IsRendering = true; p.RenderCompleted = 0; p.RenderTotal = clips.Count; await store.SaveAsync(p);
         try
         {

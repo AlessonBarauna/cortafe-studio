@@ -1,6 +1,6 @@
 namespace CortaFeStudio.Api.Services;
 
-public sealed class DiagnosticsService(ProjectStore projects, ProjectQueue queue, ToolService tools, SocialService social, IWebHostEnvironment environment)
+public sealed class DiagnosticsService(ProjectStore projects, ProjectQueue queue, ToolService tools, SocialService social, StorageCapacityService capacity, IWebHostEnvironment environment)
 {
     public async Task<object> SnapshotAsync()
     {
@@ -22,7 +22,7 @@ public sealed class DiagnosticsService(ProjectStore projects, ProjectQueue queue
             runtime = new { framework = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription, os = System.Runtime.InteropServices.RuntimeInformation.OSDescription, processors = Environment.ProcessorCount, memoryMb = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / 1024 / 1024 },
             disk = new { freeGb = Math.Round(drive.AvailableFreeSpace / 1024d / 1024 / 1024, 1), storageGb = Math.Round(bytes / 1024d / 1024 / 1024, 2) },
             projects = new { total = all.Count, ready = all.Count(p => p.Status == Models.ProjectStatus.Ready), processing = all.Count(p => p.Status is not Models.ProjectStatus.Ready and not Models.ProjectStatus.Failed), failed = all.Count(p => p.Status == Models.ProjectStatus.Failed) },
-            queue = queue.Status(), tools = toolStatus, social = social.Status(), warnings
+            queue = queue.Status(), tools = toolStatus, social = social.Status(), capacity = capacity.Check(Models.StorageOperation.BatchRender, 75, 20), warnings
         };
     }
 }
