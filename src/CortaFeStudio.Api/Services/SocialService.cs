@@ -12,13 +12,14 @@ public sealed class SocialService
     private readonly IDataProtector _protector;
     private readonly IHttpClientFactory _http;
     private readonly ProjectStore _projects;
+    private readonly QualityGateService _quality;
     private readonly Dictionary<SocialPlatform, SocialCredential> _accounts = [];
     private readonly Dictionary<string, SocialPlatform> _states = [];
     private readonly List<PublicationRecord> _history = [];
     private readonly SemaphoreSlim _publishLock = new(1, 1);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
-    public SocialService(IWebHostEnvironment env, IDataProtectionProvider dataProtection, IHttpClientFactory http, ProjectStore projects)
+    public SocialService(IWebHostEnvironment env, IDataProtectionProvider dataProtection, IHttpClientFactory http, ProjectStore projects, QualityGateService quality)
     {
         var root = Path.Combine(env.ContentRootPath, "storage", "social");
         Directory.CreateDirectory(root);
@@ -26,6 +27,7 @@ public sealed class SocialService
         _protector = dataProtection.CreateProtector("CortaFeStudio.Social.v1");
         _http = http;
         _projects = projects;
+        _quality = quality;
         Load();
     }
 
@@ -118,6 +120,8 @@ public sealed class SocialService
         var clip = project.Clips.FirstOrDefault(c => c.Id == clipId) ?? throw new InvalidOperationException("Corte não encontrado.");
         var path = string.IsNullOrWhiteSpace(clip.VideoPath) ? null : _projects.ResolveAsset(projectId, clip.VideoPath);
         if (path is null) throw new InvalidOperationException("Renderize o corte antes de publicar.");
+        var quality = await _quality.ValidateAsync(project, clip);
+        if (quality.Status == QualityStatus.Blocked) throw new InvalidOperationException($"Publicacao bloqueada pelo controle de qualidade (score {quality.Score}). Corrija ou reprocesse o corte.");
         SocialPublishingPolicy.Validate(request.Platform, path, clip.End - clip.Start, request);
         if (_history.Any(x => x.ProjectId == projectId && x.ClipId == clipId && x.Platform == request.Platform && x.Status is "scheduled" or "uploading" or "published"))
             throw new InvalidOperationException("Este corte já está agendado ou publicado nesta plataforma.");
@@ -150,6 +154,8 @@ public sealed class SocialService
             var clip = project.Clips.FirstOrDefault(c => c.Id == record.ClipId) ?? throw new InvalidOperationException("Corte não encontrado.");
             var path = string.IsNullOrWhiteSpace(clip.VideoPath) ? null : _projects.ResolveAsset(record.ProjectId, clip.VideoPath);
             if (path is null) throw new InvalidOperationException("Renderize o corte antes de publicar.");
+            var quality = await _quality.ValidateAsync(project, clip);
+            if (quality.Status == QualityStatus.Blocked) { record.Status = "failed"; record.Error = $"Publicacao bloqueada pelo Quality Gate (score {quality.Score})."; return; }
             record.Status = "uploading"; record.Attempts++; record.UpdatedAt = DateTimeOffset.UtcNow; await SaveAsync();
             var request = new PublishRequest(record.Platform, record.Title, record.Description, record.Privacy);
             await EnsureFreshTokenAsync(record.Platform);

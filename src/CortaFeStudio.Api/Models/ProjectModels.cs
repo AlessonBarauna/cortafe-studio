@@ -92,6 +92,7 @@ public sealed class ClipCandidate
     public string? EditedTranscript { get; set; }
     public List<ClipVariant> Variants { get; set; } = [];
     public string? WinningVariantId { get; set; }
+    public QualityReport? QualityReport { get; set; }
 }
 public sealed class ClipVariant
 {
