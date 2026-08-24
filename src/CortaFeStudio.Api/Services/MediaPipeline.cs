@@ -346,7 +346,11 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         if (track.Blocks.Count > 0)
         {
             foreach (var block in track.Blocks.Where(block => block.Enabled && !string.IsNullOrWhiteSpace(block.Text)))
-                sb.AppendLine($"Dialogue: 0,{AssTime(block.Start)},{AssTime(block.End)},Impacto,,0,0,0,,{SubtitleFormatter.Plain(block.Text, width)}");
+            {
+                var timing = SubtitleTrackService.EffectiveTiming(block, track, clip.End - clip.Start);
+                if (timing is null) continue;
+                sb.AppendLine($"Dialogue: 0,{AssTime(timing.Value.Start)},{AssTime(timing.Value.End)},Impacto,,0,0,0,,{SubtitleFormatter.Plain(block.Text, width)}");
+            }
             return sb.ToString();
         }
         var words = segments.SelectMany(s => s.Words).Where(w => w.End >= clip.Start && w.Start <= clip.End).OrderBy(w => w.Start).ToList();

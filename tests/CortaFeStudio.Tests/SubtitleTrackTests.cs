@@ -47,7 +47,7 @@ public sealed class SubtitleTrackTests
     }
 
     [Fact]
-    public void Validate_RejeitaSobreposicao()
+    public void Validate_ReparaSobreposicaoSemApagarTexto()
     {
         var track = new SubtitleTrack
         {
@@ -57,7 +57,21 @@ public sealed class SubtitleTrackTests
                 new SubtitleBlock { Start = 1.9, End = 3, Text = "Segundo" }
             ]
         };
-        Assert.Throws<ArgumentException>(() => SubtitleTrackService.Validate(track, 5));
+        var result = SubtitleTrackService.Validate(track, 5);
+        Assert.Equal(2, result.Blocks.Count);
+        Assert.Equal(result.Blocks[0].End, result.Blocks[1].Start);
+        Assert.Equal("Segundo", result.Blocks[1].Text);
+    }
+
+    [Fact]
+    public void Validate_ReparaBlocoLegadoComDuracaoZero()
+    {
+        var track = new SubtitleTrack { Blocks = [new SubtitleBlock { Start = 4.36, End = 4.36, Text = "vida para te" }] };
+        var result = SubtitleTrackService.Validate(track, 10);
+        var block = Assert.Single(result.Blocks);
+        Assert.Equal(4.36, block.Start);
+        Assert.Equal(4.61, block.End);
+        Assert.Equal("vida para te", block.Text);
     }
 
     [Fact]
@@ -83,5 +97,47 @@ public sealed class SubtitleTrackTests
         var filter = MediaPipeline.ComposeVideoFilter("eq=contrast=1", "scale=1080:1920", null);
         Assert.DoesNotContain("subtitles", filter);
         Assert.Equal("eq=contrast=1,scale=1080:1920", filter);
+    }
+
+    [Fact]
+    public void Louvor_AplicaPequenaAntecipacaoInicial()
+    {
+        var clip = new ClipCandidate { Start = 10, End = 20, EditorialProfile = "louvor" };
+        var track = SubtitleTrackService.Create(clip,
+        [
+            new TranscriptSegment { Start = 11, End = 13, Text = "Tu és fiel" }
+        ]);
+        Assert.Equal(-.18, track.OffsetSeconds);
+    }
+
+    [Theory]
+    [InlineData(-.4, 0.6, 1.6)]
+    [InlineData(.25, 1.25, 2.25)]
+    public void EffectiveTiming_AplicaAjusteGeralNoAss(double offset, double expectedStart, double expectedEnd)
+    {
+        var timing = SubtitleTrackService.EffectiveTiming(
+            new SubtitleBlock { Start = 1, End = 2, Text = "Sincronizada" },
+            new SubtitleTrack { OffsetSeconds = offset },
+            10);
+        Assert.NotNull(timing);
+        Assert.Equal(expectedStart, timing.Value.Start);
+        Assert.Equal(expectedEnd, timing.Value.End);
+    }
+
+    [Fact]
+    public void BuildAss_RefleteAjusteGeralNoVideoFinal()
+    {
+        var clip = new ClipCandidate
+        {
+            Start = 0, End = 10,
+            SubtitleTrack = new SubtitleTrack
+            {
+                OffsetSeconds = -.5,
+                Blocks = [new SubtitleBlock { Start = 1, End = 2, Text = "Agora no tempo certo" }]
+            }
+        };
+        var ass = MediaPipeline.BuildAss([], clip);
+        Assert.Contains("0:00:00.50", ass);
+        Assert.Contains("0:00:01.50", ass);
     }
 }
