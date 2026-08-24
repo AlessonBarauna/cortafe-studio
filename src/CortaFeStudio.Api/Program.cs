@@ -39,6 +39,7 @@ builder.Services.AddSingleton<ProductionWorkLimiter>();
 builder.Services.AddHostedService<ProductionBatchWorker>();
 builder.Services.AddSingleton<DiagnosticsService>();
 builder.Services.AddSingleton<StorageService>();
+builder.Services.AddSingleton<StorageCapacityService>();
 builder.Services.AddSingleton<FramingService>();
 builder.Services.AddSingleton<ClipExportService>();
 builder.Services.AddSingleton<LocalSecurityService>();
@@ -74,6 +75,8 @@ api.MapPost("/tools/yt-dlp/update", async (ToolUpdateService updates, Cancellati
 api.MapGet("/projects", (ProjectStore store) => store.List());
 api.MapGet("/queue", (ProjectQueue queue) => queue.Status());
 api.MapGet("/storage", (StorageService storage) => storage.Report());
+api.MapGet("/storage/capacity", (StorageOperation operation, double durationSeconds, int itemCount, StorageCapacityService storage) => storage.Check(operation, durationSeconds, itemCount));
+api.MapPost("/storage/temporary-cleanup", async (StorageCapacityService storage) => Results.Ok(new { freedBytes = await storage.CleanupTemporaryAsync() }));
 api.MapGet("/render/encoder", async (HardwareEncoderDetector detector, CancellationToken ct) => await detector.DetectAsync(ct));
 api.MapGet("/projects/{projectId}/clips/{clipId}/quality", async (string projectId, string clipId, ProjectStore store, QualityGateService quality, CancellationToken ct) =>
 {
