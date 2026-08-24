@@ -19,7 +19,7 @@ public sealed class SubtitleTrackTests
     }
 
     [Fact]
-    public void TemposPorPalavra_MantemLegendaComAltaConfianca()
+    public void TemposPorPalavra_MedeAltaConfiancaMasMantemPrimeiraVersaoSemLegenda()
     {
         var words = Enumerable.Range(0, 20).Select(index => new TranscriptWord
             { Start = index * .5, End = index * .5 + .4, Word = $"palavra{index}" }).ToList();
@@ -27,7 +27,7 @@ public sealed class SubtitleTrackTests
         var track = SubtitleTrackService.Create(clip,
             [new TranscriptSegment { Start = 0, End = 10, Text = "fala", Words = words }]);
 
-        Assert.True(track.Enabled);
+        Assert.False(track.Enabled);
         Assert.True(track.Confidence >= .8);
     }
     [Fact]

@@ -18,10 +18,10 @@ public sealed class SubtitleFormatterTests
     }
 
     [Theory]
-    [InlineData("vertical", 1080, 1920, ",135,135,430,1")]
-    [InlineData("portrait", 1080, 1350, ",135,135,310,1")]
-    [InlineData("square", 1080, 1080, ",135,135,220,1")]
-    [InlineData("landscape", 1920, 1080, ",210,210,220,1")]
+    [InlineData("vertical", 1080, 1920, ",135,135,235,1")]
+    [InlineData("portrait", 1080, 1350, ",135,135,175,1")]
+    [InlineData("square", 1080, 1080, ",135,135,145,1")]
+    [InlineData("landscape", 1920, 1080, ",210,210,145,1")]
     public void Style_UsaMargensSegurasPorFormato(string preset, int width, int height, string expected)
     {
         var style = SubtitleFormatter.Style(new ClipCandidate { OutputPreset = preset }, width, height);
