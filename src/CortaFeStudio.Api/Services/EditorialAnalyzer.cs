@@ -234,8 +234,8 @@ public sealed class EditorialAnalyzer(
                         Math.Min(96, score),
                         1),
                     Transcript = text,
-                    Title = "Momento de louvor e adoração",
-                    CoverText = "UM MOMENTO DE ADORAÇÃO",
+                    Title = ShortFormMetadataService.GenerateTitleSuggestions(new ClipCandidate { Transcript = text }, "louvor").FirstOrDefault() ?? "Adoração que permanece",
+                    CoverText = ShortFormMetadataService.NormalizeCoverText(text),
                     Caption =
                         "Uma canção para renovar a fé. 🎶✨",
                     EditorialProfile = "louvor",

@@ -71,6 +71,7 @@ public sealed class ClipCandidate
     public SocialScoreBreakdown SocialScore { get; set; } = new();
     public string Transcript { get; set; } = "";
     public string Title { get; set; } = "Momento que merece ser ouvido";
+    public bool TitleEditedByUser { get; set; }
     public string CoverText { get; set; } = "OUÇA ISSO";
     public string Caption { get; set; } = "Uma mensagem para guardar e compartilhar. ✨";
     public List<string> Hashtags { get; set; } = ["#fé", "#mensagem", "#shorts"];

@@ -86,6 +86,34 @@ public static class ShortFormMetadataService
         }
     }
 
+    public static IReadOnlyList<string> GenerateTitleSuggestions(ClipCandidate clip, string contentType, IEnumerable<string>? existing = null)
+    {
+        var cleaned = Clean(Regex.Replace(clip.Transcript ?? "", @"\[(música|music)\]", "", RegexOptions.IgnoreCase));
+        var words = cleaned.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var candidates = Regex.Split(cleaned, @"(?<=[.!?])\s+|\s*[|\n]\s*").Where(value => value.Length > 0).ToList();
+        foreach (var offset in new[] { 0, Math.Max(0, words.Length / 2 - 4), Math.Max(0, words.Length - 9) })
+            if (words.Length > 0) candidates.Add(string.Join(' ', words.Skip(offset).Take(contentType == "louvor" ? 8 : 11)));
+        if (!string.IsNullOrWhiteSpace(clip.HookSentence)) candidates.Insert(0, clip.HookSentence);
+        var blocked = (existing ?? []).Where(value => !string.IsNullOrWhiteSpace(value)).ToList();
+        var result = candidates.Select(NormalizeTitle).Where(title => title.Length >= 12 && !IsGenericTitle(title))
+            .OrderByDescending(title => TitleScore(title, contentType)).Where(title => !blocked.Any(other => Similar(title, other)))
+            .Distinct(StringComparer.OrdinalIgnoreCase).Take(3).ToList();
+        foreach (var fallback in BuildFallbackVariants(cleaned, contentType))
+            if (result.Count < 3 && !result.Any(title => Similar(title, fallback)) && !blocked.Any(title => Similar(title, fallback))) result.Add(fallback);
+        return result.Take(3).ToList();
+    }
+
+    public static void EnsureUniqueTitles(IList<ClipCandidate> clips, string contentType)
+    {
+        var accepted = new List<string>();
+        foreach (var clip in clips.OrderBy(clip => clip.Start))
+        {
+            if (!clip.TitleEditedByUser && (IsGenericTitle(clip.Title) || accepted.Any(title => Similar(title, clip.Title))))
+                clip.Title = GenerateTitleSuggestions(clip, contentType, accepted).FirstOrDefault() ?? clip.Title;
+            accepted.Add(clip.Title);
+        }
+    }
+
     public static string NormalizeTitle(string? value)
     {
         var text = Clean(value)
@@ -251,7 +279,7 @@ Transcrição do corte:
         string contentType,
         JsonElement root)
     {
-        if (root.TryGetProperty("title", out var title))
+        if (!clip.TitleEditedByUser && root.TryGetProperty("title", out var title))
         {
             var normalized = NormalizeTitle(title.GetString());
             if (!string.IsNullOrWhiteSpace(normalized))
@@ -329,6 +357,36 @@ Transcrição do corte:
             .Take(12);
 
         return NormalizeTitle(string.Join(' ', words));
+    }
+
+    private static IEnumerable<string> BuildFallbackVariants(string text, string contentType)
+    {
+        var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 0) yield break;
+        yield return NormalizeTitle(string.Join(' ', words.Take(contentType == "louvor" ? 7 : 10)));
+        if (words.Length > 7) yield return NormalizeTitle(string.Join(' ', words.Skip(words.Length / 3).Take(8)));
+        if (words.Length > 12) yield return NormalizeTitle(string.Join(' ', words.Skip(words.Length * 2 / 3).Take(8)));
+    }
+
+    private static bool IsGenericTitle(string? title)
+    {
+        var folded = Clean(title).ToLowerInvariant();
+        return string.IsNullOrWhiteSpace(folded) || new[] { "momento de louvor", "trecho do louvor", "mensagem para você", "promessa maior" }.Any(folded.Contains);
+    }
+
+    private static double TitleScore(string title, string contentType)
+    {
+        var score = title.Length is >= 20 and <= 65 ? 20 : 5;
+        if (contentType == "louvor" && new[] { "fiel", "promessa", "creio", "deus", "jesus", "aqui", "sempre", "amor" }.Any(word => title.Contains(word, StringComparison.OrdinalIgnoreCase))) score += 15;
+        return score + title.Split(' ', StringSplitOptions.RemoveEmptyEntries).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+    }
+
+    private static bool Similar(string left, string right)
+    {
+        var a = Regex.Matches(Clean(left).ToLowerInvariant(), @"[\p{L}\p{Nd}]+").Select(match => match.Value).ToHashSet();
+        var b = Regex.Matches(Clean(right).ToLowerInvariant(), @"[\p{L}\p{Nd}]+").Select(match => match.Value).ToHashSet();
+        if (a.Count == 0 || b.Count == 0) return false;
+        return a.Intersect(b).Count() / (double)a.Union(b).Count() >= .72;
     }
 
     private static string? NormalizeHashtag(string? value)

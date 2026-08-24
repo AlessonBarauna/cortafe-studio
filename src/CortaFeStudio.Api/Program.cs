@@ -184,7 +184,11 @@ api.MapPut("/projects/{id}/clips/{clipId}", async (string id, string clipId, Cli
         if (clip is null) return;
         clip.Start = Math.Max(0, update.Start ?? clip.Start);
         clip.End = Math.Max(clip.Start + 1, update.End ?? clip.End);
-        clip.Title = update.Title ?? clip.Title;
+        if (update.Title is not null && !string.Equals(update.Title.Trim(), clip.Title, StringComparison.Ordinal))
+        {
+            clip.Title = update.Title.Trim();
+            clip.TitleEditedByUser = true;
+        }
         clip.Caption = update.Caption ?? clip.Caption;
         clip.CoverText = update.CoverText ?? clip.CoverText;
         clip.Approved = update.Approved ?? clip.Approved;
@@ -242,6 +246,13 @@ api.MapPost("/projects/{id}/clips/{clipId}/subtitles/regenerate", async (string 
     clip.SubtitleTrack = SubtitleTrackService.Create(clip, project.Transcript);
     await store.SaveAsync(project);
     return Results.Ok(clip.SubtitleTrack);
+});
+api.MapPost("/projects/{id}/clips/{clipId}/title-suggestions", (string id, string clipId, ProjectStore store) =>
+{
+    var project = store.Get(id); var clip = project?.Clips.FirstOrDefault(item => item.Id == clipId);
+    if (project is null || clip is null) return Results.NotFound();
+    var existing = project.Clips.Where(item => item.Id != clipId).Select(item => item.Title);
+    return Results.Ok(new { suggestions = ShortFormMetadataService.GenerateTitleSuggestions(clip, project.Options.ContentType, existing) });
 });
 api.MapDelete("/projects/{id}/clips/{clipId}", async (string id, string clipId, ProjectStore store) =>
     await store.DeleteClipAsync(id, clipId) ? Results.NoContent() : Results.NotFound());

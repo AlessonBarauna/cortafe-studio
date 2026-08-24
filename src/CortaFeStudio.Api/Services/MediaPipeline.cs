@@ -76,6 +76,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
             await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, token);
             await CreateCoverAsync(p, clip, token);
         });
+        ShortFormMetadataService.EnsureUniqueTitles(p.Clips, p.Options.ContentType);
         p.Status = ProjectStatus.Ready; p.Progress = 100; p.CompletedAt = DateTime.UtcNow; p.Stage = $"{p.Clips.Count} cortes prontos para revisar"; await store.SaveAsync(p);
     }
 
@@ -162,7 +163,8 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
             var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             var meaningful = words.Count(w => w.Length > 3);
             var score = Math.Min(96, 55 + meaningful / 3d + (text.Contains("Deus", StringComparison.OrdinalIgnoreCase) ? 6 : 0) + (text.Contains("promessa", StringComparison.OrdinalIgnoreCase) ? 8 : 0));
-            pool.Add(new ClipCandidate { Start = start, End = parts[^1].End, Score = Math.Round(score, 1), Transcript = text, Title = "Promessa Maior • Momento de louvor", CoverText = "ELE CUMPRE A PROMESSA", Caption = "Uma canção para renovar a fé e lembrar das promessas de Deus. 🎶✨", Hashtags = ["#louvor", "#adoração", "#promessa", "#fé", "#worship"] });
+            var worshipTitle = ShortFormMetadataService.GenerateTitleSuggestions(new ClipCandidate { Transcript = text }, "louvor").FirstOrDefault() ?? MakeTitle(text);
+            pool.Add(new ClipCandidate { Start = start, End = parts[^1].End, Score = Math.Round(score, 1), Transcript = text, Title = worshipTitle, CoverText = ShortFormMetadataService.NormalizeCoverText(worshipTitle), Caption = $"{worshipTitle}. Uma canção para renovar a fé. 🎶✨", Hashtags = ["#louvor", "#adoração", "#promessa", "#fé", "#worship"] });
         }
         var selected = new List<ClipCandidate>();
         foreach (var clip in pool.OrderByDescending(c => c.Score))
@@ -273,6 +275,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         p.Status = ProjectStatus.Analyzing; p.Progress = 72; p.Stage = "Refazendo o ranking sem transcrever novamente"; await store.SaveAsync(p);
         p.Clips = editorial.Analyze(p.Transcript, p.Options);
         foreach (var clip in p.Clips) { await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
+        ShortFormMetadataService.EnsureUniqueTitles(p.Clips, p.Options.ContentType);
         await RenderAllAsync(p, ct);
         p.Status = ProjectStatus.Ready; p.Progress = 100; p.Stage = $"{p.Clips.Count} novos cortes renderizados"; await store.SaveAsync(p);
     }
@@ -284,6 +287,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         p.Status = ProjectStatus.Analyzing; p.Progress = 78; p.Stage = "Aplicando análise editorial"; await store.SaveAsync(p);
         p.Clips = editorial.Analyze(p.Transcript, p.Options);
         foreach (var clip in p.Clips) { await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
+        ShortFormMetadataService.EnsureUniqueTitles(p.Clips, p.Options.ContentType);
         if (render) await RenderAllAsync(p, ct);
         p.Status = ProjectStatus.Ready; p.Progress = 100; p.Stage = $"{p.Clips.Count} candidatos editoriais prontos"; await store.SaveAsync(p);
     }
