@@ -5,7 +5,7 @@ using CortaFeStudio.Api.Models;
 
 namespace CortaFeStudio.Api.Services;
 
-public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpClientFactory http, LongVideoEditorialAnalyzer editorial, AudioAnalyzer audioAnalyzer, VideoEnhancementService videoEnhancement, HardwareEncoderDetector encoderDetector, QualityGateService qualityGate, ILogger<MediaPipeline> logger)
+public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpClientFactory http, LongVideoEditorialAnalyzer editorial, AudioAnalyzer audioAnalyzer, VideoEnhancementService videoEnhancement, HardwareEncoderDetector encoderDetector, QualityGateService qualityGate, ProductionWorkLimiter workLimiter, ILogger<MediaPipeline> logger)
 {
     public async Task ProcessAsync(VideoProject p, CancellationToken ct)
     {
@@ -58,7 +58,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
                 await Checkpoint(p, "audio", "Áudio extraído");
             }
             await Stage(p, ProjectStatus.Transcribing, 35, "Transcrevendo com IA local");
-            await tools.RunAsync(tools.Find("python"), [Path.Combine(tools.Root, "scripts", "transcribe.py"), audio, transcriptFile, p.Options.WhisperModel], dir, ct);
+            using (await workLimiter.EnterAsync(ProductionWorkKind.Transcription, ct)) await tools.RunAsync(tools.Find("python"), [Path.Combine(tools.Root, "scripts", "transcribe.py"), audio, transcriptFile, p.Options.WhisperModel], dir, ct);
             p.Transcript = JsonSerializer.Deserialize<List<TranscriptSegment>>(await File.ReadAllTextAsync(transcriptFile, ct), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
             p.TranscriptSource = $"Faster-Whisper ({p.Options.WhisperModel})";
             if (p.SourceKind == SourceKind.YouTube && (p.Options.ContentType == "louvor" || p.Transcript.Sum(x => x.Text.Length) < 120))
@@ -73,7 +73,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         await Stage(p, ProjectStatus.Analyzing, 82, $"Preparando {p.Clips.Count} candidatos");
         await Parallel.ForEachAsync(p.Clips, new ParallelOptions { MaxDegreeOfParallelism = 2, CancellationToken = ct }, async (clip, token) =>
         {
-            await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, token);
+            using (await workLimiter.EnterAsync(ProductionWorkKind.Metadata, token)) await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, token);
             await CreateCoverAsync(p, clip, token);
         });
         p.Status = ProjectStatus.Ready; p.Progress = 100; p.CompletedAt = DateTime.UtcNow; p.Stage = $"{p.Clips.Count} cortes prontos para revisar"; await store.SaveAsync(p);
@@ -210,6 +210,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
 
     public async Task RenderClipAsync(VideoProject p, ClipCandidate clip, CancellationToken ct = default)
     {
+        using var renderSlot = await workLimiter.EnterAsync(ProductionWorkKind.Render, ct);
         var dir = store.ProjectDirectory(p.Id); var ass = Path.Combine(dir, $"captions-{clip.Id}.ass"); await File.WriteAllTextAsync(ass, BuildAss(p.Transcript, clip), Encoding.UTF8, ct);
         var output = $"clip-{clip.Id}.mp4"; var escaped = ass.Replace("\\", "/").Replace(":", "\\:").Replace("'", "\\'");
         var framing = RenderFilterFactory.Framing(clip);
@@ -265,7 +266,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         p.Options.ApplyAutomaticDuration();
         p.Status = ProjectStatus.Analyzing; p.Progress = 72; p.Stage = "Refazendo o ranking sem transcrever novamente"; await store.SaveAsync(p);
         p.Clips = editorial.Analyze(p.Transcript, p.Options);
-        foreach (var clip in p.Clips) { await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
+        foreach (var clip in p.Clips) { using (await workLimiter.EnterAsync(ProductionWorkKind.Metadata, ct)) await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
         await RenderAllAsync(p, ct);
         p.Status = ProjectStatus.Ready; p.Progress = 100; p.Stage = $"{p.Clips.Count} novos cortes renderizados"; await store.SaveAsync(p);
     }
@@ -276,7 +277,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         p.Options.ApplyAutomaticDuration();
         p.Status = ProjectStatus.Analyzing; p.Progress = 78; p.Stage = "Aplicando análise editorial"; await store.SaveAsync(p);
         p.Clips = editorial.Analyze(p.Transcript, p.Options);
-        foreach (var clip in p.Clips) { await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
+        foreach (var clip in p.Clips) { using (await workLimiter.EnterAsync(ProductionWorkKind.Metadata, ct)) await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
         if (render) await RenderAllAsync(p, ct);
         p.Status = ProjectStatus.Ready; p.Progress = 100; p.Stage = $"{p.Clips.Count} candidatos editoriais prontos"; await store.SaveAsync(p);
     }
