@@ -64,6 +64,7 @@ public sealed class ClipCandidate
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..10];
     public double Start { get; set; }
     public double End { get; set; }
+    public string Source { get; set; } = "automatic";
     public double Score { get; set; }
     public string HookSentence { get; set; } = "";
     public EditorialScoreBreakdown ScoreBreakdown { get; set; } = new();
@@ -166,6 +167,7 @@ public sealed class UrlBatchProjectRequest
     public ProjectOptions? Options { get; set; }
 }
 public record ClipUpdate(double? Start, double? End, string? Title, string? CoverText, string? Caption, bool? Approved, string? CropFocus, string? SubtitleStyle, string? CoverAccent, string? CoverPosition, double? CoverTimestamp, string? EditedTranscript, double? CropX, string? LayoutMode, string? OutputPreset);
+public record ManualClipRequest(double Start, double End);
 public record SplitClipRequest(double At);
 public record RestartFromRequest(string Stage);
 public record CleanupProjectRequest(bool DeleteSource = false);

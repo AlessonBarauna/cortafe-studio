@@ -36,6 +36,7 @@ builder.Services.AddHostedService<ProductionBatchWorker>();
 builder.Services.AddSingleton<DiagnosticsService>();
 builder.Services.AddSingleton<StorageService>();
 builder.Services.AddSingleton<FramingService>();
+builder.Services.AddSingleton<ManualClipService>();
 builder.Services.AddSingleton<ClipExportService>();
 builder.Services.AddSingleton<LocalSecurityService>();
 builder.Services.AddHostedService<PublicationScheduler>();
@@ -199,6 +200,22 @@ api.MapPut("/projects/{id}/clips/{clipId}", async (string id, string clipId, Cli
     });
     return updated is null ? Results.NotFound() : Results.Ok(updated);
 });
+api.MapPost("/projects/{id}/clips/manual", async (string id, ManualClipRequest request, ProjectStore store, ManualClipService manualClips) =>
+{
+    var project = store.Get(id);
+    if (project is null) return Results.NotFound();
+    try
+    {
+        var clip = manualClips.Create(project, request.Start, request.End);
+        project.Clips.Add(clip);
+        await store.SaveAsync(project);
+        return Results.Created($"/api/projects/{id}/clips/{clip.Id}", clip);
+    }
+    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
 api.MapDelete("/projects/{id}/clips/{clipId}", async (string id, string clipId, ProjectStore store) =>
     await store.DeleteClipAsync(id, clipId) ? Results.NoContent() : Results.NotFound());
 api.MapPost("/projects/{id}/clips/{clipId}/analyze-framing", async (string id, string clipId, ProjectStore store, FramingService framing) =>
@@ -297,6 +314,18 @@ api.MapPost("/projects/{id}/recover-youtube-captions", async (string id, Project
     var project = store.Get(id); if (project is null) return Results.NotFound();
     try { await pipeline.RecoverYouTubeCaptionsAndRenderAsync(project); return Results.Ok(project); }
     catch (Exception ex) { return Results.Problem(ex.Message); }
+});
+
+api.MapGet("/projects/{id}/source", (string id, ProjectStore store) =>
+{
+    var project = store.Get(id);
+    if (project is null) return Results.NotFound();
+    if (string.IsNullOrWhiteSpace(project.LocalMedia))
+        return Results.NotFound(new { error = "A mídia original não está disponível." });
+    var file = store.ResolveAsset(id, project.LocalMedia);
+    return file is null
+        ? Results.NotFound(new { error = "A mídia original foi removida do armazenamento." })
+        : Results.File(file, GetContentType(file), enableRangeProcessing: true);
 });
 
 api.MapGet("/projects/{id}/assets/{**path}", (string id, string path, ProjectStore store) =>
