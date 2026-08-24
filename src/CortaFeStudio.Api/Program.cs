@@ -24,6 +24,7 @@ builder.Services.AddSingleton<EditorialCandidateSelector>();
 builder.Services.AddSingleton<EditorialAnalyzer>();
 builder.Services.AddSingleton<LongVideoEditorialAnalyzer>();
 builder.Services.AddSingleton<EditorialLearningService>();
+builder.Services.AddSingleton<PerformanceLearningService>();
 builder.Services.AddSingleton<ProjectQueue>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ProjectQueue>());
 builder.Services.AddHttpClient();
@@ -31,8 +32,12 @@ builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "storage", "keys")))
     .SetApplicationName("CortaFeStudio");
 builder.Services.AddSingleton<SocialService>();
+builder.Services.AddSingleton<ContentCalendarService>();
+builder.Services.AddSingleton<ProductionWorkLimiter>();
 builder.Services.AddSingleton<DiagnosticsService>();
 builder.Services.AddSingleton<StorageService>();
+builder.Services.AddSingleton<StorageCapacityService>();
+builder.Services.AddSingleton<SilenceTrimmingService>();
 builder.Services.AddSingleton<FramingService>();
 builder.Services.AddSingleton<ManualClipService>();
 builder.Services.AddSingleton<WaveformService>();
@@ -70,6 +75,8 @@ api.MapPost("/tools/yt-dlp/update", async (ToolUpdateService updates, Cancellati
 api.MapGet("/projects", (ProjectStore store) => store.List());
 api.MapGet("/queue", (ProjectQueue queue) => queue.Status());
 api.MapGet("/storage", (StorageService storage) => storage.Report());
+api.MapGet("/storage/capacity", (StorageOperation operation, double durationSeconds, int itemCount, StorageCapacityService storage) => storage.Check(operation, durationSeconds, itemCount));
+api.MapPost("/storage/temporary-cleanup", async (StorageCapacityService storage) => Results.Ok(new { freedBytes = await storage.CleanupTemporaryAsync() }));
 api.MapGet("/render/encoder", async (HardwareEncoderDetector detector, CancellationToken ct) => await detector.DetectAsync(ct));
 api.MapGet("/projects/{projectId}/clips/{clipId}/quality", async (string projectId, string clipId, ProjectStore store, QualityGateService quality, CancellationToken ct) =>
 {
@@ -84,6 +91,16 @@ api.MapPost("/projects/{projectId}/clips/{clipId}/quality/repair", async (string
 });
 api.MapGet("/projects/{id}", (string id, ProjectStore store) =>
     store.Get(id) is { } project ? Results.Ok(project) : Results.NotFound());
+api.MapGet("/projects/{projectId}/clips/{clipId}/metadata", (string projectId, string clipId, ProjectStore store) =>
+{
+    var project = store.Get(projectId); var clip = project?.Clips.FirstOrDefault(item => item.Id == clipId);
+    return project is null || clip is null ? Results.NotFound() : Results.Ok(clip.PlatformMetadata);
+});
+api.MapPost("/projects/{projectId}/clips/{clipId}/metadata/regenerate", async (string projectId, string clipId, ProjectStore store, IHttpClientFactory http, CancellationToken ct) =>
+{
+    var project = store.Get(projectId); var clip = project?.Clips.FirstOrDefault(item => item.Id == clipId); if (project is null || clip is null) return Results.NotFound();
+    await ShortFormMetadataService.EnrichAsync(http, clip, project.Options.ContentType, ct); await store.SaveAsync(project); return Results.Ok(clip.PlatformMetadata);
+});
 api.MapDelete("/projects/{id}", async (string id, ProjectStore store) =>
 {
     var project = store.Get(id); if (project is null) return Results.NotFound();
@@ -206,6 +223,7 @@ api.MapPut("/projects/{id}/clips/{clipId}", async (string id, string clipId, Cli
         clip.WatermarkText = update.WatermarkText?.Trim() ?? clip.WatermarkText;
         clip.WatermarkOpacity = update.WatermarkOpacity is null ? clip.WatermarkOpacity : Math.Clamp(update.WatermarkOpacity.Value, .1, 1);
         clip.PlaybackSpeed = p.Options.ContentType == "louvor" ? 1 : update.PlaybackSpeed is 1.25 or 1.5 ? update.PlaybackSpeed.Value : 1;
+        clip.SilenceTrimmingEnabled = update.SilenceTrimmingEnabled ?? clip.SilenceTrimmingEnabled;
         RenderStateService.MarkIfChanged(clip, previousFingerprint);
     });
     return updated is null ? Results.NotFound() : Results.Ok(updated);
@@ -346,6 +364,14 @@ api.MapPost("/projects/{id}/clips/feedback-batch", async (string id, BatchFeedba
 });
 api.MapGet("/editorial/profile", (EditorialLearningService learning) => learning.Profile());
 api.MapDelete("/editorial/profile", async (EditorialLearningService learning) => { await learning.ResetAsync(); return Results.NoContent(); });
+api.MapGet("/performance", (PerformanceLearningService learning) => learning.List());
+api.MapGet("/performance/insights", (string? profile, PerformanceLearningService learning) => learning.Insights(profile));
+api.MapPost("/performance", async (RecordPerformanceRequest request, ProjectStore store, PerformanceLearningService learning) =>
+{
+    var project = store.Get(request.ProjectId); var clip = project?.Clips.FirstOrDefault(item => item.Id == request.ClipId); if (project is null || clip is null) return Results.NotFound();
+    try { return Results.Ok(await learning.RecordAsync(project, clip, request)); }
+    catch (ArgumentOutOfRangeException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
 
 api.MapPost("/projects/{id}/render-all", async (string id, ProjectStore store, MediaPipeline pipeline) =>
 {
@@ -406,6 +432,19 @@ api.MapGet("/projects/{id}/exports/project.json", (string id, ProjectStore store
 
 api.MapGet("/social/status", (SocialService social) => social.Status());
 api.MapGet("/social/history", (SocialService social) => social.History());
+api.MapGet("/calendar", (ContentCalendarService calendar) => calendar.List());
+api.MapPost("/calendar", async (CreateCalendarRequest request, ProjectStore store, ContentCalendarService calendar) =>
+{
+    var project = store.Get(request.ProjectId); if (project is null) return Results.NotFound();
+    var clips = project.Clips.Where(clip => request.ClipIds.Count == 0 || request.ClipIds.Contains(clip.Id)).Where(clip => clip.Approved && clip.VideoPath is not null).ToList();
+    if (clips.Count == 0) return Results.BadRequest(new { error = "Selecione pelo menos um corte aprovado e renderizado." });
+    try { return Results.Ok(await calendar.ScheduleAsync(project, clips, request.Platforms, request.Strategy)); }
+    catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+api.MapPut("/calendar/{id}", async (string id, RescheduleContentRequest request, ContentCalendarService calendar) => { try { return Results.Ok(await calendar.RescheduleAsync(id, request.ScheduledAt)); } catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); } });
+api.MapDelete("/calendar/{id}", async (string id, ContentCalendarService calendar) => { try { return Results.Ok(await calendar.CancelAsync(id)); } catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); } });
+api.MapPost("/calendar/{id}/publish-now", async (string id, ContentCalendarService calendar) => { try { return Results.Ok(await calendar.PublishNowAsync(id)); } catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); } });
+api.MapPost("/calendar/{id}/retry", async (string id, ContentCalendarService calendar) => { try { return Results.Ok(await calendar.RetryAsync(id)); } catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); } });
 api.MapPost("/social/publications/{id}/retry", async (string id, SocialService social) =>
 {
     try { return Results.Ok(await social.RetryAsync(id)); }

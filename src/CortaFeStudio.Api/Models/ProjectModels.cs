@@ -104,6 +104,9 @@ public sealed class ClipCandidate
     public List<ClipVariant> Variants { get; set; } = [];
     public string? WinningVariantId { get; set; }
     public QualityReport? QualityReport { get; set; }
+    public PlatformMetadata PlatformMetadata { get; set; } = new();
+    public bool SilenceTrimmingEnabled { get; set; } = true;
+    public SilenceTrimPlan? SilenceTrimPlan { get; set; }
     public string? LastRenderFingerprint { get; set; }
     public bool RenderOutdated { get; set; }
     public double PlaybackSpeed { get; set; } = 1;
@@ -217,7 +220,7 @@ public sealed class UrlBatchProjectRequest
     public string? Name { get; set; }
     public ProjectOptions? Options { get; set; }
 }
-public record ClipUpdate(double? Start, double? End, string? Title, string? CoverText, string? Caption, bool? Approved, string? CropFocus, string? SubtitleStyle, string? CoverAccent, string? CoverPosition, double? CoverTimestamp, string? EditedTranscript, double? CropX, string? LayoutMode, string? OutputPreset, bool? BrandFrameEnabled = null, string? BrandTheme = null, bool? WatermarkEnabled = null, string? WatermarkText = null, double? WatermarkOpacity = null, double? PlaybackSpeed = null);
+public record ClipUpdate(double? Start, double? End, string? Title, string? CoverText, string? Caption, bool? Approved, string? CropFocus, string? SubtitleStyle, string? CoverAccent, string? CoverPosition, double? CoverTimestamp, string? EditedTranscript, double? CropX, string? LayoutMode, string? OutputPreset, bool? BrandFrameEnabled = null, string? BrandTheme = null, bool? WatermarkEnabled = null, string? WatermarkText = null, double? WatermarkOpacity = null, double? PlaybackSpeed = null, bool? SilenceTrimmingEnabled = null);
 public record ManualClipRequest(double Start, double End);
 public record SplitClipRequest(double At);
 public record RestartFromRequest(string Stage);

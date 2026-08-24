@@ -1,16 +1,19 @@
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
-$ArtifactsPath = Join-Path $ProjectRoot '.artifacts'
+$ArtifactsPath = Join-Path $ProjectRoot ".artifacts\verify-$PID"
 
 Write-Host 'Compilando backend...'
-dotnet build (Join-Path $ProjectRoot 'CortaFeStudio.sln') -c Release --no-restore --artifacts-path $ArtifactsPath
+dotnet build (Join-Path $ProjectRoot 'CortaFeStudio.sln') -c Release --artifacts-path $ArtifactsPath
+if ($LASTEXITCODE -ne 0) { throw 'A compilação Release falhou.' }
 
 Write-Host 'Executando testes automatizados...'
 dotnet test (Join-Path $ProjectRoot 'CortaFeStudio.sln') -c Release --no-build --artifacts-path $ArtifactsPath
+if ($LASTEXITCODE -ne 0) { throw 'A suíte automatizada falhou.' }
 
 Write-Host 'Validando JavaScript...'
 Get-ChildItem (Join-Path $ProjectRoot 'src\CortaFeStudio.Api\wwwroot') -Filter '*.js' | ForEach-Object {
   node --check $_.FullName
+  if ($LASTEXITCODE -ne 0) { throw "JavaScript inválido: $($_.Name)" }
 }
 
 $healthUrl = 'http://localhost:5088/api/health'

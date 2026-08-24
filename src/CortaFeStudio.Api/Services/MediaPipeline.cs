@@ -5,7 +5,7 @@ using CortaFeStudio.Api.Models;
 
 namespace CortaFeStudio.Api.Services;
 
-public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpClientFactory http, LongVideoEditorialAnalyzer editorial, AudioAnalyzer audioAnalyzer, VideoEnhancementService videoEnhancement, HardwareEncoderDetector encoderDetector, QualityGateService qualityGate, ILogger<MediaPipeline> logger)
+public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpClientFactory http, LongVideoEditorialAnalyzer editorial, AudioAnalyzer audioAnalyzer, VideoEnhancementService videoEnhancement, HardwareEncoderDetector encoderDetector, QualityGateService qualityGate, ProductionWorkLimiter workLimiter, StorageCapacityService storageCapacity, SilenceTrimmingService silenceTrimming, ILogger<MediaPipeline> logger)
 {
     public async Task ProcessAsync(VideoProject p, CancellationToken ct)
     {
@@ -24,6 +24,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         var existingMedia = !string.IsNullOrWhiteSpace(p.LocalMedia) ? Path.Combine(dir, p.LocalMedia) : null;
         if (p.SourceKind == SourceKind.YouTube && (existingMedia is null || !File.Exists(existingMedia)))
         {
+            storageCapacity.Ensure(StorageOperation.Acquisition, p.Duration);
             var template = Path.Combine(dir, "source.%(ext)s");
             await Stage(p, ProjectStatus.Acquiring, 12, p.Transcript.Count > 0 ? "Baixando vídeo; legendas já aproveitadas" : "Baixando vídeo em formato otimizado");
             var youtubeArgs = YouTubeAcquisition.WithBrowserSession(tools.YouTubeArguments(), p.YouTubeCookieBrowser);
@@ -51,6 +52,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         }
         if (!hasManualCaptions && !transcriptReady)
         {
+            storageCapacity.Ensure(StorageOperation.Transcription, p.Duration);
             await Stage(p, ProjectStatus.Transcribing, 20, "Extraindo áudio");
             var audio = Path.Combine(dir, "source.audio.wav");
             if (!File.Exists(audio) || new FileInfo(audio).Length < 1024)
@@ -60,7 +62,8 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
             }
             var worshipMode = p.Options.ContentType == "louvor";
             await Stage(p, ProjectStatus.Transcribing, 35, worshipMode ? "Transcrevendo canto em modo para louvor" : "Transcrevendo com IA local");
-            await tools.RunAsync(tools.Find("python"), [Path.Combine(tools.Root, "scripts", "transcribe.py"), audio, transcriptFile, p.Options.WhisperModel, p.Options.ContentType], dir, ct);
+            using (await workLimiter.EnterAsync(ProductionWorkKind.Transcription, ct))
+                await tools.RunAsync(tools.Find("python"), [Path.Combine(tools.Root, "scripts", "transcribe.py"), audio, transcriptFile, p.Options.WhisperModel, p.Options.ContentType], dir, ct);
             p.Transcript = JsonSerializer.Deserialize<List<TranscriptSegment>>(await File.ReadAllTextAsync(transcriptFile, ct), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
             p.TranscriptSource = $"Faster-Whisper ({p.Options.WhisperModel})";
             if (p.SourceKind == SourceKind.YouTube && (p.Options.ContentType == "louvor" || p.Transcript.Sum(x => x.Text.Length) < 120))
@@ -81,7 +84,8 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         await Stage(p, ProjectStatus.Analyzing, 82, $"Preparando {p.Clips.Count} candidatos");
         await Parallel.ForEachAsync(p.Clips, new ParallelOptions { MaxDegreeOfParallelism = 2, CancellationToken = ct }, async (clip, token) =>
         {
-            await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, token);
+            using (await workLimiter.EnterAsync(ProductionWorkKind.Metadata, token))
+                await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, token);
             await CreateCoverAsync(p, clip, token);
         });
         ShortFormMetadataService.EnsureUniqueTitles(p.Clips, p.Options.ContentType);
@@ -221,15 +225,19 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
 
     public async Task RenderClipAsync(VideoProject p, ClipCandidate clip, CancellationToken ct = default)
     {
+        storageCapacity.Ensure(StorageOperation.BatchRender, clip.End - clip.Start);
+        using var renderSlot = await workLimiter.EnterAsync(ProductionWorkKind.Render, ct);
         var dir = store.ProjectDirectory(p.Id);
         var speed = p.Options.ContentType == "louvor" ? 1 : RenderFilterFactory.NormalizePlaybackSpeed(clip.PlaybackSpeed);
         clip.PlaybackSpeed = speed;
+        var trimPlan = silenceTrimming.Plan(clip, p.Transcript);
+        clip.SilenceTrimPlan = trimPlan;
         var subtitleTrack = SubtitleTrackService.Ensure(clip, p.Transcript);
         string? ass = null;
         if (subtitleTrack.Enabled)
         {
             ass = Path.Combine(dir, $"captions-{clip.Id}.ass");
-            await File.WriteAllTextAsync(ass, BuildAss(p.Transcript, clip), Encoding.UTF8, ct);
+            await File.WriteAllTextAsync(ass, BuildAss(p.Transcript, clip, trimPlan), Encoding.UTF8, ct);
         }
         var output = $"clip-{clip.Id}.mp4";
         var framing = RenderFilterFactory.Framing(clip);
@@ -239,10 +247,11 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         var branding = RenderFilterFactory.Branding(clip, EscapeFilterPath(watermarkFile), watermarkFont);
         var videoAnalysis = await videoEnhancement.AnalyzeAsync(Path.Combine(dir, p.LocalMedia!), clip.Start, clip.End - clip.Start, ct);
         var enhancement = VideoEnhancementService.CreateProfile(videoAnalysis);
-        var filter = ComposeVideoFilter(enhancement.Filter, framing, ass, branding, RenderFilterFactory.CreativeLook(clip.End - clip.Start), speed);
+        var filter = SilenceTrimmingService.VideoPrefix(trimPlan, clip.Start) + ComposeVideoFilter(enhancement.Filter, framing, ass, branding, RenderFilterFactory.CreativeLook(clip.End - clip.Start), speed);
         logger.LogInformation("[Video] project={ProjectId} clip={ClipId} enhancement={Enhancement} luma={Luma} saturation={Saturation}", p.Id, clip.Id, enhancement.Kind, videoAnalysis.LumaAverage, videoAnalysis.SaturationAverage);
         var audioAnalysis = await audioAnalyzer.AnalyzeAsync(Path.Combine(dir, p.LocalMedia!), clip.Start, clip.End - clip.Start, p.Options.ContentType, ct);
-        var audio = AudioFilterFactory.Create(audioAnalysis, clip.End - clip.Start, speed);
+        var audio = AudioFilterFactory.Create(audioAnalysis, trimPlan.FinalDuration, speed);
+        var audioFilter = SilenceTrimmingService.AudioPrefix(trimPlan, clip.Start) + audio.Filter;
         logger.LogInformation("[Audio] project={ProjectId} clip={ClipId} profile={Profile} meanDb={MeanDb} peakDb={PeakDb}", p.Id, clip.Id, audio.Profile, audioAnalysis.MeanVolumeDb, audioAnalysis.PeakVolumeDb);
         var encoder = await encoderDetector.DetectAsync(ct);
         try { await RenderWithEncoderAsync(encoder); }
@@ -258,7 +267,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
 
         async Task RenderWithEncoderAsync(RenderEncoderProfile profile)
         {
-            var arguments = new List<string> { "-y", "-ss", F(clip.Start), "-to", F(clip.End), "-i", Path.Combine(dir, p.LocalMedia!), "-vf", filter, "-af", audio.Filter, "-c:v", profile.Codec };
+            var arguments = new List<string> { "-y", "-ss", F(clip.Start), "-to", F(clip.End), "-i", Path.Combine(dir, p.LocalMedia!), "-vf", filter, "-af", audioFilter, "-c:v", profile.Codec };
             arguments.AddRange(profile.Arguments);
             arguments.AddRange(["-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.2", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", Path.Combine(dir, output)]);
             logger.LogInformation("[Encoder] project={ProjectId} clip={ClipId} codec={Codec}", p.Id, clip.Id, profile.Codec);
@@ -269,6 +278,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
     public async Task RenderAllAsync(VideoProject p, CancellationToken ct = default)
     {
         var clips = p.Clips.Where(c => c.Approved).ToList(); var completed = 0;
+        if (clips.Count > 0) storageCapacity.Ensure(StorageOperation.BatchRender, clips.Average(clip => clip.End - clip.Start), clips.Count);
         p.IsRendering = true; p.RenderCompleted = 0; p.RenderTotal = clips.Count; await store.SaveAsync(p);
         try
         {
@@ -292,7 +302,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         p.Status = ProjectStatus.Analyzing; p.Progress = 72; p.Stage = "Refazendo o ranking sem transcrever novamente"; await store.SaveAsync(p);
         var analysis = editorial.AnalyzeWithReport(p.Transcript, p.Options);
         p.Clips = analysis.Clips; p.CandidateAnalysis = analysis.Report;
-        foreach (var clip in p.Clips) { clip.BrandTheme = "amado-jesus"; await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
+        foreach (var clip in p.Clips) { clip.BrandTheme = "amado-jesus"; using (await workLimiter.EnterAsync(ProductionWorkKind.Metadata, ct)) await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
         ShortFormMetadataService.EnsureUniqueTitles(p.Clips, p.Options.ContentType);
         await RenderAllAsync(p, ct);
         p.Status = ProjectStatus.Ready; p.Progress = 100; p.Stage = $"{p.Clips.Count} novos cortes renderizados"; await store.SaveAsync(p);
@@ -305,7 +315,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         p.Status = ProjectStatus.Analyzing; p.Progress = 78; p.Stage = "Aplicando análise editorial"; await store.SaveAsync(p);
         var analysis = editorial.AnalyzeWithReport(p.Transcript, p.Options);
         p.Clips = analysis.Clips; p.CandidateAnalysis = analysis.Report;
-        foreach (var clip in p.Clips) { await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
+        foreach (var clip in p.Clips) { using (await workLimiter.EnterAsync(ProductionWorkKind.Metadata, ct)) await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
         ShortFormMetadataService.EnsureUniqueTitles(p.Clips, p.Options.ContentType);
         if (render) await RenderAllAsync(p, ct);
         p.Status = ProjectStatus.Ready; p.Progress = 100; p.Stage = $"{p.Clips.Count} candidatos editoriais prontos"; await store.SaveAsync(p);
@@ -351,7 +361,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         catch { return false; }
     }
 
-    public static string BuildAss(List<TranscriptSegment> segments, ClipCandidate clip)
+    public static string BuildAss(List<TranscriptSegment> segments, ClipCandidate clip, SilenceTrimPlan? trimPlan = null)
     {
         var playbackSpeed = RenderFilterFactory.NormalizePlaybackSpeed(clip.PlaybackSpeed);
         var (width, height) = RenderFilterFactory.Dimensions(clip.OutputPreset);
@@ -364,7 +374,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
             {
                 var timing = SubtitleTrackService.EffectiveTiming(block, track, clip.End - clip.Start);
                 if (timing is null) continue;
-                sb.AppendLine($"Dialogue: 0,{AssTime(timing.Value.Start / playbackSpeed)},{AssTime(timing.Value.End / playbackSpeed)},Impacto,,0,0,0,,{SubtitleFormatter.Plain(block.Text, width)}");
+                sb.AppendLine($"Dialogue: 0,{AssTime(Adjusted(timing.Value.Start))},{AssTime(Adjusted(timing.Value.End))},Impacto,,0,0,0,,{SubtitleFormatter.Plain(block.Text, width)}");
             }
             return sb.ToString();
         }
@@ -385,12 +395,19 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
             {
                 var start = Math.Max(0, group[0].Start - clip.Start); var end = Math.Min(clip.End - clip.Start, group[^1].End - clip.Start + .08);
                 var karaoke = SubtitleFormatter.Karaoke(group, clip, width);
-                sb.AppendLine($"Dialogue: 0,{AssTime(start / playbackSpeed)},{AssTime(end / playbackSpeed)},Impacto,,0,0,0,,{karaoke}");
+                sb.AppendLine($"Dialogue: 0,{AssTime(Adjusted(start))},{AssTime(Adjusted(end))},Impacto,,0,0,0,,{karaoke}");
             }
         }
         else foreach (var s in segments.Where(s => s.End >= clip.Start && s.Start <= clip.End))
-            sb.AppendLine($"Dialogue: 0,{AssTime(Math.Max(0, s.Start - clip.Start) / playbackSpeed)},{AssTime(Math.Min(clip.End - clip.Start, s.End - clip.Start) / playbackSpeed)},Impacto,,0,0,0,,{SubtitleFormatter.Plain(s.Text, width)}");
+            sb.AppendLine($"Dialogue: 0,{AssTime(Adjusted(Math.Max(0, s.Start - clip.Start)))},{AssTime(Adjusted(Math.Min(clip.End - clip.Start, s.End - clip.Start)))},Impacto,,0,0,0,,{SubtitleFormatter.Plain(s.Text, width)}");
         return sb.ToString();
+
+        double Adjusted(double relative)
+        {
+            var absolute = clip.Start + relative;
+            var adjusted = trimPlan?.Applied == true ? SilenceTrimmingService.AdjustTime(absolute, trimPlan) : absolute;
+            return Math.Max(0, adjusted - clip.Start) / playbackSpeed;
+        }
     }
     public static string ComposeVideoFilter(string enhancement, string framing, string? subtitleFile, string? branding = null, string? creativeLook = null, double playbackSpeed = 1)
     {

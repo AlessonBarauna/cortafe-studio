@@ -11,6 +11,7 @@ clipCard = function (project, clip, index) {
       <label>Composição<select class="form-select" name="layoutMode">${option('fill', clip.layoutMode || 'fill', 'Preencher 9:16')}${option('blur', clip.layoutMode, 'Fundo desfocado')}</select></label>
       <label>Formato de saída<select class="form-select" name="outputPreset">${option('vertical', clip.outputPreset || 'vertical', 'Vertical · 1080×1920')}${option('portrait', clip.outputPreset, 'Feed retrato · 1080×1350')}${option('square', clip.outputPreset, 'Quadrado · 1080×1080')}${option('landscape', clip.outputPreset, 'Horizontal · 1920×1080')}</select></label>
       ${speedControl}
+      <label class="form-check editor-check"><input class="form-check-input" type="checkbox" name="silenceTrimmingEnabled" ${clip.silenceTrimmingEnabled !== false ? 'checked' : ''}><span>Reduzir apenas pausas longas</span><small class="text-secondary d-block">Mantém a fala e remove silêncios seguros.</small></label>
       <label>Posição horizontal<input class="form-range" name="cropX" type="range" min="0" max="1" step=".01" value="${clip.cropX ?? .5}"></label>
       <label>Estilo da legenda<select class="form-select" name="subtitleStyle">${option('impact', clip.subtitleStyle || 'impact', 'Impacto')}${option('clean', clip.subtitleStyle, 'Limpa')}${option('podcast', clip.subtitleStyle, 'Podcast')}${option('sermon', clip.subtitleStyle, 'Pregação')}${option('motivational', clip.subtitleStyle, 'Motivacional')}${option('minimal', clip.subtitleStyle, 'Minimalista')}${option('worship', clip.subtitleStyle, 'Louvor')}${option('bold', clip.subtitleStyle, 'Palco')}</select></label>
       <label>Posição na capa<select class="form-select" name="coverPosition">${option('top', clip.coverPosition, 'Superior')}${option('center', clip.coverPosition, 'Centro')}${option('bottom', clip.coverPosition || 'bottom', 'Inferior')}</select></label>
@@ -29,7 +30,7 @@ saveClip = async function (project, card) {
     start: +value('start'), end: +value('end'), title: value('title'), coverText: value('coverText'),
     caption: value('caption'), approved: true, cropFocus: value('cropFocus'),
     subtitleStyle: value('subtitleStyle'), coverAccent: value('coverAccent'),
-    coverPosition: value('coverPosition'), coverTimestamp: +value('coverTimestamp'), cropX: +value('cropX'), layoutMode: value('layoutMode'), outputPreset: value('outputPreset'), playbackSpeed: +(value('playbackSpeed') || 1)
+    coverPosition: value('coverPosition'), coverTimestamp: +value('coverTimestamp'), cropX: +value('cropX'), layoutMode: value('layoutMode'), outputPreset: value('outputPreset'), playbackSpeed: +(value('playbackSpeed') || 1), silenceTrimmingEnabled: card.querySelector('[name="silenceTrimmingEnabled"]')?.checked ?? true
   };
   await api(`/api/projects/${project.id}/clips/${clip.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   Object.assign(clip, body);

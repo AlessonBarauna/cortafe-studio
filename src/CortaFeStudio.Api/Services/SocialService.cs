@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using CortaFeStudio.Api.Models;
@@ -14,12 +15,13 @@ public sealed class SocialService
     private readonly ProjectStore _projects;
     private readonly QualityGateService _quality;
     private readonly Dictionary<SocialPlatform, SocialCredential> _accounts = [];
-    private readonly Dictionary<string, SocialPlatform> _states = [];
+    private readonly Dictionary<string, PendingAuthorization> _states = [];
     private readonly List<PublicationRecord> _history = [];
     private readonly SemaphoreSlim _publishLock = new(1, 1);
+    private readonly ProductionWorkLimiter _workLimiter;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
-    public SocialService(IWebHostEnvironment env, IDataProtectionProvider dataProtection, IHttpClientFactory http, ProjectStore projects, QualityGateService quality)
+    public SocialService(IWebHostEnvironment env, IDataProtectionProvider dataProtection, IHttpClientFactory http, ProjectStore projects, QualityGateService quality, ProductionWorkLimiter workLimiter)
     {
         var root = Path.Combine(env.ContentRootPath, "storage", "social");
         Directory.CreateDirectory(root);
@@ -28,6 +30,7 @@ public sealed class SocialService
         _http = http;
         _projects = projects;
         _quality = quality;
+        _workLimiter = workLimiter;
         Load();
     }
 
@@ -74,14 +77,17 @@ public sealed class SocialService
     {
         EnsureTikTok(platform);
         var account = RequireConfigured(platform);
-        var state = Guid.NewGuid().ToString("N");
-        _states[state] = platform;
+        foreach (var expired in _states.Where(item => item.Value.CreatedAt < DateTimeOffset.UtcNow.AddMinutes(-10)).Select(item => item.Key).ToList()) _states.Remove(expired);
+        var state = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
+        var verifier = Convert.ToHexString(RandomNumberGenerator.GetBytes(48)).ToLowerInvariant();
+        var challenge = Convert.ToHexString(SHA256.HashData(Encoding.ASCII.GetBytes(verifier))).ToLowerInvariant();
+        _states[state] = new PendingAuthorization(platform, verifier, DateTimeOffset.UtcNow);
         var redirect = Uri.EscapeDataString(Callback(platform, baseUrl));
         return platform switch
         {
             SocialPlatform.YouTube => $"https://accounts.google.com/o/oauth2/v2/auth?client_id={Uri.EscapeDataString(account.ClientId)}&redirect_uri={redirect}&response_type=code&scope={Uri.EscapeDataString("https://www.googleapis.com/auth/youtube.upload")}&access_type=offline&prompt=consent&state={state}",
             SocialPlatform.Instagram => $"https://www.instagram.com/oauth/authorize?enable_fb_login=0&force_authentication=1&client_id={Uri.EscapeDataString(account.ClientId)}&redirect_uri={redirect}&response_type=code&scope=instagram_business_basic,instagram_business_content_publish&state={state}",
-            SocialPlatform.TikTok => $"https://www.tiktok.com/v2/auth/authorize/?client_key={Uri.EscapeDataString(account.ClientId)}&redirect_uri={redirect}&response_type=code&scope=user.info.basic,video.publish&state={state}",
+            SocialPlatform.TikTok => $"https://www.tiktok.com/v2/auth/authorize/?client_key={Uri.EscapeDataString(account.ClientId)}&redirect_uri={redirect}&response_type=code&scope=user.info.basic,video.publish&state={state}&code_challenge={challenge}&code_challenge_method=S256",
             _ => throw new ArgumentOutOfRangeException(nameof(platform))
         };
     }
@@ -89,14 +95,14 @@ public sealed class SocialService
     public async Task CompleteOAuthAsync(SocialPlatform platform, string code, string state, string baseUrl)
     {
         EnsureTikTok(platform);
-        if (!_states.Remove(state, out var expected) || expected != platform)
+        if (!_states.Remove(state, out var pending) || pending.Platform != platform || pending.CreatedAt < DateTimeOffset.UtcNow.AddMinutes(-10))
             throw new InvalidOperationException("A solicitação de conexão expirou. Tente conectar novamente.");
         var account = RequireConfigured(platform);
         var fields = platform switch
         {
             SocialPlatform.YouTube => new Dictionary<string, string> { ["client_id"] = account.ClientId, ["client_secret"] = account.ClientSecret, ["code"] = code, ["grant_type"] = "authorization_code", ["redirect_uri"] = Callback(platform, baseUrl) },
             SocialPlatform.Instagram => new Dictionary<string, string> { ["client_id"] = account.ClientId, ["client_secret"] = account.ClientSecret, ["code"] = code, ["grant_type"] = "authorization_code", ["redirect_uri"] = Callback(platform, baseUrl) },
-            _ => new Dictionary<string, string> { ["client_key"] = account.ClientId, ["client_secret"] = account.ClientSecret, ["code"] = code, ["grant_type"] = "authorization_code", ["redirect_uri"] = Callback(platform, baseUrl) }
+            _ => new Dictionary<string, string> { ["client_key"] = account.ClientId, ["client_secret"] = account.ClientSecret, ["code"] = code, ["grant_type"] = "authorization_code", ["redirect_uri"] = Callback(platform, baseUrl), ["code_verifier"] = pending.CodeVerifier! }
         };
         var endpoint = platform switch
         {
@@ -149,8 +155,31 @@ public sealed class SocialService
         await SaveAsync(); return record;
     }
 
+    public async Task<PublicationRecord> RescheduleAsync(string id, DateTimeOffset date)
+    {
+        var record = _history.FirstOrDefault(item => item.Id == id) ?? throw new InvalidOperationException("Publicação não encontrada.");
+        if (record.Status is "published" or "uploading" or "cancelled") throw new InvalidOperationException("Esta publicação não pode ser reagendada.");
+        if (date <= DateTimeOffset.UtcNow.AddMinutes(1)) throw new InvalidOperationException("Escolha um horário futuro ou use Publicar agora.");
+        record.Status = "scheduled"; record.ScheduledAt = date; record.Error = null; record.UpdatedAt = DateTimeOffset.UtcNow; await SaveAsync(); return record;
+    }
+
+    public async Task<PublicationRecord> CancelPublicationAsync(string id)
+    {
+        var record = _history.FirstOrDefault(item => item.Id == id) ?? throw new InvalidOperationException("Publicação não encontrada.");
+        if (record.Status is "published" or "uploading") throw new InvalidOperationException("Uma publicação enviada não pode ser cancelada localmente.");
+        record.Status = "cancelled"; record.Error = null; record.UpdatedAt = DateTimeOffset.UtcNow; await SaveAsync(); return record;
+    }
+
+    public async Task<PublicationRecord> PublishNowAsync(string id)
+    {
+        var record = _history.FirstOrDefault(item => item.Id == id) ?? throw new InvalidOperationException("Publicação não encontrada.");
+        if (record.Status is "published" or "uploading" or "cancelled") throw new InvalidOperationException("Esta publicação não pode ser enviada agora.");
+        record.Status = "queued"; record.ScheduledAt = DateTimeOffset.UtcNow; record.Error = null; await SaveAsync(); await ExecuteAsync(record); return record;
+    }
+
     public async Task ExecuteAsync(PublicationRecord record)
     {
+        using var uploadSlot = await _workLimiter.EnterAsync(ProductionWorkKind.Upload);
         await _publishLock.WaitAsync();
         try
         {
@@ -354,4 +383,5 @@ public sealed class SocialService
         await File.WriteAllTextAsync(_file, _protector.Protect(JsonSerializer.Serialize(_accounts.Values, JsonOptions)));
         await File.WriteAllTextAsync(_file + ".history", _protector.Protect(JsonSerializer.Serialize(_history, JsonOptions)));
     }
+    private sealed record PendingAuthorization(SocialPlatform Platform, string? CodeVerifier, DateTimeOffset CreatedAt);
 }
