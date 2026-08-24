@@ -39,4 +39,22 @@ public sealed class AudioFilterFactoryTests
         Assert.Contains("loudnorm=I=-14:LRA=12", profile.Filter);
         Assert.Equal("-14 LUFS", profile.TargetLoudness);
     }
+
+    [Theory]
+    [InlineData(AudioProfile.VoiceClean)]
+    [InlineData(AudioProfile.VoiceNoisy)]
+    [InlineData(AudioProfile.VoiceWithMusic)]
+    [InlineData(AudioProfile.Worship)]
+    [InlineData(AudioProfile.Music)]
+    [InlineData(AudioProfile.Podcast)]
+    [InlineData(AudioProfile.LowVolume)]
+    [InlineData(AudioProfile.Clipped)]
+    public void Create_TodosOsPerfisRespeitamLimiteMakeupDoFfmpeg(AudioProfile audioProfile)
+    {
+        var filter = AudioFilterFactory.Create(new AudioAnalysis { Profile = audioProfile }, 60).Filter;
+        var marker = "makeup="; var start = filter.IndexOf(marker, StringComparison.Ordinal) + marker.Length;
+        var end = filter.IndexOf(',', start); var value = double.Parse(filter[start..end], System.Globalization.CultureInfo.InvariantCulture);
+
+        Assert.InRange(value, 1, 64);
+    }
 }

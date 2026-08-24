@@ -50,7 +50,7 @@ public static class AudioFilterFactory
             AudioProfile.Podcast => "highpass=f=65,lowpass=f=16000,equalizer=f=3200:t=q:w=1.1:g=1.2,acompressor=threshold=0.14:ratio=2.2:attack=18:release=160:makeup=1.25,loudnorm=I=-16:LRA=8:TP=-1.5",
             AudioProfile.VoiceNoisy => "highpass=f=80,lowpass=f=14500,afftdn=nf=-32,equalizer=f=2800:t=q:w=1.2:g=1,acompressor=threshold=0.13:ratio=2.35:attack=20:release=190:makeup=1.3,loudnorm=I=-16:LRA=9:TP=-1.5",
             AudioProfile.LowVolume => "highpass=f=70,lowpass=f=15500,acompressor=threshold=0.1:ratio=2.6:attack=20:release=180:makeup=1.6,loudnorm=I=-16:LRA=8:TP=-1.5",
-            AudioProfile.Clipped => "highpass=f=70,lowpass=f=15500,acompressor=threshold=0.18:ratio=1.8:attack=8:release=220:makeup=0.9,loudnorm=I=-17:LRA=10:TP=-2",
+            AudioProfile.Clipped => "highpass=f=70,lowpass=f=15500,acompressor=threshold=0.18:ratio=1.8:attack=8:release=220:makeup=1,loudnorm=I=-17:LRA=10:TP=-2",
             AudioProfile.VoiceWithMusic => "highpass=f=55,lowpass=f=17500,acompressor=threshold=0.17:ratio=1.6:attack=30:release=260:makeup=1.1,loudnorm=I=-15:LRA=11:TP=-1.3",
             _ => "highpass=f=70,lowpass=f=15500,afftdn=nf=-35,equalizer=f=3000:t=q:w=1.2:g=1,acompressor=threshold=0.125:ratio=2.3:attack=20:release=180:makeup=1.3,loudnorm=I=-16:LRA=9:TP=-1.5"
         };
