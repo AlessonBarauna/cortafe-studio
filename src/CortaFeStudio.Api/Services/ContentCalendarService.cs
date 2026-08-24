@@ -13,7 +13,9 @@ public sealed class ContentCalendarService(ProjectStore projects, SocialService 
         foreach (var item in plan)
         {
             var clip = project.Clips.First(candidate => candidate.Id == item.ClipId);
-            var record = await social.PublishAsync(project.Id, clip.Id, new PublishRequest(item.Platform, clip.Title, clip.Caption + Environment.NewLine + string.Join(' ', clip.Hashtags), "private", item.ScheduledAt));
+            if (string.IsNullOrWhiteSpace(clip.PlatformMetadata.YouTube.Title)) ShortFormMetadataService.ApplyPlatformMetadata(clip, project.Options.ContentType);
+            var metadata = ShortFormMetadataService.ForPlatform(clip, item.Platform);
+            var record = await social.PublishAsync(project.Id, clip.Id, new PublishRequest(item.Platform, metadata.Title, metadata.Description, "private", item.ScheduledAt));
             item.PublicationId = record.Id; item.Status = record.Status; result.Add(item);
         }
         return result;
