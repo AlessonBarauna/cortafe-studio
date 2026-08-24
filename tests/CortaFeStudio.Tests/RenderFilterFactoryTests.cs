@@ -15,6 +15,9 @@ public sealed class RenderFilterFactoryTests
         Assert.Contains("drawbox", filter);
         Assert.Contains("drawtext", filter);
         Assert.Contains("watermark.txt", filter);
+        Assert.Contains("x=(w-text_w)/2", filter);
+        Assert.Contains("y=h-text_h-42", filter);
+        Assert.Equal(3, filter.Split("drawtext").Length - 1);
     }
     [Theory]
     [InlineData(-1, "iw*0-540")]
@@ -41,6 +44,26 @@ public sealed class RenderFilterFactoryTests
         var filter = RenderFilterFactory.Framing(new ClipCandidate { LayoutMode = "blur" });
         Assert.Contains("gblur=sigma=34", filter);
         Assert.Contains("overlay=(W-w)/2:(H-h)/2", filter);
+    }
+
+    [Fact]
+    public void CreativeLook_AplicaAcabamentoOldSchoolSemExagero()
+    {
+        var filter = RenderFilterFactory.CreativeLook(60);
+
+        Assert.Contains("colorbalance", filter);
+        Assert.Contains("saturation=0.93", filter);
+        Assert.Contains("vignette=PI/8", filter);
+        Assert.Contains("noise=alls=1.2", filter);
+        Assert.Contains("fade=t=out:st=59.72", filter);
+    }
+
+    [Fact]
+    public void Framing_SemGatilhoIncluiMovimentoDeAssinatura()
+    {
+        var filter = RenderFilterFactory.Framing(new ClipCandidate { Transcript = "trecho sem palavra de impacto suficiente para o movimento automático" });
+        Assert.Contains("between(t\\,0.2\\,2.8)", filter);
+        Assert.Contains("0.026*sin", filter);
     }
 
     [Fact]

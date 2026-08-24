@@ -76,7 +76,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         var analysis = editorial.AnalyzeWithReport(p.Transcript, p.Options);
         p.Clips = analysis.Clips; p.CandidateAnalysis = analysis.Report;
         foreach (var clip in p.Clips)
-            clip.BrandTheme = p.Options.ContentType == "louvor" ? "worship" : p.Options.ContentType == "podcast" ? "podcast" : "amado-jesus";
+            clip.BrandTheme = "amado-jesus";
         await Checkpoint(p, "analysis", $"{p.Clips.Count} candidatos encontrados");
         await Stage(p, ProjectStatus.Analyzing, 82, $"Preparando {p.Clips.Count} candidatos");
         await Parallel.ForEachAsync(p.Clips, new ParallelOptions { MaxDegreeOfParallelism = 2, CancellationToken = ct }, async (clip, token) =>
@@ -212,7 +212,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         await File.WriteAllTextAsync(textFile, string.Join(' ', words.Take(midpoint)) + (words.Length > midpoint ? "\n" + string.Join(' ', words.Skip(midpoint)) : ""), Encoding.UTF8, ct);
         var escapedText = EscapeFilterPath(textFile); var accent = NormalizeColor(clip.CoverAccent); var y = clip.CoverPosition == "top" ? "260" : clip.CoverPosition == "center" ? "(h-text_h)/2" : "h-text_h-300"; var accentY = clip.CoverPosition == "top" ? "520" : clip.CoverPosition == "center" ? "1120" : "1680";
         var font = File.Exists(@"C:\Windows\Fonts\arialbd.ttf") ? $":fontfile='{EscapeFilterPath(@"C:\Windows\Fonts\arialbd.ttf")}'" : ":font='Arial'";
-        var filter = $"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920:0:{CropY(clip.CropFocus)},eq=contrast=1.08:saturation=1.12,drawbox=x=0:y=0:w=iw:h=ih:color=black@0.22:t=fill,drawtext=textfile='{escapedText}'{font}:fontsize=82:fontcolor=white:borderw=5:bordercolor=black@0.85:line_spacing=16:x=(w-text_w)/2:y={y},drawbox=x=90:y={accentY}:w=220:h=10:color={accent}:t=fill";
+        var filter = $"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920:0:{CropY(clip.CropFocus)},{RenderFilterFactory.CreativeLook(0)},drawbox=x=0:y=0:w=iw:h=ih:color=black@0.20:t=fill,drawtext=textfile='{escapedText}'{font}:fontsize=82:fontcolor=0xF3E8D0:borderw=5:bordercolor=black@0.85:line_spacing=16:x=(w-text_w)/2:y={y},drawbox=x=90:y={accentY}:w=220:h=8:color={accent}:t=fill";
         await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-ss", F(timestamp), "-i", Path.Combine(dir, p.LocalMedia!), "-frames:v", "1", "-vf", filter, Path.Combine(dir, cover)], dir, ct);
         clip.CoverPath = cover;
     }
@@ -232,12 +232,12 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         var output = $"clip-{clip.Id}.mp4";
         var framing = RenderFilterFactory.Framing(clip);
         var watermarkFile = Path.Combine(dir, $"watermark-{clip.Id}.txt");
-        await File.WriteAllTextAsync(watermarkFile, clip.WatermarkText ?? "AMADO JESUS", Encoding.UTF8, ct);
+        await File.WriteAllTextAsync(watermarkFile, clip.WatermarkText ?? "AJ  |  AMADO JESUS", Encoding.UTF8, ct);
         var watermarkFont = File.Exists(@"C:\Windows\Fonts\arialbd.ttf") ? $":fontfile='{EscapeFilterPath(@"C:\Windows\Fonts\arialbd.ttf")}'" : ":font='Arial'";
         var branding = RenderFilterFactory.Branding(clip, EscapeFilterPath(watermarkFile), watermarkFont);
         var videoAnalysis = await videoEnhancement.AnalyzeAsync(Path.Combine(dir, p.LocalMedia!), clip.Start, clip.End - clip.Start, ct);
         var enhancement = VideoEnhancementService.CreateProfile(videoAnalysis);
-        var filter = ComposeVideoFilter(enhancement.Filter, framing, ass, branding);
+        var filter = ComposeVideoFilter(enhancement.Filter, framing, ass, branding, RenderFilterFactory.CreativeLook(clip.End - clip.Start));
         logger.LogInformation("[Video] project={ProjectId} clip={ClipId} enhancement={Enhancement} luma={Luma} saturation={Saturation}", p.Id, clip.Id, enhancement.Kind, videoAnalysis.LumaAverage, videoAnalysis.SaturationAverage);
         var audioAnalysis = await audioAnalyzer.AnalyzeAsync(Path.Combine(dir, p.LocalMedia!), clip.Start, clip.End - clip.Start, p.Options.ContentType, ct);
         var audio = AudioFilterFactory.Create(audioAnalysis, clip.End - clip.Start);
@@ -290,7 +290,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         p.Status = ProjectStatus.Analyzing; p.Progress = 72; p.Stage = "Refazendo o ranking sem transcrever novamente"; await store.SaveAsync(p);
         var analysis = editorial.AnalyzeWithReport(p.Transcript, p.Options);
         p.Clips = analysis.Clips; p.CandidateAnalysis = analysis.Report;
-        foreach (var clip in p.Clips) { await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
+        foreach (var clip in p.Clips) { clip.BrandTheme = "amado-jesus"; await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
         ShortFormMetadataService.EnsureUniqueTitles(p.Clips, p.Options.ContentType);
         await RenderAllAsync(p, ct);
         p.Status = ProjectStatus.Ready; p.Progress = 100; p.Stage = $"{p.Clips.Count} novos cortes renderizados"; await store.SaveAsync(p);
@@ -389,16 +389,16 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
             sb.AppendLine($"Dialogue: 0,{AssTime(Math.Max(0, s.Start - clip.Start))},{AssTime(Math.Min(clip.End - clip.Start, s.End - clip.Start))},Impacto,,0,0,0,,{SubtitleFormatter.Plain(s.Text, width)}");
         return sb.ToString();
     }
-    public static string ComposeVideoFilter(string enhancement, string framing, string? subtitleFile, string? branding = null)
+    public static string ComposeVideoFilter(string enhancement, string framing, string? subtitleFile, string? branding = null, string? creativeLook = null)
     {
-        var filter = string.Join(',', new[] { enhancement, framing, branding }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        var filter = string.Join(',', new[] { enhancement, framing, creativeLook, branding }.Where(value => !string.IsNullOrWhiteSpace(value)));
         if (string.IsNullOrWhiteSpace(subtitleFile)) return filter;
         return $"{filter},subtitles='{EscapeFilterPath(subtitleFile)}'";
     }
     private static string EscapeAss(string value) => value.Replace("\n", " ").Replace("{", "(").Replace("}", ")");
     private static string EscapeFilterPath(string value) => value.Replace("\\", "/").Replace(":", "\\:").Replace("'", "\\'");
     private static string CropY(string focus) => RenderFilterFactory.CropY(focus);
-    private static string NormalizeColor(string? value) => System.Text.RegularExpressions.Regex.IsMatch(value ?? "", "^#[0-9A-Fa-f]{6}$") ? "0x" + value![1..] : "0xF0B44D";
+    private static string NormalizeColor(string? value) => System.Text.RegularExpressions.Regex.IsMatch(value ?? "", "^#[0-9A-Fa-f]{6}$") ? "0x" + value![1..] : "0xC7A35A";
     private static string AssTime(double seconds) => TimeSpan.FromSeconds(seconds).ToString(@"h\:mm\:ss\.ff");
     private static string F(double number) => number.ToString("0.###", CultureInfo.InvariantCulture);
 }

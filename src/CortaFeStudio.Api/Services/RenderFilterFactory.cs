@@ -22,7 +22,7 @@ public static class RenderFilterFactory
             : $"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}:{CropX(clip, width)}:{CropY(clip.CropFocus, height)}";
 
         var moments = PunchInPlanner.Plan(clip);
-        return moments.Count == 0 ? baseFraming : $"{baseFraming},{PunchIn(moments, width, height)}";
+        return moments.Count == 0 ? $"{baseFraming},{SignatureMotion(width, height)}" : $"{baseFraming},{PunchIn(moments, width, height)}";
     }
 
     public static string PunchIn(IReadOnlyList<PunchInMoment> moments, int width, int height)
@@ -48,19 +48,44 @@ public static class RenderFilterFactory
         {
             "worship" => (Accent: "0xB98CFF", Panel: "0x130D24"),
             "podcast" => (Accent: "0xFF5A5F", Panel: "0x171119"),
-            _ => (Accent: "0x8267FF", Panel: "0x0B0B10")
+            _ => (Accent: "0xC7A35A", Panel: "0x17120E")
         };
         var filters = new List<string>();
         if (clip.BrandFrameEnabled)
         {
-            filters.Add($"drawbox=x=0:y=0:w=iw:h=118:color={theme.Panel}@0.90:t=fill");
-            filters.Add($"drawbox=x=0:y=118:w=iw:h=8:color={theme.Accent}@0.95:t=fill");
-            filters.Add($"drawbox=x=0:y=h-150:w=iw:h=150:color={theme.Panel}@0.88:t=fill");
+            filters.Add($"drawbox=x=24:y=24:w=iw-48:h=ih-48:color={theme.Accent}@0.42:t=3");
+            filters.Add($"drawbox=x=0:y=h-118:w=iw:h=118:color={theme.Panel}@0.72:t=fill");
+            filters.Add($"drawbox=x=0:y=h-120:w=iw:h=2:color={theme.Accent}@0.72:t=fill");
         }
         if (clip.WatermarkEnabled && !string.IsNullOrWhiteSpace(clip.WatermarkText))
         {
             var opacity = Math.Clamp(clip.WatermarkOpacity, .1, 1).ToString("0.##", CultureInfo.InvariantCulture);
-            filters.Add($"drawtext=textfile='{escapedWatermarkFile}'{font}:fontsize=34:fontcolor=white@{opacity}:borderw=1:bordercolor=black@0.35:x=w-text_w-52:y=48");
+            var position = "x=(w-text_w)/2:y=h-text_h-42";
+            filters.Add($"drawtext=textfile='{escapedWatermarkFile}'{font}:fontsize=32:fontcolor=black@0.72:borderw=2:bordercolor=black@0.45:{position.Replace("/2", "/2+3").Replace("-42", "-39")}");
+            filters.Add($"drawtext=textfile='{escapedWatermarkFile}'{font}:fontsize=32:fontcolor=0xFFF4D6@0.32:borderw=0:{position.Replace("/2", "/2-1").Replace("-42", "-43")}");
+            filters.Add($"drawtext=textfile='{escapedWatermarkFile}'{font}:fontsize=32:fontcolor={theme.Accent}@{opacity}:borderw=1:bordercolor=0x3A2A18@0.85:{position}");
+        }
+        return string.Join(',', filters);
+    }
+
+    public static string SignatureMotion(int width, int height) =>
+        "scale=w='trunc(iw*(1+if(between(t\\,0.2\\,2.8)\\,0.026*sin(PI*(t-0.2)/2.6)\\,0))/2)*2':" +
+        "h='trunc(ih*(1+if(between(t\\,0.2\\,2.8)\\,0.026*sin(PI*(t-0.2)/2.6)\\,0))/2)*2':eval=frame," +
+        $"crop={width}:{height}:(iw-{width})/2:(ih-{height})/2";
+
+    public static string CreativeLook(double duration)
+    {
+        var filters = new List<string>
+        {
+            "colorbalance=rs=0.025:gs=0.008:bs=-0.028:rm=0.012:bm=-0.015",
+            "eq=contrast=1.045:saturation=0.93:gamma=0.99",
+            "vignette=PI/8",
+            "noise=alls=1.2:allf=t"
+        };
+        if (duration > .6)
+        {
+            filters.Add("fade=t=in:st=0:d=0.22");
+            filters.Add($"fade=t=out:st={Scalar(Math.Max(.22, duration - .28))}:d=0.28");
         }
         return string.Join(',', filters);
     }

@@ -27,7 +27,9 @@ public sealed class ProjectStore
             foreach (var clip in project.Clips)
             {
                 if (string.Equals(clip.WatermarkText, "CORTAFÉ", StringComparison.OrdinalIgnoreCase)) clip.WatermarkText = "AMADO JESUS";
-                if (string.Equals(clip.BrandTheme, "cortafe", StringComparison.OrdinalIgnoreCase)) clip.BrandTheme = "amado-jesus";
+                if (string.Equals(clip.WatermarkText, "AMADO JESUS", StringComparison.OrdinalIgnoreCase)) { clip.WatermarkText = "AJ  |  AMADO JESUS"; clip.WatermarkOpacity = .82; }
+                if (clip.BrandTheme is "cortafe" or "worship" or "podcast") clip.BrandTheme = "amado-jesus";
+                if (string.Equals(clip.CoverAccent, "#F0B44D", StringComparison.OrdinalIgnoreCase) || string.Equals(clip.CoverAccent, "#8267FF", StringComparison.OrdinalIgnoreCase)) clip.CoverAccent = "#C7A35A";
             }
             UpsertDatabase(project);
         }

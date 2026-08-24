@@ -95,9 +95,9 @@ public sealed class ClipCandidate
     public bool BrandFrameEnabled { get; set; } = true;
     public string BrandTheme { get; set; } = "amado-jesus";
     public bool WatermarkEnabled { get; set; } = true;
-    public string WatermarkText { get; set; } = "AMADO JESUS";
-    public double WatermarkOpacity { get; set; } = .72;
-    public string CoverAccent { get; set; } = "#F0B44D";
+    public string WatermarkText { get; set; } = "AJ  |  AMADO JESUS";
+    public double WatermarkOpacity { get; set; } = .82;
+    public string CoverAccent { get; set; } = "#C7A35A";
     public string CoverPosition { get; set; } = "bottom";
     public double? CoverTimestamp { get; set; }
     public string? EditedTranscript { get; set; }

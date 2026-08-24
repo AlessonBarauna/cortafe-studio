@@ -40,6 +40,22 @@ public sealed class FfmpegSubtitleIntegrationTests : IDisposable
         Assert.DoesNotContain("subtitles", filter);
     }
 
+    [Fact]
+    public async Task Ffmpeg_AceitaIdentidadeOldSchoolCompleta()
+    {
+        if (!FfmpegAvailable()) return;
+        Directory.CreateDirectory(_directory);
+        await File.WriteAllTextAsync(Path.Combine(_directory, "marca.txt"), "AJ | AMADO JESUS");
+        var clip = new ClipCandidate { WatermarkText = "AJ | AMADO JESUS" };
+        var framing = $"scale=320:568,{RenderFilterFactory.SignatureMotion(320, 568)}";
+        var branding = RenderFilterFactory.Branding(clip, "marca.txt", ":font='Arial'");
+        var filter = MediaPipeline.ComposeVideoFilter("null", framing, null, branding, RenderFilterFactory.CreativeLook(.5));
+
+        var result = await RunAsync(["-v", "error", "-f", "lavfi", "-i", "color=c=gray:s=320x568:d=0.5", "-vf", filter, "-f", "null", "-"]);
+
+        Assert.Equal(0, result);
+    }
+
     private bool FfmpegAvailable()
     {
         try { using var process = Process.Start(new ProcessStartInfo(Ffmpeg, "-version") { UseShellExecute = false, CreateNoWindow = true }); return process is not null && process.WaitForExit(3000) && process.ExitCode == 0; }

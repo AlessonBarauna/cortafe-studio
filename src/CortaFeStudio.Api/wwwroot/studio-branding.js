@@ -51,7 +51,7 @@
         <label class="form-check form-switch"><input class="form-check-input" name="brandFrameEnabled" type="checkbox" ${clip.brandFrameEnabled !== false ? 'checked' : ''}><span>Usar moldura Amado Jesus</span></label>
         <label>Tema<select class="form-select" name="brandTheme"><option value="amado-jesus" ${theme === 'amado-jesus' || theme === 'cortafe' ? 'selected' : ''}>Amado Jesus</option><option value="worship" ${theme === 'worship' ? 'selected' : ''}>Louvor Atmosfera</option><option value="podcast" ${theme === 'podcast' ? 'selected' : ''}>Podcast Impacto</option></select></label>
         <label class="form-check form-switch"><input class="form-check-input" name="watermarkEnabled" type="checkbox" ${clip.watermarkEnabled !== false ? 'checked' : ''}><span>Exibir marca-d’água</span></label>
-        <label>Texto da marca<input class="form-control" name="watermarkText" maxlength="36" value="${escapeHtml(clip.watermarkText || 'AMADO JESUS')}"></label>
+        <label>Texto da marca<input class="form-control" name="watermarkText" maxlength="36" value="${escapeHtml(clip.watermarkText || 'AJ  |  AMADO JESUS')}"></label>
         <label>Transparência<input class="form-range" name="watermarkOpacity" type="range" min=".1" max="1" step=".05" value="${clip.watermarkOpacity ?? .72}"></label>
       </div>
       <small class="text-secondary">A prévia responde imediatamente. Salve e renderize para gravar a identidade no MP4.</small>
@@ -67,7 +67,7 @@
       brandFrameEnabled: card.querySelector('[name="brandFrameEnabled"]')?.checked ?? true,
       brandTheme: card.querySelector('[name="brandTheme"]')?.value || 'amado-jesus',
       watermarkEnabled: card.querySelector('[name="watermarkEnabled"]')?.checked ?? true,
-      watermarkText: card.querySelector('[name="watermarkText"]')?.value || 'AMADO JESUS',
+      watermarkText: card.querySelector('[name="watermarkText"]')?.value || 'AJ  |  AMADO JESUS',
       watermarkOpacity: +(card.querySelector('[name="watermarkOpacity"]')?.value || .72)
     };
     await api(`/api/projects/${project.id}/clips/${clip.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -86,7 +86,7 @@
     preview.querySelector('.brand-preview')?.remove();
     if (clip.videoPath || (clip.brandFrameEnabled === false && clip.watermarkEnabled === false)) return;
     const theme = clip.brandTheme || 'amado-jesus';
-    preview.insertAdjacentHTML('beforeend', `<div class="brand-preview theme-${theme}">${clip.brandFrameEnabled !== false ? '<i class="brand-top"></i><i class="brand-bottom"></i>' : ''}${clip.watermarkEnabled !== false ? `<strong style="opacity:${Math.max(.1, Math.min(1, clip.watermarkOpacity ?? .72))}">${escapeHtml(clip.watermarkText || 'AMADO JESUS')}</strong>` : ''}</div>`);
+    preview.insertAdjacentHTML('beforeend', `<div class="brand-preview theme-${theme}">${clip.brandFrameEnabled !== false ? '<i class="brand-top"></i><i class="brand-bottom"></i>' : ''}${clip.watermarkEnabled !== false ? `<strong style="opacity:${Math.max(.1, Math.min(1, clip.watermarkOpacity ?? .82))}">${escapeHtml(clip.watermarkText || 'AJ  |  AMADO JESUS')}</strong>` : ''}</div>`);
   }
 
   document.addEventListener('input', event => {
