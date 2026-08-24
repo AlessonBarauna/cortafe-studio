@@ -6,6 +6,31 @@ namespace CortaFeStudio.Tests;
 public sealed class SubtitleTrackTests
 {
     [Fact]
+    public void LouvorSemTemposPorPalavra_DesligaLegendaDeBaixaConfianca()
+    {
+        var clip = new ClipCandidate { Start = 10, End = 70, EditorialProfile = "louvor" };
+        var track = SubtitleTrackService.Create(clip,
+            [new TranscriptSegment { Start = 10, End = 20, Text = "Tu permaneces fiel" }]);
+
+        Assert.False(track.Enabled);
+        Assert.Equal(.3, track.Confidence);
+        Assert.Equal("baixa", track.ConfidenceLabel);
+        Assert.NotNull(track.QualityWarning);
+    }
+
+    [Fact]
+    public void TemposPorPalavra_MantemLegendaComAltaConfianca()
+    {
+        var words = Enumerable.Range(0, 20).Select(index => new TranscriptWord
+            { Start = index * .5, End = index * .5 + .4, Word = $"palavra{index}" }).ToList();
+        var clip = new ClipCandidate { Start = 0, End = 10, EditorialProfile = "pregacao" };
+        var track = SubtitleTrackService.Create(clip,
+            [new TranscriptSegment { Start = 0, End = 10, Text = "fala", Words = words }]);
+
+        Assert.True(track.Enabled);
+        Assert.True(track.Confidence >= .8);
+    }
+    [Fact]
     public void Create_GeraBlocosRelativosAPartirDasPalavras()
     {
         var clip = new ClipCandidate { Start = 10, End = 20 };

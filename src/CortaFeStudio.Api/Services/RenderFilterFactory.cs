@@ -42,6 +42,29 @@ public static class RenderFilterFactory
                $"crop={width}:{height}:(iw-{width})/2:(ih-{height})/2";
     }
 
+    public static string Branding(ClipCandidate clip, string escapedWatermarkFile, string font)
+    {
+        var theme = clip.BrandTheme switch
+        {
+            "worship" => (Accent: "0xB98CFF", Panel: "0x130D24"),
+            "podcast" => (Accent: "0xFF5A5F", Panel: "0x171119"),
+            _ => (Accent: "0xF0B44D", Panel: "0x100E15")
+        };
+        var filters = new List<string>();
+        if (clip.BrandFrameEnabled)
+        {
+            filters.Add($"drawbox=x=0:y=0:w=iw:h=118:color={theme.Panel}@0.90:t=fill");
+            filters.Add($"drawbox=x=0:y=118:w=iw:h=8:color={theme.Accent}@0.95:t=fill");
+            filters.Add($"drawbox=x=0:y=h-150:w=iw:h=150:color={theme.Panel}@0.88:t=fill");
+        }
+        if (clip.WatermarkEnabled && !string.IsNullOrWhiteSpace(clip.WatermarkText))
+        {
+            var opacity = Math.Clamp(clip.WatermarkOpacity, .1, 1).ToString("0.##", CultureInfo.InvariantCulture);
+            filters.Add($"drawtext=textfile='{escapedWatermarkFile}'{font}:fontsize=34:fontcolor=white@{opacity}:borderw=1:bordercolor=black@0.35:x=w-text_w-52:y=48");
+        }
+        return string.Join(',', filters);
+    }
+
     public static (int Width, int Height) Dimensions(string? preset) => preset switch
     {
         "portrait" => (1080, 1350),

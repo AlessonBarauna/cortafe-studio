@@ -71,6 +71,8 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         p.Options.ApplyAutomaticDuration();
         var analysis = editorial.AnalyzeWithReport(p.Transcript, p.Options);
         p.Clips = analysis.Clips; p.CandidateAnalysis = analysis.Report;
+        foreach (var clip in p.Clips)
+            clip.BrandTheme = p.Options.ContentType == "louvor" ? "worship" : p.Options.ContentType == "podcast" ? "podcast" : "cortafe";
         await Checkpoint(p, "analysis", $"{p.Clips.Count} candidatos encontrados");
         await Stage(p, ProjectStatus.Analyzing, 82, $"Preparando {p.Clips.Count} candidatos");
         await Parallel.ForEachAsync(p.Clips, new ParallelOptions { MaxDegreeOfParallelism = 2, CancellationToken = ct }, async (clip, token) =>
@@ -225,9 +227,13 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         }
         var output = $"clip-{clip.Id}.mp4";
         var framing = RenderFilterFactory.Framing(clip);
+        var watermarkFile = Path.Combine(dir, $"watermark-{clip.Id}.txt");
+        await File.WriteAllTextAsync(watermarkFile, clip.WatermarkText ?? "CORTAFÉ", Encoding.UTF8, ct);
+        var watermarkFont = File.Exists(@"C:\Windows\Fonts\arialbd.ttf") ? $":fontfile='{EscapeFilterPath(@"C:\Windows\Fonts\arialbd.ttf")}'" : ":font='Arial'";
+        var branding = RenderFilterFactory.Branding(clip, EscapeFilterPath(watermarkFile), watermarkFont);
         var videoAnalysis = await videoEnhancement.AnalyzeAsync(Path.Combine(dir, p.LocalMedia!), clip.Start, clip.End - clip.Start, ct);
         var enhancement = VideoEnhancementService.CreateProfile(videoAnalysis);
-        var filter = ComposeVideoFilter(enhancement.Filter, framing, ass);
+        var filter = ComposeVideoFilter(enhancement.Filter, framing, ass, branding);
         logger.LogInformation("[Video] project={ProjectId} clip={ClipId} enhancement={Enhancement} luma={Luma} saturation={Saturation}", p.Id, clip.Id, enhancement.Kind, videoAnalysis.LumaAverage, videoAnalysis.SaturationAverage);
         var audioAnalysis = await audioAnalyzer.AnalyzeAsync(Path.Combine(dir, p.LocalMedia!), clip.Start, clip.End - clip.Start, p.Options.ContentType, ct);
         var audio = AudioFilterFactory.Create(audioAnalysis, clip.End - clip.Start);
@@ -379,9 +385,9 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
             sb.AppendLine($"Dialogue: 0,{AssTime(Math.Max(0, s.Start - clip.Start))},{AssTime(Math.Min(clip.End - clip.Start, s.End - clip.Start))},Impacto,,0,0,0,,{SubtitleFormatter.Plain(s.Text, width)}");
         return sb.ToString();
     }
-    public static string ComposeVideoFilter(string enhancement, string framing, string? subtitleFile)
+    public static string ComposeVideoFilter(string enhancement, string framing, string? subtitleFile, string? branding = null)
     {
-        var filter = $"{enhancement},{framing}";
+        var filter = string.Join(',', new[] { enhancement, framing, branding }.Where(value => !string.IsNullOrWhiteSpace(value)));
         if (string.IsNullOrWhiteSpace(subtitleFile)) return filter;
         return $"{filter},subtitles='{EscapeFilterPath(subtitleFile)}'";
     }

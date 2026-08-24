@@ -218,6 +218,11 @@ api.MapPut("/projects/{id}/clips/{clipId}", async (string id, string clipId, Cli
         clip.CropX = Math.Clamp(update.CropX ?? clip.CropX, 0, 1);
         clip.LayoutMode = update.LayoutMode ?? clip.LayoutMode;
         if (update.OutputPreset is "vertical" or "portrait" or "square" or "landscape") clip.OutputPreset = update.OutputPreset;
+        clip.BrandFrameEnabled = update.BrandFrameEnabled ?? clip.BrandFrameEnabled;
+        clip.BrandTheme = update.BrandTheme ?? clip.BrandTheme;
+        clip.WatermarkEnabled = update.WatermarkEnabled ?? clip.WatermarkEnabled;
+        clip.WatermarkText = update.WatermarkText?.Trim() ?? clip.WatermarkText;
+        clip.WatermarkOpacity = update.WatermarkOpacity is null ? clip.WatermarkOpacity : Math.Clamp(update.WatermarkOpacity.Value, .1, 1);
         RenderStateService.MarkIfChanged(clip, previousFingerprint);
     });
     return updated is null ? Results.NotFound() : Results.Ok(updated);

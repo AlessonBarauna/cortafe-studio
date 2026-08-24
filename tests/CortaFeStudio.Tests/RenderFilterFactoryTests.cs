@@ -5,6 +5,17 @@ namespace CortaFeStudio.Tests;
 
 public sealed class RenderFilterFactoryTests
 {
+    [Fact]
+    public void IdentidadeVisual_IncluiMolduraTemaEMarcaDagua()
+    {
+        var clip = new ClipCandidate { BrandTheme = "worship", BrandFrameEnabled = true, WatermarkEnabled = true, WatermarkText = "CORTAFÉ" };
+        var filter = RenderFilterFactory.Branding(clip, "watermark.txt", ":font='Arial'");
+
+        Assert.Contains("0xB98CFF", filter);
+        Assert.Contains("drawbox", filter);
+        Assert.Contains("drawtext", filter);
+        Assert.Contains("watermark.txt", filter);
+    }
     [Theory]
     [InlineData(-1, "iw*0-540")]
     [InlineData(.5, "iw*0.5-540")]
