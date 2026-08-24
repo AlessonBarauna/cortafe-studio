@@ -17,7 +17,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         if (p.SourceKind == SourceKind.YouTube && (p.Transcript.Count == 0 || p.Duration <= 0 || p.Name == "Vídeo do YouTube"))
         {
             await Stage(p, ProjectStatus.Acquiring, 8, "Consultando duração e legendas do YouTube");
-            var metadata = await ProbeYouTubeMetadata(p.Source, ct); p.Duration = metadata.Duration;
+            var metadata = await ProbeYouTubeMetadata(p, ct); p.Duration = metadata.Duration;
             if (p.Name == "Vídeo do YouTube" && !string.IsNullOrWhiteSpace(metadata.Title)) p.Name = metadata.Title;
             if (p.Transcript.Count == 0) await TryLoadYouTubeCaptionsAsync(p, allowAutomatic: true, ct);
         }
@@ -26,12 +26,13 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         {
             var template = Path.Combine(dir, "source.%(ext)s");
             await Stage(p, ProjectStatus.Acquiring, 12, p.Transcript.Count > 0 ? "Baixando vídeo; legendas já aproveitadas" : "Baixando vídeo em formato otimizado");
-            var downloadArgs = YouTubeAcquisition.DownloadArguments(tools.YouTubeArguments(), tools.Find("ffmpeg"), template, p.Source);
+            var youtubeArgs = YouTubeAcquisition.WithBrowserSession(tools.YouTubeArguments(), p.YouTubeCookieBrowser);
+            var downloadArgs = YouTubeAcquisition.DownloadArguments(youtubeArgs, tools.Find("ffmpeg"), template, p.Source);
             try { await tools.RunAsync(tools.Find("yt-dlp"), downloadArgs, dir, ct); }
             catch (InvalidOperationException ex) when (ex.Message.Contains("403", StringComparison.OrdinalIgnoreCase))
             {
                 await Stage(p, ProjectStatus.Acquiring, 14, "YouTube recusou o 1080p; tentando formato compatível");
-                var compatibleArgs = YouTubeAcquisition.CompatibleDownloadArguments(tools.YouTubeArguments(), tools.Find("ffmpeg"), template, p.Source);
+                var compatibleArgs = YouTubeAcquisition.CompatibleDownloadArguments(youtubeArgs, tools.Find("ffmpeg"), template, p.Source);
                 await tools.RunAsync(tools.Find("yt-dlp"), compatibleArgs, dir, ct);
             }
             p.LocalMedia = Path.GetFileName(Directory.EnumerateFiles(dir, "source.*").First(f => Path.GetFileName(f) != "source.audio.wav" && !f.EndsWith(".part", StringComparison.OrdinalIgnoreCase)));
@@ -101,11 +102,12 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         var output = await tools.CaptureAsync(tools.Find("ffprobe"), ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", media], Path.GetDirectoryName(media), ct);
         return double.TryParse(output, NumberStyles.Float, CultureInfo.InvariantCulture, out var duration) ? duration : 0;
     }
-    private async Task<(double Duration, string? Title)> ProbeYouTubeMetadata(string url, CancellationToken ct)
+    private async Task<(double Duration, string? Title)> ProbeYouTubeMetadata(VideoProject project, CancellationToken ct)
     {
         try
         {
-            var output = await tools.CaptureAsync(tools.Find("yt-dlp"), YouTubeAcquisition.MetadataArguments(tools.YouTubeArguments(), url), tools.Root, ct);
+            var common = YouTubeAcquisition.WithBrowserSession(tools.YouTubeArguments(), project.YouTubeCookieBrowser);
+            var output = await tools.CaptureAsync(tools.Find("yt-dlp"), YouTubeAcquisition.MetadataArguments(common, project.Source), tools.Root, ct);
             var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             var duration = lines.Length > 0 && double.TryParse(lines[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0;
             return (duration, lines.Length > 1 ? lines[1] : null);
@@ -311,7 +313,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         try
         {
             foreach (var old in Directory.EnumerateFiles(dir, "youtube-captions*.json3")) File.Delete(old);
-            var args = tools.YouTubeArguments();
+            var args = YouTubeAcquisition.WithBrowserSession(tools.YouTubeArguments(), p.YouTubeCookieBrowser);
             args.AddRange(["--skip-download", "--write-subs"]);
             if (allowAutomatic) args.Add("--write-auto-subs");
             args.AddRange(["--sub-langs", "pt-BR,pt-PT,pt-orig,pt", "--sub-format", "json3", "--no-playlist", "-o", template, p.Source]);

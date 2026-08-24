@@ -16,6 +16,8 @@ public sealed class VideoProject
     public int Progress { get; set; }
     public string Stage { get; set; } = "Na fila";
     public string? Error { get; set; }
+    public string? FailureCode { get; set; }
+    public string? YouTubeCookieBrowser { get; set; }
     public double Duration { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
@@ -206,6 +208,7 @@ public record ClipUpdate(double? Start, double? End, string? Title, string? Cove
 public record ManualClipRequest(double Start, double End);
 public record SplitClipRequest(double At);
 public record RestartFromRequest(string Stage);
+public record RetryProjectRequest(string? Browser = null);
 public record CleanupProjectRequest(bool DeleteSource = false);
 public record ReanalyzeRequest(string? Topic, int? ClipCount, bool Render = false);
 public record ClipFeedbackRequest(string Feedback);

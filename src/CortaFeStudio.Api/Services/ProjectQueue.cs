@@ -45,12 +45,12 @@ public sealed class ProjectQueue(ProjectStore store, MediaPipeline pipeline, ILo
             lock (_sync) _activeCancellation = projectCancellation;
             try
             {
-                project.Attempt++; project.StartedAt = DateTime.UtcNow; project.Error = null;
+                project.Attempt++; project.StartedAt = DateTime.UtcNow; project.Error = null; project.FailureCode = null;
                 await pipeline.ProcessAsync(project, projectCancellation.Token); await store.SaveAsync(project);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { project.Status = ProjectStatus.Queued; project.Stage = "Aguardando retomada"; await store.SaveAsync(project); }
             catch (OperationCanceledException) { project.Status = ProjectStatus.Cancelled; project.Stage = "Processamento cancelado"; project.Error = null; await store.SaveAsync(project); }
-            catch (Exception ex) { logger.LogError(ex, "Falha no projeto {Id}", id); project.Status = ProjectStatus.Failed; project.Error = ex.Message; project.Stage = "Processamento interrompido"; await store.SaveAsync(project); }
+            catch (Exception ex) { logger.LogError(ex, "Falha no projeto {Id}", id); project.Status = ProjectStatus.Failed; project.Error = ex.Message; project.FailureCode = ToolService.ClassifyFailure(ex.Message); project.Stage = "Processamento interrompido"; await store.SaveAsync(project); }
             finally { lock (_sync) { _scheduled.Remove(id); _active = null; _activeCancellation = null; } }
         }
     }

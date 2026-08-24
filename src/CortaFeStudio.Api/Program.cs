@@ -148,12 +148,27 @@ api.MapPost("/projects/upload", async (HttpRequest request, ProjectStore store, 
     return Results.Accepted($"/api/projects/{project.Id}", project);
 }).DisableAntiforgery();
 
-api.MapPost("/projects/{id}/retry", async (string id, ProjectStore store, ProjectQueue queue) =>
+api.MapPost("/projects/{id}/retry", async (string id, HttpRequest http, ProjectStore store, ProjectQueue queue) =>
 {
-    if (store.Get(id) is null) return Results.NotFound();
-    await store.UpdateAsync(id, p => { p.Status = ProjectStatus.Queued; p.Error = null; p.Progress = 0; });
+    var project = store.Get(id); if (project is null) return Results.NotFound();
+    if (project.Status is not (ProjectStatus.Failed or ProjectStatus.Cancelled))
+        return Results.Conflict(new { error = "Este projeto já está na fila ou em processamento." });
+    try
+    {
+        var request = http.ContentLength > 0
+            ? await http.ReadFromJsonAsync<RetryProjectRequest>() ?? new RetryProjectRequest()
+            : new RetryProjectRequest();
+        var browser = YouTubeAcquisition.WithBrowserSession([], request.Browser);
+        await store.UpdateAsync(id, p =>
+        {
+            p.YouTubeCookieBrowser = browser.Count == 0 ? null : request.Browser!.Trim().ToLowerInvariant();
+            p.Status = ProjectStatus.Queued; p.Error = null; p.FailureCode = null; p.Progress = 1;
+            p.Stage = p.YouTubeCookieBrowser is null ? "Retentativa adicionada à fila" : "Aguardando acesso com a sessão do navegador";
+        });
+    }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
     await queue.EnqueueAsync(id);
-    return Results.Accepted();
+    return Results.Accepted($"/api/projects/{id}", store.Get(id));
 });
 api.MapPost("/projects/{id}/cancel", async (string id, ProjectStore store, ProjectQueue queue) =>
 {
