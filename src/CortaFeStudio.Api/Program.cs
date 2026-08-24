@@ -37,6 +37,7 @@ builder.Services.AddSingleton<DiagnosticsService>();
 builder.Services.AddSingleton<StorageService>();
 builder.Services.AddSingleton<FramingService>();
 builder.Services.AddSingleton<ManualClipService>();
+builder.Services.AddSingleton<WaveformService>();
 builder.Services.AddSingleton<ClipExportService>();
 builder.Services.AddSingleton<LocalSecurityService>();
 builder.Services.AddHostedService<PublicationScheduler>();
@@ -352,6 +353,12 @@ api.MapGet("/projects/{id}/source", (string id, ProjectStore store) =>
     return file is null
         ? Results.NotFound(new { error = "A mídia original foi removida do armazenamento." })
         : Results.File(file, GetContentType(file), enableRangeProcessing: true);
+});
+api.MapGet("/projects/{id}/waveform", async (string id, WaveformService waveform, CancellationToken ct) =>
+{
+    try { return Results.Ok(new { samples = await waveform.GetAsync(id, ct) }); }
+    catch (KeyNotFoundException) { return Results.NotFound(); }
+    catch (Exception ex) when (ex is InvalidOperationException or FileNotFoundException) { return Results.BadRequest(new { error = ex.Message }); }
 });
 
 api.MapGet("/projects/{id}/assets/{**path}", (string id, string path, ProjectStore store) =>
