@@ -373,17 +373,23 @@ api.MapPost("/social/publications/{id}/refresh", async (string id, SocialService
 });
 api.MapPost("/social/configure", async (SocialConfigurationRequest request, SocialService social) =>
     { await social.ConfigureAsync(request); return Results.Ok(); });
-api.MapDelete("/social/accounts/{platform}", async (SocialPlatform platform, SocialService social) => { await social.DisconnectAsync(platform); return Results.NoContent(); });
-api.MapGet("/social/connect/{platform}", (SocialPlatform platform, HttpRequest request, SocialService social) =>
+api.MapDelete("/social/accounts/{platform}", async (string platform, SocialService social) =>
 {
-    try { return Results.Ok(new { url = social.AuthorizationUrl(platform, $"{request.Scheme}://{request.Host}") }); }
+    if (!TrySocialPlatform(platform, out var parsed)) return Results.BadRequest(new { error = "Plataforma social inválida." });
+    await social.DisconnectAsync(parsed); return Results.NoContent();
+});
+api.MapGet("/social/connect/{platform}", (string platform, HttpRequest request, SocialService social) =>
+{
+    if (!TrySocialPlatform(platform, out var parsed)) return Results.BadRequest(new { error = "Plataforma social inválida." });
+    try { return Results.Ok(new { url = social.AuthorizationUrl(parsed, $"{request.Scheme}://{request.Host}") }); }
     catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
-api.MapGet("/social/callback/{platform}", async (SocialPlatform platform, string? code, string? state, string? error, HttpRequest request, SocialService social) =>
+api.MapGet("/social/callback/{platform}", async (string platform, string? code, string? state, string? error, HttpRequest request, SocialService social) =>
 {
+    if (!TrySocialPlatform(platform, out var parsed)) return Results.Content("<h1>Plataforma social inválida.</h1>", "text/html", statusCode: 400);
     if (!string.IsNullOrWhiteSpace(error)) return Results.Content($"<h1>Conexão cancelada</h1><p>{System.Net.WebUtility.HtmlEncode(error)}</p>", "text/html");
     if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(state)) return Results.BadRequest("Código OAuth ausente.");
-    try { await social.CompleteOAuthAsync(platform, code, state, $"{request.Scheme}://{request.Host}"); return Results.Content("<script>window.opener?.postMessage('social-connected','*');window.close()</script><h1>Conta conectada.</h1>", "text/html"); }
+    try { await social.CompleteOAuthAsync(parsed, code, state, $"{request.Scheme}://{request.Host}"); return Results.Content("<script>window.opener?.postMessage('social-connected','*');window.close()</script><h1>Conta conectada.</h1>", "text/html"); }
     catch (Exception ex) { return Results.Content($"<h1>Falha na conexão</h1><pre>{System.Net.WebUtility.HtmlEncode(ex.Message)}</pre>", "text/html"); }
 });
 api.MapPost("/projects/{projectId}/clips/{clipId}/publish", async (string projectId, string clipId, PublishRequest request, SocialService social) =>
@@ -402,6 +408,7 @@ static string GetContentType(string path) => Path.GetExtension(path).ToLowerInva
 };
 static bool IsYouTubeUrl(string url) => Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
     new[] { "youtube.com", "www.youtube.com", "youtu.be", "m.youtube.com" }.Contains(uri.Host.ToLowerInvariant());
+static bool TrySocialPlatform(string value, out SocialPlatform platform) => Enum.TryParse(value, ignoreCase: true, out platform);
 public record PinRequest(string Pin);
 public record BackupRequest(string Password);
 
