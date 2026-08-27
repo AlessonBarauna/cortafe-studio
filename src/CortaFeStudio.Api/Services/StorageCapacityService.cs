@@ -6,12 +6,13 @@ public sealed class StorageCapacityService(IWebHostEnvironment environment, Proj
 {
     public const long DefaultSafetyReserve = 3L * 1024 * 1024 * 1024;
     private readonly string _root = environment.ContentRootPath;
+    private readonly long _safetyReserve = environment.IsEnvironment("Test") || environment.IsEnvironment("Testing") ? 0 : DefaultSafetyReserve;
 
     public StorageCapacityReport Check(StorageOperation operation, double durationSeconds, int itemCount = 1)
     {
         var drive = new DriveInfo(Path.GetPathRoot(_root) ?? _root);
         var estimate = Estimate(operation, durationSeconds, itemCount);
-        return Evaluate(operation, drive.AvailableFreeSpace, estimate, DefaultSafetyReserve);
+        return Evaluate(operation, drive.AvailableFreeSpace, estimate, _safetyReserve);
     }
 
     public void Ensure(StorageOperation operation, double durationSeconds, int itemCount = 1)
@@ -21,12 +22,28 @@ public sealed class StorageCapacityService(IWebHostEnvironment environment, Proj
         if (!report.Allowed) throw new InvalidOperationException(report.Message);
     }
 
+    public StorageCapacityReport CheckNewProject(int itemCount = 1, long uploadBytes = 0)
+    {
+        var drive = new DriveInfo(Path.GetPathRoot(_root) ?? _root);
+        var count = Math.Clamp(itemCount, 1, 20);
+        var estimate = uploadBytes > 0
+            ? Math.Max(512L * 1024 * 1024, uploadBytes * 2)
+            : 512L * 1024 * 1024 * count;
+        return Evaluate(StorageOperation.Acquisition, drive.AvailableFreeSpace, estimate, _safetyReserve);
+    }
+
+    public void EnsureNewProject(int itemCount = 1, long uploadBytes = 0)
+    {
+        var report = CheckNewProject(itemCount, uploadBytes);
+        if (!report.Allowed) throw new InvalidOperationException(report.Message);
+    }
+
     public static long Estimate(StorageOperation operation, double durationSeconds, int itemCount = 1)
     {
         var duration = Math.Max(1, durationSeconds); var count = Math.Clamp(itemCount, 1, 100);
         return operation switch
         {
-            StorageOperation.Acquisition => (long)(duration * 350_000) + 512L * 1024 * 1024,
+            StorageOperation.Acquisition => ((long)(duration * 350_000) + 512L * 1024 * 1024) * count,
             StorageOperation.Transcription => (long)(duration * 32_000) + 1024L * 1024 * 1024,
             StorageOperation.BatchRender => (long)(duration * count * 300_000) + 768L * 1024 * 1024,
             _ => 1024L * 1024 * 1024

@@ -76,6 +76,7 @@ api.MapGet("/projects", (ProjectStore store) => store.List());
 api.MapGet("/queue", (ProjectQueue queue) => queue.Status());
 api.MapGet("/storage", (StorageService storage) => storage.Report());
 api.MapGet("/storage/capacity", (StorageOperation operation, double durationSeconds, int itemCount, StorageCapacityService storage) => storage.Check(operation, durationSeconds, itemCount));
+api.MapGet("/storage/new-project-capacity", (int itemCount, long uploadBytes, StorageCapacityService storage) => storage.CheckNewProject(itemCount, uploadBytes));
 api.MapPost("/storage/temporary-cleanup", async (StorageCapacityService storage) => Results.Ok(new { freedBytes = await storage.CleanupTemporaryAsync() }));
 api.MapGet("/render/encoder", async (HardwareEncoderDetector detector, CancellationToken ct) => await detector.DetectAsync(ct));
 api.MapGet("/projects/{projectId}/clips/{clipId}/quality", async (string projectId, string clipId, ProjectStore store, QualityGateService quality, CancellationToken ct) =>
@@ -109,22 +110,26 @@ api.MapDelete("/projects/{id}", async (string id, ProjectStore store) =>
     return await store.DeleteAsync(id) ? Results.NoContent() : Results.NotFound();
 });
 
-api.MapPost("/projects/url", async (UrlProjectRequest request, ProjectStore store, ProjectQueue queue) =>
+api.MapPost("/projects/url", async (UrlProjectRequest request, ProjectStore store, ProjectQueue queue, StorageCapacityService capacity) =>
 {
     if (!Uri.TryCreate(request.Url, UriKind.Absolute, out var uri) ||
         !new[] { "youtube.com", "www.youtube.com", "youtu.be", "m.youtube.com" }.Contains(uri.Host.ToLowerInvariant()))
         return Results.BadRequest(new { error = "Informe um link válido do YouTube." });
+    try { capacity.EnsureNewProject(); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
     var project = await store.CreateAsync(request.Name, SourceKind.YouTube, request.Url, request.Options);
     await queue.EnqueueAsync(project.Id);
     return Results.Accepted($"/api/projects/{project.Id}", project);
 });
 
-api.MapPost("/projects/url-batch", async (UrlBatchProjectRequest request, ProjectStore store, ProjectQueue queue) =>
+api.MapPost("/projects/url-batch", async (UrlBatchProjectRequest request, ProjectStore store, ProjectQueue queue, StorageCapacityService capacity) =>
 {
     var urls = request.Urls.Where(url => !string.IsNullOrWhiteSpace(url)).Distinct().ToList();
     if (urls.Count == 0) return Results.BadRequest(new { error = "Informe pelo menos um link do YouTube." });
     if (urls.Count > 20) return Results.BadRequest(new { error = "Envie no máximo 20 links por lote." });
     if (urls.Any(url => !IsYouTubeUrl(url))) return Results.BadRequest(new { error = "O lote contém um link que não pertence ao YouTube." });
+    try { capacity.EnsureNewProject(urls.Count); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
     var projects = new List<VideoProject>();
     for (var index = 0; index < urls.Count; index++)
     {
@@ -135,12 +140,14 @@ api.MapPost("/projects/url-batch", async (UrlBatchProjectRequest request, Projec
     return Results.Accepted("/api/projects", projects);
 });
 
-api.MapPost("/projects/upload", async (HttpRequest request, ProjectStore store, ProjectQueue queue) =>
+api.MapPost("/projects/upload", async (HttpRequest request, ProjectStore store, ProjectQueue queue, StorageCapacityService capacity) =>
 {
     if (!request.HasFormContentType) return Results.BadRequest(new { error = "Envie um formulário com um arquivo." });
     var form = await request.ReadFormAsync();
     var file = form.Files.GetFile("file");
     if (file is null || file.Length == 0) return Results.BadRequest(new { error = "Selecione um arquivo válido." });
+    try { capacity.EnsureNewProject(uploadBytes: file.Length); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
     var options = ProjectOptions.FromForm(form);
     var project = await store.CreateFromUploadAsync(form["name"].FirstOrDefault(), file, options);
     await queue.EnqueueAsync(project.Id);
@@ -184,6 +191,12 @@ api.MapPost("/projects/{id}/restart-from", async (string id, RestartFromRequest 
 api.MapPost("/projects/{id}/cleanup", async (string id, CleanupProjectRequest request, ProjectStore store, StorageService storage) =>
 {
     var project = store.Get(id); return project is null ? Results.NotFound() : Results.Ok(new { freedBytes = await storage.CleanupAsync(project, request.DeleteSource) });
+});
+api.MapPost("/projects/{id}/delete-data", async (string id, ProjectStore store, StorageService storage) =>
+{
+    var project = store.Get(id); if (project is null) return Results.NotFound();
+    try { return Results.Ok(new { freedBytes = await storage.DeleteProjectDataAsync(project) }); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
 });
 api.MapPost("/projects/{id}/archive", async (string id, ProjectStore store, StorageService storage) =>
 {

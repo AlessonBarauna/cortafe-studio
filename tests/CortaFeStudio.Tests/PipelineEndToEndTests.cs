@@ -16,7 +16,9 @@ public sealed class PipelineEndToEndTests : IDisposable
     public async Task RenderCompleto_GeraMp4ProfissionalEPassaNoQualityGate()
     {
         Directory.CreateDirectory(_root); var apiRoot = FindApiRoot(); var toolEnvironment = new TestEnvironment(apiRoot); var dataEnvironment = new TestEnvironment(_root);
-        var tools = new ToolService(toolEnvironment); Assert.True(File.Exists(tools.Find("ffmpeg"))); Assert.True(File.Exists(tools.Find("ffprobe")));
+        var tools = new ToolService(toolEnvironment);
+        Assert.Contains("ffmpeg version", await tools.CaptureAsync(tools.Find("ffmpeg"), ["-version"], _root), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ffprobe version", await tools.CaptureAsync(tools.Find("ffprobe"), ["-version"], _root), StringComparison.OrdinalIgnoreCase);
         var source = Path.Combine(_root, "synthetic-source.mp4");
         await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30:duration=6", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=6", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", source], _root);
 
@@ -40,7 +42,7 @@ public sealed class PipelineEndToEndTests : IDisposable
     }
 
     private static List<TranscriptSegment> Transcript() => Enumerable.Range(0, 12).Select(index => new TranscriptSegment { Start = index * .5, End = index * .5 + .42, Text = $"palavra {index}", Words = [new TranscriptWord { Start = index * .5, End = index * .5 + .42, Word = $"palavra{index}" }] }).ToList();
-    private static string FindApiRoot() { var current = new DirectoryInfo(Directory.GetCurrentDirectory()); while (current is not null) { var candidate = Path.Combine(current.FullName, "src", "CortaFeStudio.Api"); if (File.Exists(Path.Combine(candidate, "tools", "ffmpeg.exe"))) return candidate; current = current.Parent; } throw new DirectoryNotFoundException("Raiz da API com FFmpeg local nao encontrada."); }
+    private static string FindApiRoot() { var current = new DirectoryInfo(Directory.GetCurrentDirectory()); while (current is not null) { var candidate = Path.Combine(current.FullName, "src", "CortaFeStudio.Api"); if (File.Exists(Path.Combine(candidate, "CortaFeStudio.Api.csproj"))) return candidate; current = current.Parent; } throw new DirectoryNotFoundException("Raiz da API nao encontrada."); }
     public void Dispose() { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); if (Directory.Exists(_root)) Directory.Delete(_root, true); }
     private sealed class TestHttpClientFactory : IHttpClientFactory { public HttpClient CreateClient(string name) => new(new HttpClientHandler()) { Timeout = TimeSpan.FromMilliseconds(100) }; }
     private sealed class TestEnvironment(string root) : IWebHostEnvironment { public string ApplicationName { get; set; } = "Tests"; public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider(); public string WebRootPath { get; set; } = root; public string EnvironmentName { get; set; } = "Test"; public string ContentRootPath { get; set; } = root; public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider(); }

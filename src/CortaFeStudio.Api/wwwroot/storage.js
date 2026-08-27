@@ -50,6 +50,17 @@ async function archiveProject(projectId) {
   }
 }
 
+async function deleteProjectData(projectId) {
+  if (!confirm('Excluir o vídeo original, cortes renderizados, capas e arquivos temporários?\n\nO projeto, link, títulos, edições, pontuações e histórico serão preservados.')) return;
+  try {
+    const result = await api(`/api/projects/${projectId}/delete-data`, { method: 'POST' });
+    toast(`${bytesLabel(result.freedBytes)} liberados · projeto preservado`);
+    await openProject(projectId);
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
 function historyCards(items) {
   if (!items.length) return '<div class="empty">Nenhum projeto encontrado no histórico.</div>';
 
@@ -77,7 +88,7 @@ function historyCards(items) {
       <div class="d-flex gap-2 flex-wrap">
         <button class="btn btn-sm btn-gold" onclick="openProject('${item.id}')">Abrir projeto</button>
         ${sourceAction}
-        ${item.sourceAvailable ? `<button class="btn btn-sm btn-outline-warning" onclick="cleanupProject('${item.id}')">Liberar espaço</button>` : ''}
+        ${item.bytes > 4096 ? `<button class="btn btn-sm btn-outline-danger" onclick="deleteProjectData('${item.id}')">Excluir arquivos</button>` : ''}
       </div>
     </article>`;
   }).join('');
@@ -130,6 +141,18 @@ const submitProjectWithHistory = submitProject;
 submitProject = async function (event) {
   event.preventDefault();
 
+  const capacityForm = new FormData(event.target);
+  const capacityUrls = String(capacityForm.get('url') || '').split(/\r?\n/).map(value => value.trim()).filter(Boolean);
+  const capacityFile = capacityForm.get('file');
+  const capacityQuery = source === 'url'
+    ? `itemCount=${Math.max(1, capacityUrls.length)}&uploadBytes=0`
+    : `itemCount=1&uploadBytes=${capacityFile?.size || 0}`;
+  const capacity = await api(`/api/storage/new-project-capacity?${capacityQuery}`);
+  if (!capacity.allowed) {
+    toast(capacity.message);
+    return;
+  }
+
   if (source === 'url') {
     const form = new FormData(event.target);
     const urls = String(form.get('url') || '')
@@ -181,10 +204,15 @@ submitProject = async function (event) {
 const renderProjectWithStorage = renderProject;
 renderProject = function (project) {
   renderProjectWithStorage(project);
+  if (['failed', 'cancelled'].includes(project.status)) {
+    const panel = document.querySelector('#projectView .studio-panel');
+    panel?.insertAdjacentHTML('beforeend', `<button class="btn btn-outline-danger ms-2" onclick="deleteProjectData('${project.id}')">Excluir arquivos e manter projeto</button>`);
+    return;
+  }
   if (project.status !== 'ready') return;
   const actions = document.querySelector('#projectView .section-head .d-flex');
   if (!actions) return;
-  actions.insertAdjacentHTML('afterbegin', `<div class="dropdown"><button class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">Armazenamento</button><ul class="dropdown-menu dropdown-menu-dark"><li><button class="dropdown-item" onclick="cleanupProject('${project.id}')">Liberar espaço mantendo histórico</button></li><li><button class="dropdown-item" onclick="archiveProject('${project.id}')">Arquivar no histórico</button></li></ul></div>`);
+  actions.insertAdjacentHTML('afterbegin', `<div class="dropdown"><button class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">Armazenamento</button><ul class="dropdown-menu dropdown-menu-dark"><li><button class="dropdown-item" onclick="cleanupProject('${project.id}')">Limpar temporários</button></li><li><button class="dropdown-item text-danger" onclick="deleteProjectData('${project.id}')">Excluir arquivos e manter projeto</button></li><li><button class="dropdown-item" onclick="archiveProject('${project.id}')">Arquivar no histórico</button></li></ul></div>`);
 };
 
 setTimeout(installHistoryButton, 500);
