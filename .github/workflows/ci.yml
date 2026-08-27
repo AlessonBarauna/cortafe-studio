@@ -17,6 +17,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - name: Garantir FFmpeg para o teste de renderização
+        shell: pwsh
+        run: if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { choco install ffmpeg --no-progress -y }
       - run: dotnet restore CortaFeStudio.sln --configfile NuGet.Config
       - run: dotnet build CortaFeStudio.sln -c Release --no-restore
       - name: Executar testes automatizados

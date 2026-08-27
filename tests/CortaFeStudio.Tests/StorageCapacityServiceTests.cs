@@ -35,6 +35,12 @@ public sealed class StorageCapacityServiceTests : IDisposable
     }
 
     [Fact]
+    public void Estimate_AquisicaoEmLote_ReservaEspacoParaCadaProjeto()
+    {
+        Assert.Equal(StorageCapacityService.Estimate(StorageOperation.Acquisition, 60), StorageCapacityService.Estimate(StorageOperation.Acquisition, 60, 4) / 4);
+    }
+
+    [Fact]
     public async Task CleanupTemporary_RemoveSomenteExtensoesComprovadamenteTemporarias()
     {
         Directory.CreateDirectory(_root); var environment = new TestEnvironment(_root); var store = new ProjectStore(environment); var project = await store.CreateAsync("Teste", SourceKind.Upload, "video.mp4", null); var directory = store.ProjectDirectory(project.Id);
