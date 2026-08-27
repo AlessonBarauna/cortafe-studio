@@ -16,7 +16,9 @@ public sealed class PipelineEndToEndTests : IDisposable
     public async Task RenderCompleto_GeraMp4ProfissionalEPassaNoQualityGate()
     {
         Directory.CreateDirectory(_root); var apiRoot = FindApiRoot(); var toolEnvironment = new TestEnvironment(apiRoot); var dataEnvironment = new TestEnvironment(_root);
-        var tools = new ToolService(toolEnvironment); Assert.True(File.Exists(tools.Find("ffmpeg"))); Assert.True(File.Exists(tools.Find("ffprobe")));
+        var tools = new ToolService(toolEnvironment);
+        Assert.Contains("ffmpeg version", await tools.CaptureAsync(tools.Find("ffmpeg"), ["-version"], _root), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ffprobe version", await tools.CaptureAsync(tools.Find("ffprobe"), ["-version"], _root), StringComparison.OrdinalIgnoreCase);
         var source = Path.Combine(_root, "synthetic-source.mp4");
         await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30:duration=6", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=6", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", source], _root);
 
