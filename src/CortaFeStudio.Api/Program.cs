@@ -19,6 +19,7 @@ builder.Services.AddSingleton<HardwareEncoderDetector>();
 builder.Services.AddSingleton<ClipVariantService>();
 builder.Services.AddSingleton<QualityGateService>();
 builder.Services.AddSingleton<MediaPipeline>();
+builder.Services.AddSingleton<RenderJobService>();
 builder.Services.AddSingleton<EditorialScoringService>();
 builder.Services.AddSingleton<EditorialCandidateSelector>();
 builder.Services.AddSingleton<EditorialAnalyzer>();
@@ -341,13 +342,19 @@ api.MapPost("/projects/{id}/clips/{clipId}/cover", async (string id, string clip
     catch (Exception ex) { return Results.Problem(ex.Message); }
 });
 
-api.MapPost("/projects/{id}/clips/{clipId}/render", async (string id, string clipId, ProjectStore store, MediaPipeline pipeline) =>
+api.MapPost("/projects/{id}/clips/{clipId}/render", async (string id, string clipId, ProjectStore store, RenderJobService jobs) =>
 {
     var project = store.Get(id);
     var clip = project?.Clips.FirstOrDefault(c => c.Id == clipId);
     if (project is null || clip is null) return Results.NotFound();
-    try { await pipeline.RenderClipAsync(project, clip); await store.SaveAsync(project); return Results.Ok(clip); }
+    try { await jobs.RunClipAsync(project, clip); await store.SaveAsync(project); return Results.Ok(clip); }
     catch (Exception ex) { return Results.Problem(ex.Message); }
+});
+api.MapPost("/projects/{id}/clips/{clipId}/render/cancel", (string id, string clipId, RenderJobService jobs) => jobs.Cancel(id, clipId) ? Results.Ok() : Results.NotFound());
+api.MapPost("/projects/{id}/clips/{clipId}/preview", async (string id, string clipId, ProjectStore store, MediaPipeline pipeline, CancellationToken ct) =>
+{
+    var project = store.Get(id); var clip = project?.Clips.FirstOrDefault(item => item.Id == clipId); if (project is null || clip is null) return Results.NotFound();
+    try { return Results.Ok(new { path = await pipeline.RenderPreviewAsync(project, clip, ct) }); } catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
 
 api.MapPost("/projects/{id}/reanalyze", async (string id, ProjectStore store, MediaPipeline pipeline) =>
@@ -390,12 +397,13 @@ api.MapPost("/performance", async (RecordPerformanceRequest request, ProjectStor
     catch (ArgumentOutOfRangeException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
 
-api.MapPost("/projects/{id}/render-all", async (string id, ProjectStore store, MediaPipeline pipeline) =>
+api.MapPost("/projects/{id}/render-all", async (string id, ProjectStore store, RenderJobService jobs) =>
 {
     var project = store.Get(id); if (project is null) return Results.NotFound();
-    try { await pipeline.RenderAllAsync(project); return Results.Ok(project.Clips); }
+    try { await jobs.RunBatchAsync(project); return Results.Ok(project.Clips); }
     catch (Exception ex) { return Results.Problem(ex.Message); }
 });
+api.MapPost("/projects/{id}/render-all/cancel", (string id, RenderJobService jobs) => jobs.CancelBatch(id) ? Results.Ok() : Results.NotFound());
 
 api.MapPost("/projects/{id}/recover-youtube-captions", async (string id, ProjectStore store, MediaPipeline pipeline) =>
 {

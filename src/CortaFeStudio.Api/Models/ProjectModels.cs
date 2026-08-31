@@ -123,6 +123,8 @@ public sealed class ClipCandidate
     public string? LastRenderFingerprint { get; set; }
     public bool RenderOutdated { get; set; }
     public double PlaybackSpeed { get; set; } = 1;
+    public string? PreviewPath { get; set; }
+    public string? LastPreviewFingerprint { get; set; }
     public string DiversityTopic { get; set; } = "";
     public double DiversityScore { get; set; }
 }
