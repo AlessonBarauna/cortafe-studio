@@ -74,6 +74,10 @@ api.MapPost("/tools/yt-dlp/update", async (ToolUpdateService updates, Cancellati
     try { return Results.Ok(await updates.UpdateYtDlpAsync(ct)); } catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
 api.MapGet("/projects", (ProjectStore store) => store.List());
+api.MapPut("/projects/{id}/library", async (string id, LibraryProjectUpdate request, ProjectStore store) =>
+{
+    var project = store.Get(id); if (project is null) return Results.NotFound(); project.Favorite = request.Favorite ?? project.Favorite; project.Pinned = request.Pinned ?? project.Pinned; await store.SaveAsync(project); return Results.Ok(project);
+});
 api.MapGet("/queue", (ProjectQueue queue) => queue.Status());
 api.MapGet("/failures", (ProjectStore store) => store.ListAll()
     .Where(project => project.Status == ProjectStatus.Failed || project.FailureHistory.Count > 0)
@@ -202,6 +206,12 @@ api.MapPost("/projects/{id}/delete-data", async (string id, ProjectStore store, 
     var project = store.Get(id); if (project is null) return Results.NotFound();
     try { return Results.Ok(new { freedBytes = await storage.DeleteProjectDataAsync(project) }); }
     catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+});
+api.MapPost("/projects/delete-data-batch", async (BatchProjectDataRequest request, ProjectStore store, StorageService storage) =>
+{
+    long freed = 0; var cleaned = new List<string>();
+    foreach (var id in request.ProjectIds.Distinct().Take(50)) { var project = store.Get(id); if (project is null || project.Status is not (ProjectStatus.Ready or ProjectStatus.Failed or ProjectStatus.Cancelled)) continue; freed += await storage.DeleteProjectDataAsync(project); cleaned.Add(id); }
+    return Results.Ok(new { freedBytes = freed, projectIds = cleaned });
 });
 api.MapPost("/projects/{id}/archive", async (string id, ProjectStore store, StorageService storage) =>
 {

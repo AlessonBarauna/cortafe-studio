@@ -39,6 +39,7 @@ public sealed class ProjectStoreTests : IDisposable
         var store = new ProjectStore(environment);
         var project = await store.CreateAsync("Checkpoint", SourceKind.YouTube, "https://youtube.com/watch?v=teste", null);
         project.CompletedStages.Add("media");
+        project.Favorite = true; project.Pinned = true;
         project.IsRendering = true; project.RenderCompleted = 2; project.RenderTotal = 5;
         await store.SaveAsync(project);
         var reloaded = new ProjectStore(environment).Get(project.Id);
@@ -47,6 +48,8 @@ public sealed class ProjectStoreTests : IDisposable
         Assert.True(reloaded.IsRendering);
         Assert.Equal(2, reloaded.RenderCompleted);
         Assert.Equal(5, reloaded.RenderTotal);
+        Assert.True(reloaded.Favorite);
+        Assert.True(reloaded.Pinned);
     }
 
     [Fact]

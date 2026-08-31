@@ -37,6 +37,8 @@ public sealed class VideoProject
     public int RenderCompleted { get; set; }
     public int RenderTotal { get; set; }
     public bool Archived { get; set; }
+    public bool Favorite { get; set; }
+    public bool Pinned { get; set; }
 }
 
 public sealed class ProjectFailureAttempt
@@ -250,3 +252,5 @@ public record ReanalyzeRequest(string? Topic, int? ClipCount, bool Render = fals
 public record ClipFeedbackRequest(string Feedback);
 public record BatchFeedbackRequest(List<string> ClipIds, string Feedback);
 public record TikTokWorkflowUpdate(string Status, DateTimeOffset? ScheduledAt = null);
+public record LibraryProjectUpdate(bool? Favorite = null, bool? Pinned = null);
+public record BatchProjectDataRequest(List<string> ProjectIds);
