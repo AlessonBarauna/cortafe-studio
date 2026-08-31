@@ -127,6 +127,9 @@ public sealed class ClipCandidate
     public string? LastPreviewFingerprint { get; set; }
     public string DiversityTopic { get; set; } = "";
     public double DiversityScore { get; set; }
+    public string TikTokWorkflowStatus { get; set; } = "draft";
+    public DateTimeOffset? TikTokScheduledAt { get; set; }
+    public DateTimeOffset? TikTokPublishedAt { get; set; }
 }
 public sealed class CandidateAnalysisReport
 {
@@ -246,3 +249,4 @@ public record CleanupProjectRequest(bool DeleteSource = false);
 public record ReanalyzeRequest(string? Topic, int? ClipCount, bool Render = false);
 public record ClipFeedbackRequest(string Feedback);
 public record BatchFeedbackRequest(List<string> ClipIds, string Feedback);
+public record TikTokWorkflowUpdate(string Status, DateTimeOffset? ScheduledAt = null);

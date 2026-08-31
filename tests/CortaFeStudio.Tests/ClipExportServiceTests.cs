@@ -34,6 +34,19 @@ public sealed class ClipExportServiceTests : IDisposable
         Assert.Contains(archive.Entries, entry => entry.FullName.StartsWith("legendas/") && entry.Name.EndsWith(".txt"));
         Assert.Contains(archive.Entries, entry => entry.Name == "programacao-tiktok-studio.csv");
         Assert.Contains(archive.Entries, entry => entry.Name == "LEIA-ME.txt");
+        var manifest = archive.GetEntry("programacao-tiktok-studio.csv")!;
+        using var reader = new StreamReader(manifest.Open()); var csv = await reader.ReadToEndAsync();
+        Assert.Contains("data_sugerida", csv); Assert.Contains("tema", csv);
+    }
+
+    [Fact]
+    public async Task PacoteTikTokStudio_NaoIncluiCorteJaPublicado()
+    {
+        var store = new ProjectStore(new TestEnvironment(_root)); var project = await store.CreateAsync("Campanha", SourceKind.Upload, "video.mp4", null); var directory = store.ProjectDirectory(project.Id);
+        await File.WriteAllBytesAsync(Path.Combine(directory, "novo.mp4"), [1]); await File.WriteAllBytesAsync(Path.Combine(directory, "publicado.mp4"), [2]);
+        project.Clips = [new() { Title = "Novo", VideoPath = "novo.mp4", Approved = true }, new() { Title = "Publicado", VideoPath = "publicado.mp4", Approved = true, TikTokWorkflowStatus = "published" }];
+        using var archive = ZipFile.OpenRead(await new ClipExportService(store).CreateTikTokStudioPackageAsync(project));
+        Assert.Contains(archive.Entries, entry => entry.Name.Contains("Novo")); Assert.DoesNotContain(archive.Entries, entry => entry.Name.Contains("Publicado"));
     }
 
     public void Dispose() { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); if (Directory.Exists(_root)) Directory.Delete(_root, true); }

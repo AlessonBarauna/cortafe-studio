@@ -27,7 +27,7 @@ public sealed class CreateCalendarRequest
 {
     public string ProjectId { get; set; } = "";
     public List<string> ClipIds { get; set; } = [];
-    public List<SocialPlatform> Platforms { get; set; } = [SocialPlatform.YouTube, SocialPlatform.Instagram];
+    public List<SocialPlatform> Platforms { get; set; } = [SocialPlatform.TikTok];
     public SchedulingStrategy Strategy { get; set; } = new();
 }
 
