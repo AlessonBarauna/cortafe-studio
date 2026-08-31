@@ -74,6 +74,10 @@ api.MapPost("/tools/yt-dlp/update", async (ToolUpdateService updates, Cancellati
 });
 api.MapGet("/projects", (ProjectStore store) => store.List());
 api.MapGet("/queue", (ProjectQueue queue) => queue.Status());
+api.MapGet("/failures", (ProjectStore store) => store.ListAll()
+    .Where(project => project.Status == ProjectStatus.Failed || project.FailureHistory.Count > 0)
+    .Select(project => new { project.Id, project.Name, project.Status, project.Stage, project.Error, project.FailureCode, project.Attempt, project.NextRetryAt, project.LastCheckpoint, failures = project.FailureHistory.OrderByDescending(item => item.At) })
+    .OrderByDescending(project => project.failures.FirstOrDefault()?.At ?? DateTime.MinValue));
 api.MapGet("/storage", (StorageService storage) => storage.Report());
 api.MapGet("/storage/capacity", (StorageOperation operation, double durationSeconds, int itemCount, StorageCapacityService storage) => storage.Check(operation, durationSeconds, itemCount));
 api.MapGet("/storage/new-project-capacity", (int itemCount, long uploadBytes, StorageCapacityService storage) => storage.CheckNewProject(itemCount, uploadBytes));
