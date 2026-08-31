@@ -11,43 +11,8 @@ public sealed class EditorialCandidateSelector
     {
         var candidates = FilterByTopic(pool, options, report);
 
-        var targetPool = Math.Clamp(
-            options.ClipCount * 4,
-            options.ClipCount,
-            40);
-
-        var diverse = new List<ClipCandidate>();
-
-        foreach (var candidate in candidates
-                     .OrderByDescending(clip => clip.Score)
-                     .Take(targetPool * 3))
-        {
-            var conflicts = diverse.Any(existing =>
-                Overlap(existing, candidate) > .24 ||
-                Similar(
-                    existing.Transcript,
-                    candidate.Transcript) > .72);
-
-            if (conflicts)
-            {
-                if (report is not null)
-                {
-                    if (diverse.Any(existing => Overlap(existing, candidate) > .24)) report.RejectedByOverlap++;
-                    else report.RejectedByContext++;
-                }
-                continue;
-            }
-
-            diverse.Add(candidate);
-
-            if (diverse.Count >= targetPool)
-                break;
-        }
-
-        return diverse
-            .Take(options.ClipCount)
-            .OrderByDescending(clip => clip.Score)
-            .ToList();
+        var duration = candidates.Count == 0 ? 0 : candidates.Max(clip => clip.End);
+        return EditorialDiversityService.Select(candidates, options.ClipCount, duration, report);
     }
 
     public List<ClipCandidate> SelectWorship(
@@ -112,37 +77,4 @@ public sealed class EditorialCandidateSelector
                    second.End - second.Start);
     }
 
-    private static double Similar(
-        string first,
-        string second)
-    {
-        var firstTokens =
-            Tokenize(first).ToHashSet();
-
-        var secondTokens =
-            Tokenize(second).ToHashSet();
-
-        if (firstTokens.Count == 0 ||
-            secondTokens.Count == 0)
-        {
-            return 0;
-        }
-
-        return firstTokens
-                   .Intersect(secondTokens)
-                   .Count() /
-               (double)firstTokens
-                   .Union(secondTokens)
-                   .Count();
-    }
-
-    private static List<string> Tokenize(string value)
-    {
-        return value
-            .ToLowerInvariant()
-            .Split(
-                [' ', ',', '.', '?', '!', ':', ';', '—', '-'],
-                StringSplitOptions.RemoveEmptyEntries)
-            .ToList();
-    }
 }

@@ -47,23 +47,7 @@ public sealed class LongVideoEditorialAnalyzer(EditorialAnalyzer analyzer)
             unique.Add(candidate);
         }
 
-        var selectedLong = new List<(ClipCandidate Clip, int Chunk)>();
-        var populatedChunks = unique.Select(item => item.Chunk).Distinct().Count();
-        var perChunk = Math.Max(1, (int)Math.Ceiling(options.ClipCount / (double)Math.Max(1, populatedChunks)));
-        foreach (var candidate in unique)
-        {
-            if (selectedLong.Count(item => item.Chunk == candidate.Chunk) >= perChunk) continue;
-            selectedLong.Add(candidate); if (selectedLong.Count == options.ClipCount) break;
-        }
-        foreach (var candidate in unique.Where(candidate => !selectedLong.Contains(candidate)))
-        {
-            selectedLong.Add(candidate); if (selectedLong.Count == options.ClipCount) break;
-        }
-
-        var result = selectedLong
-            .Select(item => item.Clip)
-            .OrderByDescending(clip => clip.Score)
-            .ToList();
+        var result = EditorialDiversityService.Select(unique.Select(item => item.Clip), options.ClipCount, duration, report);
 
         RefineAndScore(result, transcript, options);
         report.RequestedClips = options.ClipCount;
