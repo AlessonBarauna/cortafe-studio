@@ -19,6 +19,14 @@ Estúdio local para transformar pregações, ministrações, podcasts e aulas em
 - Linha do tempo com forma de onda, ajuste visual de início e fim, edição da transcrição, duplicação e divisão de cortes.
 - Renderização 9:16 em MP4 com legendas dinâmicas, destaque sincronizado da palavra falada e download individual.
 - Biblioteca local de projetos, sem conta e sem telemetria.
+- Central de recuperação com histórico de falhas, checkpoints e até três retentativas automáticas para erros transitórios.
+- Seleção editorial com diversidade semântica para evitar vinte cortes sobre o mesmo assunto.
+- Editor com salvamento automático, histórico de 50 alterações e atalhos para desfazer, refazer e salvar.
+- Prévia rápida em 360p, cache de renderização, cancelamento individual e controle de lotes.
+- Fluxo TikTok com estados por corte e pacote organizado para programação no TikTok Studio.
+- Biblioteca avançada com pesquisa em transcrições, filtros, favoritos, fixação, tamanho e limpeza em lote.
+
+O fluxo completo de operação está documentado em [`docs/fluxo-profissional.md`](docs/fluxo-profissional.md).
 
 ## Requisitos
 
@@ -100,7 +108,7 @@ O sistema destina-se a conteúdo próprio ou autorizado. Links privados, transmi
 ## Arquitetura
 
 - ASP.NET Core 8 Minimal API.
-- Worker nativo com `BackgroundService` e `Channel`.
+- Worker nativo com `BackgroundService`, fila em memória e estado persistido por projeto para retomada após reinicialização.
 - Catálogo transacional em SQLite, com JSON por projeto mantido como backup portátil.
 - Limpeza de temporários, cálculo de espaço ocupado e arquivamento de projetos.
 - Frontend responsivo em HTML, JavaScript e Bootstrap 5.3 customizado.
