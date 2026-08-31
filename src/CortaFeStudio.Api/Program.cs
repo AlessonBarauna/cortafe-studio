@@ -378,6 +378,12 @@ api.MapPost("/projects/{id}/clips/{clipId}/feedback", async (string id, string c
     if (updated is not null && selected is not null) await learning.RecordAsync(updated, selected, request.Feedback);
     return updated is null ? Results.NotFound() : Results.Ok(updated);
 });
+api.MapPut("/projects/{id}/clips/{clipId}/tiktok-workflow", async (string id, string clipId, TikTokWorkflowUpdate request, ProjectStore store) =>
+{
+    var allowed = new[] { "draft", "ready", "scheduled", "published", "discarded" }; if (!allowed.Contains(request.Status)) return Results.BadRequest(new { error = "Status do TikTok inválido." });
+    var project = store.Get(id); var clip = project?.Clips.FirstOrDefault(item => item.Id == clipId); if (project is null || clip is null) return Results.NotFound();
+    clip.TikTokWorkflowStatus = request.Status; clip.TikTokScheduledAt = request.Status == "scheduled" ? request.ScheduledAt : null; clip.TikTokPublishedAt = request.Status == "published" ? DateTimeOffset.Now : clip.TikTokPublishedAt; await store.SaveAsync(project); return Results.Ok(clip);
+});
 api.MapPost("/projects/{id}/clips/feedback-batch", async (string id, BatchFeedbackRequest request, ProjectStore store, EditorialLearningService learning) =>
 {
     if (request.Feedback is not ("approved" or "rejected")) return Results.BadRequest(new { error = "Feedback inválido." });

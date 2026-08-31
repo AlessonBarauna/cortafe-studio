@@ -33,7 +33,7 @@ public sealed class ClipExportService(ProjectStore store)
     public async Task<string> CreateTikTokStudioPackageAsync(VideoProject project, CancellationToken ct = default)
     {
         var directory = store.ProjectDirectory(project.Id);
-        var rendered = project.Clips.Where(clip => clip.Approved && !string.IsNullOrWhiteSpace(clip.VideoPath))
+        var rendered = project.Clips.Where(clip => clip.Approved && clip.TikTokWorkflowStatus != "published" && !string.IsNullOrWhiteSpace(clip.VideoPath))
             .Select(clip => (Clip: clip, Path: Path.Combine(directory, clip.VideoPath!)))
             .Where(item => File.Exists(item.Path)).OrderByDescending(item => item.Clip.Score).ToList();
         if (rendered.Count == 0) throw new InvalidOperationException("Renderize pelo menos um corte aprovado antes de criar o pacote TikTok Studio.");
@@ -42,7 +42,8 @@ public sealed class ClipExportService(ProjectStore store)
         await using (var stream = File.Create(temporary))
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create))
         {
-            var csv = new StringBuilder("ordem;arquivo;titulo;descricao;hashtags;duracao_segundos\r\n");
+            var csv = new StringBuilder("ordem;arquivo;titulo;descricao;hashtags;tema;status;data_sugerida;duracao_segundos\r\n");
+            var start = DateTimeOffset.Now.Date.AddDays(1); var times = new[] { new TimeSpan(10, 0, 0), new TimeSpan(19, 0, 0) };
             for (var index = 0; index < rendered.Count; index++)
             {
                 ct.ThrowIfCancellationRequested(); var clip = rendered[index].Clip;
@@ -52,7 +53,8 @@ public sealed class ClipExportService(ProjectStore store)
                 var hashtags = string.Join(' ', clip.Hashtags); var postText = $"{clip.Title}\n\n{clip.Caption}\n\n{hashtags}".Trim();
                 var textEntry = archive.CreateEntry($"legendas/{index + 1:00}-{safeTitle}.txt", CompressionLevel.Optimal);
                 await using (var writer = new StreamWriter(textEntry.Open(), new UTF8Encoding(false))) await writer.WriteAsync(postText.AsMemory(), ct);
-                csv.AppendLine(string.Join(';', index + 1, Csv(fileName), Csv(clip.Title), Csv(clip.Caption), Csv(hashtags), Math.Round((clip.End - clip.Start) / RenderFilterFactory.NormalizePlaybackSpeed(clip.PlaybackSpeed), 1)));
+                var suggested = new DateTimeOffset(start.AddDays(index / 2).Add(times[index % 2]), TimeZoneInfo.Local.GetUtcOffset(start));
+                csv.AppendLine(string.Join(';', index + 1, Csv(fileName), Csv(clip.Title), Csv(clip.Caption), Csv(hashtags), Csv(clip.DiversityTopic), Csv(clip.TikTokWorkflowStatus), Csv(suggested.ToString("yyyy-MM-dd HH:mm")), Math.Round((clip.End - clip.Start) / RenderFilterFactory.NormalizePlaybackSpeed(clip.PlaybackSpeed), 1)));
             }
             var manifest = archive.CreateEntry("programacao-tiktok-studio.csv", CompressionLevel.Optimal);
             await using (var writer = new StreamWriter(manifest.Open(), new UTF8Encoding(true))) await writer.WriteAsync(csv.ToString().AsMemory(), ct);

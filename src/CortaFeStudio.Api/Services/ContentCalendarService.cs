@@ -24,7 +24,7 @@ public sealed class ContentCalendarService(ProjectStore projects, SocialService 
     public static IReadOnlyList<ScheduledContentItem> Plan(VideoProject project, IReadOnlyList<ClipCandidate> source, IReadOnlyList<SocialPlatform> requestedPlatforms, SchedulingStrategy strategy)
     {
         var clips = Balance(source.OrderByDescending(clip => clip.SocialScore.Potential).ThenByDescending(clip => clip.Score).ToList());
-        var platforms = requestedPlatforms.Distinct().DefaultIfEmpty(SocialPlatform.YouTube).ToList();
+        var platforms = requestedPlatforms.Distinct().DefaultIfEmpty(SocialPlatform.TikTok).ToList();
         var slots = BuildSlots(strategy, clips.Count * platforms.Count); var jobs = new List<(ClipCandidate Clip, SocialPlatform Platform)>();
         for (var platformIndex = 0; platformIndex < platforms.Count; platformIndex++)
             for (var clipIndex = 0; clipIndex < clips.Count; clipIndex++) jobs.Add((clips[(clipIndex + platformIndex) % clips.Count], platforms[platformIndex]));
