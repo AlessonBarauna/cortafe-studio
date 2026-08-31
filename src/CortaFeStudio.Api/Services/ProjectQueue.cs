@@ -43,15 +43,34 @@ public sealed class ProjectQueue(ProjectStore store, MediaPipeline pipeline, ILo
             lock (_sync) _active = id;
             using var projectCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
             lock (_sync) _activeCancellation = projectCancellation;
+            TimeSpan? automaticRetryDelay = null;
             try
             {
-                project.Attempt++; project.StartedAt = DateTime.UtcNow; project.Error = null; project.FailureCode = null;
+                project.Attempt++; project.StartedAt = DateTime.UtcNow; project.Error = null; project.FailureCode = null; project.NextRetryAt = null;
                 await pipeline.ProcessAsync(project, projectCancellation.Token); await store.SaveAsync(project);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { project.Status = ProjectStatus.Queued; project.Stage = "Aguardando retomada"; await store.SaveAsync(project); }
             catch (OperationCanceledException) { project.Status = ProjectStatus.Cancelled; project.Stage = "Processamento cancelado"; project.Error = null; await store.SaveAsync(project); }
-            catch (Exception ex) { logger.LogError(ex, "Falha no projeto {Id}", id); project.Status = ProjectStatus.Failed; project.Error = ex.Message; project.FailureCode = ToolService.ClassifyFailure(ex.Message); project.Stage = "Processamento interrompido"; await store.SaveAsync(project); }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Falha no projeto {Id}", id);
+                var code = ToolService.ClassifyFailure(ex.Message);
+                var retry = project.Attempt < FailureRecoveryPolicy.MaximumAttempts && FailureRecoveryPolicy.IsTransient(code, ex.Message);
+                automaticRetryDelay = retry ? FailureRecoveryPolicy.Delay(project.Attempt) : null;
+                project.Error = ex.Message; project.FailureCode = code;
+                project.NextRetryAt = automaticRetryDelay is null ? null : DateTime.UtcNow.Add(automaticRetryDelay.Value);
+                project.FailureHistory.Add(new ProjectFailureAttempt { Attempt = project.Attempt, Stage = project.LastCheckpoint ?? project.Stage, Code = code, Message = ex.Message, AutomaticRetry = retry, RetryAt = project.NextRetryAt });
+                if (project.FailureHistory.Count > 20) project.FailureHistory.RemoveRange(0, project.FailureHistory.Count - 20);
+                project.Status = retry ? ProjectStatus.Queued : ProjectStatus.Failed;
+                project.Stage = retry ? $"Falha temporária; nova tentativa {project.Attempt + 1} de {FailureRecoveryPolicy.MaximumAttempts}" : "Processamento interrompido";
+                await store.SaveAsync(project);
+            }
             finally { lock (_sync) { _scheduled.Remove(id); _active = null; _activeCancellation = null; } }
+            if (automaticRetryDelay is { } delay)
+            {
+                try { await Task.Delay(delay, stoppingToken); await EnqueueAsync(id); }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
+            }
         }
     }
 }

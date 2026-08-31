@@ -24,6 +24,8 @@ public sealed class VideoProject
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public int Attempt { get; set; }
+    public DateTime? NextRetryAt { get; set; }
+    public List<ProjectFailureAttempt> FailureHistory { get; set; } = [];
     public List<string> CompletedStages { get; set; } = [];
     public string? LastCheckpoint { get; set; }
     public ProjectOptions Options { get; set; } = new();
@@ -35,6 +37,17 @@ public sealed class VideoProject
     public int RenderCompleted { get; set; }
     public int RenderTotal { get; set; }
     public bool Archived { get; set; }
+}
+
+public sealed class ProjectFailureAttempt
+{
+    public DateTime At { get; set; } = DateTime.UtcNow;
+    public int Attempt { get; set; }
+    public string Stage { get; set; } = "inicial";
+    public string Code { get; set; } = "processing-error";
+    public string Message { get; set; } = "";
+    public bool AutomaticRetry { get; set; }
+    public DateTime? RetryAt { get; set; }
 }
 
 public sealed class ProjectOptions
