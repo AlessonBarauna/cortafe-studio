@@ -15,6 +15,18 @@ public sealed class PlatformMetadataTests
         Assert.Contains("Compartilhe", clip.PlatformMetadata.YouTube.CallToAction);
         Assert.Contains("despertou", clip.PlatformMetadata.Instagram.CallToAction);
         Assert.False(string.IsNullOrWhiteSpace(clip.PlatformMetadata.TikTok.Caption));
+        Assert.Contains(clip.PlatformMetadata.TikTok.CallToAction, clip.PlatformMetadata.TikTok.Caption);
+        Assert.NotEmpty(clip.PlatformMetadata.HookOptions);
+        Assert.InRange(clip.PlatformMetadata.CopyScore, 0, 100);
+    }
+
+    [Fact]
+    public void Ganchos_SaoExtraidosDoConteudoSemClickbaitInventado()
+    {
+        var clip = Clip();
+        var hooks = ShortFormMetadataService.BuildHookOptions(clip, "pregacao");
+        Assert.Contains(hooks, hook => hook.Contains("promessa", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(hooks, hook => hook.Contains("chocante", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
