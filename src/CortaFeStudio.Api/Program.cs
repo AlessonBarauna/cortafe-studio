@@ -44,6 +44,7 @@ builder.Services.AddSingleton<SilenceTrimmingService>();
 builder.Services.AddSingleton<FramingService>();
 builder.Services.AddSingleton<ManualClipService>();
 builder.Services.AddSingleton<WaveformService>();
+builder.Services.AddSingleton<ClipSubtitleTranscriptionService>();
 builder.Services.AddSingleton<ClipExportService>();
 builder.Services.AddSingleton<LocalSecurityService>();
 builder.Services.AddHostedService<PublicationScheduler>();
@@ -310,6 +311,21 @@ api.MapPost("/projects/{id}/clips/{clipId}/subtitles/regenerate", async (string 
     clip.SubtitleTrack = SubtitleTrackService.Create(clip, project.Transcript);
     await store.SaveAsync(project);
     return Results.Ok(clip.SubtitleTrack);
+});
+api.MapPost("/projects/{id}/clips/{clipId}/subtitles/from-audio", async (string id, string clipId, ProjectStore store, ClipSubtitleTranscriptionService transcription, CancellationToken ct) =>
+{
+    var project = store.Get(id); var clip = project?.Clips.FirstOrDefault(item => item.Id == clipId);
+    if (project is null || clip is null) return Results.NotFound();
+    try
+    {
+        var previousFingerprint = RenderStateService.Fingerprint(clip);
+        clip.SubtitleTrack = await transcription.TranscribeAsync(project, clip, ct);
+        clip.SubtitleStyle = clip.SubtitleTrack.Style;
+        RenderStateService.MarkIfChanged(clip, previousFingerprint);
+        await store.SaveAsync(project);
+        return Results.Ok(clip.SubtitleTrack);
+    }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
 api.MapPost("/projects/{id}/clips/{clipId}/title-suggestions", (string id, string clipId, ProjectStore store) =>
 {

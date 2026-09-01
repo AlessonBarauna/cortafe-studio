@@ -39,10 +39,15 @@
     inspector.insertAdjacentHTML('afterbegin', `<header class="cc-panel-head"><div><span>PROPRIEDADES</span><strong id="ccInspectorTitle">Corte selecionado</strong></div><i id="ccInspectorScore">0</i></header>`);
     const actions = root.querySelector('.section-head .d-flex');
     actions?.insertAdjacentHTML('afterbegin', `<span class="cc-render-chip"><i></i>${project.renderCompleted || project.clips.filter(clip => clip.videoPath).length}/${project.renderTotal || project.clips.length} renderizados</span><details class="cc-more-actions"><summary>Mais</summary><div><button type="button" data-cc-forward="approveAll">Aprovar todos</button><button type="button" data-cc-forward="reanalyze">Melhorar seleção</button></div></details>`);
+    layout.insertAdjacentHTML('afterbegin', toolRail());
     layout.insertAdjacentHTML('afterbegin', mediaBin(project));
     layout.insertAdjacentHTML('beforeend', timelineDock(project));
     bindWorkspace(project);
     if (activeClipId) selectClip(project, activeClipId);
+  }
+
+  function toolRail() {
+    return `<nav class="cc-tool-rail" aria-label="Ferramentas principais"><button class="active" type="button" data-cc-mode="cut"><b>⌁</b><span>Editar</span></button><button type="button" data-cc-mode="captions"><b>T</b><span>Legendas</span></button><button type="button" data-cc-mode="visual"><b>◐</b><span>Visual</span></button><button type="button" data-cc-mode="brand"><b>◇</b><span>Marca</span></button><button type="button" data-cc-mode="details"><b>•••</b><span>Detalhes</span></button></nav>`;
   }
 
   function mediaBin(project) {
@@ -56,6 +61,10 @@
 
   function bindWorkspace(project) {
     document.querySelectorAll('[data-cc-clip],[data-cc-track]').forEach(button => button.onclick = () => selectClip(project, button.dataset.ccClip || button.dataset.ccTrack));
+    document.querySelectorAll('[data-cc-mode]').forEach(button => button.onclick = () => {
+      document.querySelector(`.clip-card[data-clip="${activeClipId}"] [data-edit-mode="${button.dataset.ccMode}"]`)?.click();
+      document.querySelectorAll('[data-cc-mode]').forEach(item => item.classList.toggle('active', item === button));
+    });
     document.querySelectorAll('[data-cc-forward]').forEach(button => button.onclick = () => { document.querySelector(`#${button.dataset.ccForward}`)?.click(); button.closest('details').open = false; });
     document.querySelector('[data-cc-source]').onclick = () => switchEditorTab('source');
     document.querySelectorAll('[data-cc-zoom]').forEach(button => button.onclick = () => { timelineZoom = Math.max(1, Math.min(5, timelineZoom + (button.dataset.ccZoom === 'in' ? .5 : -.5))); document.querySelector('.cc-timeline-content')?.style.setProperty('--cc-zoom', timelineZoom); });
@@ -76,9 +85,12 @@
     root.querySelector('#ccInspectorTitle').textContent = clip.title;
     root.querySelector('#ccInspectorScore').textContent = `${Math.round(clip.score)} pts`;
     const max = Math.max(1, project.duration || clip.end);
+    const clipDuration = Math.max(.1, clip.end - clip.start);
+    root.querySelectorAll('[data-cc-track]').forEach(button => { if (button.dataset.ccTrack === id) { button.style.left = '0'; button.style.width = '100%'; button.querySelector('span').textContent = clip.title; } });
+    root.querySelectorAll('.cc-ruler span').forEach((label, index, all) => label.textContent = time(clipDuration * index / Math.max(1, all.length - 1)));
     setValue('ccTrimStart', clip.start); setValue('ccTrimEnd', clip.end); setValue('ccRangeStart', clip.start); setValue('ccRangeEnd', clip.end);
     ['ccRangeStart','ccRangeEnd'].forEach(field => root.querySelector(`#${field}`).max = max);
-    root.querySelector('#ccTrimDuration').textContent = time(clip.end - clip.start);
+    root.querySelector('#ccTrimDuration').textContent = time(clipDuration);
     root.querySelector('.cc-timeline-content')?.style.setProperty('--cc-zoom', timelineZoom);
     bindPreviewClock();
   }
