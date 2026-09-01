@@ -59,6 +59,16 @@ public sealed class RenderFilterFactoryTests
     }
 
     [Fact]
+    public void CreativeLook_AplicaTransicoesSomenteEmPontosEspacados()
+    {
+        var clip = new ClipCandidate { Start = 20, End = 80, TransitionStyle = "editorial", VisualDirection = new VisualDirectionAnalysis { SceneTransitionPoints = [3, 4, 12, 59.5] } };
+        var filter = RenderFilterFactory.CreativeLook(clip);
+        Assert.Contains("fade=t=out:st=2.89", filter);
+        Assert.Contains("fade=t=in:st=12", filter);
+        Assert.DoesNotContain("fade=t=in:st=4:", filter);
+    }
+
+    [Fact]
     public void Framing_SemGatilhoIncluiMovimentoDeAssinatura()
     {
         var filter = RenderFilterFactory.Framing(new ClipCandidate { Transcript = "trecho sem palavra de impacto suficiente para o movimento automático" });

@@ -6,7 +6,7 @@ def main():
     cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
     cap = cv2.VideoCapture(video); duration = max(1, end - start); observations = []
     sample_count = max(12, min(30, round(duration / 2)))
-    previous = None; areas = []; scene_changes = 0; previous_histogram = None
+    previous = None; areas = []; scene_changes = 0; scene_times = []; previous_histogram = None
     for i in range(sample_count):
         relative_time = duration * i / max(1, sample_count - 1)
         cap.set(cv2.CAP_PROP_POS_MSEC, (start + relative_time) * 1000)
@@ -17,6 +17,7 @@ def main():
         cv2.normalize(histogram, histogram)
         if previous_histogram is not None and cv2.compareHist(previous_histogram, histogram, cv2.HISTCMP_BHATTACHARYYA) > .42:
             scene_changes += 1
+            scene_times.append(round(relative_time, 3))
         previous_histogram = histogram
         faces = cascade.detectMultiScale(gray, scaleFactor=1.12, minNeighbors=5, minSize=(60, 60))
         if len(faces):
@@ -35,7 +36,7 @@ def main():
         "samples": len(centers), "sampleCount": sample_count,
         "coverage": len(centers) / sample_count, "stability": max(0, 1 - movement * 4),
         "prominence": sum(areas) / len(areas) if areas else 0,
-        "sceneChanges": scene_changes, "track": observations
+        "sceneChanges": scene_changes, "sceneTimes": scene_times, "track": observations
     }
     with open(output, "w", encoding="utf-8") as handle: json.dump(result, handle)
 if __name__ == "__main__": main()

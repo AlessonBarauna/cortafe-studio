@@ -91,6 +91,24 @@ public static class RenderFilterFactory
         return string.Join(',', filters);
     }
 
+    public static string CreativeLook(ClipCandidate clip)
+    {
+        var duration = Math.Max(0, clip.End - clip.Start);
+        var filters = new List<string> { CreativeLook(duration) };
+        if (clip.TransitionStyle == "smooth" || clip.VisualDirection.SceneTransitionPoints.Count == 0) return filters[0];
+        var transitionDuration = clip.TransitionStyle == "dynamic" ? .07 : .11;
+        var last = -10d;
+        foreach (var point in clip.VisualDirection.SceneTransitionPoints.Where(point => point > 1 && point < duration - 1).OrderBy(point => point))
+        {
+            if (point - last < 4) continue;
+            filters.Add($"fade=t=out:st={Scalar(Math.Max(.1, point - transitionDuration))}:d={Scalar(transitionDuration)}");
+            filters.Add($"fade=t=in:st={Scalar(point)}:d={Scalar(transitionDuration)}");
+            last = point;
+            if (filters.Count >= 9) break;
+        }
+        return string.Join(',', filters);
+    }
+
     public static (int Width, int Height) Dimensions(string? preset) => preset switch
     {
         "portrait" => (1080, 1350),

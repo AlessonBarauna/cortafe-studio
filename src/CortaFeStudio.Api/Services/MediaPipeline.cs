@@ -255,7 +255,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         var branding = RenderFilterFactory.Branding(clip, EscapeFilterPath(watermarkFile), watermarkFont);
         var videoAnalysis = await videoEnhancement.AnalyzeAsync(Path.Combine(dir, p.LocalMedia!), clip.Start, clip.End - clip.Start, ct);
         var enhancement = VideoEnhancementService.CreateProfile(videoAnalysis);
-        var filter = SilenceTrimmingService.VideoPrefix(trimPlan, clip.Start) + ComposeVideoFilter(enhancement.Filter, framing, ass, branding, RenderFilterFactory.CreativeLook(clip.End - clip.Start), speed);
+        var filter = SilenceTrimmingService.VideoPrefix(trimPlan, clip.Start) + ComposeVideoFilter(enhancement.Filter, framing, ass, branding, RenderFilterFactory.CreativeLook(clip), speed);
         logger.LogInformation("[Video] project={ProjectId} clip={ClipId} enhancement={Enhancement} luma={Luma} saturation={Saturation}", p.Id, clip.Id, enhancement.Kind, videoAnalysis.LumaAverage, videoAnalysis.SaturationAverage);
         var audioAnalysis = await audioAnalyzer.AnalyzeAsync(Path.Combine(dir, p.LocalMedia!), clip.Start, clip.End - clip.Start, p.Options.ContentType, ct);
         var audio = AudioFilterFactory.Create(audioAnalysis, trimPlan.FinalDuration, speed);
@@ -290,7 +290,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         if (string.IsNullOrWhiteSpace(project.LocalMedia)) throw new InvalidOperationException("O vídeo original não está disponível para gerar a prévia.");
         using var renderSlot = await workLimiter.EnterAsync(ProductionWorkKind.Render, ct);
         var framing = RenderFilterFactory.Framing(clip); var speed = project.Options.ContentType == "louvor" ? 1 : RenderFilterFactory.NormalizePlaybackSpeed(clip.PlaybackSpeed);
-        var filter = ComposeVideoFilter("null", framing, null, null, RenderFilterFactory.CreativeLook(clip.End - clip.Start), speed) + ",scale=360:-2";
+        var filter = ComposeVideoFilter("null", framing, null, null, RenderFilterFactory.CreativeLook(clip), speed) + ",scale=360:-2";
         await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-ss", F(clip.Start), "-to", F(clip.End), "-i", Path.Combine(dir, project.LocalMedia), "-vf", filter, "-an", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30", "-pix_fmt", "yuv420p", "-movflags", "+faststart", path], dir, ct);
         clip.PreviewPath = output; clip.LastPreviewFingerprint = fingerprint; await store.SaveAsync(project); return output;
     }
