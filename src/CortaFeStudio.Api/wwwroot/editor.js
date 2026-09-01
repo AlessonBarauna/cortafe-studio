@@ -10,6 +10,7 @@ clipCard = function (project, clip, index) {
       <label>Foco do vídeo<select class="form-select" name="cropFocus">${option('top', clip.cropFocus, 'Superior')}${option('center', clip.cropFocus || 'center', 'Central')}${option('bottom', clip.cropFocus, 'Inferior')}</select></label>
       <label>Composição<select class="form-select" name="layoutMode">${option('fill', clip.layoutMode || 'fill', 'Preencher 9:16')}${option('blur', clip.layoutMode, 'Fundo desfocado')}</select></label>
       <label>Formato de saída<select class="form-select" name="outputPreset">${option('vertical', clip.outputPreset || 'vertical', 'Vertical · 1080×1920')}${option('portrait', clip.outputPreset, 'Feed retrato · 1080×1350')}${option('square', clip.outputPreset, 'Quadrado · 1080×1080')}${option('landscape', clip.outputPreset, 'Horizontal · 1920×1080')}</select></label>
+      <label>Transições de cena<select class="form-select" name="transitionStyle">${option('smooth', clip.transitionStyle || 'smooth', 'Suave · contínua')}${option('editorial', clip.transitionStyle, 'Editorial · cortes elegantes')}${option('dynamic', clip.transitionStyle, 'Dinâmica · ritmo rápido')}</select><small class="text-secondary d-block mt-1">Usa as mudanças de cena detectadas no vídeo.</small></label>
       ${speedControl}
       <label class="form-check editor-check"><input class="form-check-input" type="checkbox" name="silenceTrimmingEnabled" ${clip.silenceTrimmingEnabled !== false ? 'checked' : ''}><span>Reduzir apenas pausas longas</span><small class="text-secondary d-block">Mantém a fala e remove silêncios seguros.</small></label>
       <label>Posição horizontal<input class="form-range" name="cropX" type="range" min="0" max="1" step=".01" value="${clip.cropX ?? .5}"></label>
@@ -30,7 +31,7 @@ saveClip = async function (project, card) {
     start: +value('start'), end: +value('end'), title: value('title'), coverText: value('coverText'),
     caption: value('caption'), approved: true, cropFocus: value('cropFocus'),
     subtitleStyle: value('subtitleStyle'), coverAccent: value('coverAccent'),
-    coverPosition: value('coverPosition'), coverTimestamp: +value('coverTimestamp'), cropX: +value('cropX'), layoutMode: value('layoutMode'), outputPreset: value('outputPreset'), playbackSpeed: +(value('playbackSpeed') || 1), silenceTrimmingEnabled: card.querySelector('[name="silenceTrimmingEnabled"]')?.checked ?? true
+    coverPosition: value('coverPosition'), coverTimestamp: +value('coverTimestamp'), cropX: +value('cropX'), layoutMode: value('layoutMode'), outputPreset: value('outputPreset'), playbackSpeed: +(value('playbackSpeed') || 1), silenceTrimmingEnabled: card.querySelector('[name="silenceTrimmingEnabled"]')?.checked ?? true, transitionStyle: value('transitionStyle')
   };
   await api(`/api/projects/${project.id}/clips/${clip.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   Object.assign(clip, body);

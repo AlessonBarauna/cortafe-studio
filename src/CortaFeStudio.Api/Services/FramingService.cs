@@ -24,12 +24,15 @@ public sealed class FramingService(ProjectStore store, ToolService tools)
         var detected = root.GetProperty("detected").GetBoolean();
         var coverage = Read(root, "coverage"); var stability = Read(root, "stability"); var prominence = Read(root, "prominence");
         var sceneChanges = root.TryGetProperty("sceneChanges", out var scenes) ? scenes.GetInt32() : 0;
+        var sceneTimes = root.TryGetProperty("sceneTimes", out var times)
+            ? times.EnumerateArray().Select(value => value.GetDouble()).Where(value => value >= 1 && value <= Math.Max(1, clip.End - clip.Start - 1)).ToList()
+            : [];
         var duration = Math.Max(1, clip.End - clip.Start); var sceneDensity = sceneChanges / duration * 60;
         var visualScore = Math.Round(Math.Clamp(coverage * 45 + stability * 20 + Math.Min(1, prominence / .08) * 20 + Math.Min(1, sceneDensity / 8) * 15, 0, 100), 1);
         clip.VisualDirection = new VisualDirectionAnalysis
         {
             Analyzed = true, SubjectDetected = detected, SubjectCoverage = Math.Round(coverage, 3), FramingStability = Math.Round(stability, 3),
-            SubjectProminence = Math.Round(prominence, 4), SceneChanges = sceneChanges, SceneDensity = Math.Round(sceneDensity, 2), Score = visualScore,
+            SubjectProminence = Math.Round(prominence, 4), SceneChanges = sceneChanges, SceneTransitionPoints = sceneTimes, SceneDensity = Math.Round(sceneDensity, 2), Score = visualScore,
             Recommendation = detected ? coverage >= .65 ? "Acompanhar o rosto principal" : "Alternar rosto e enquadramento seguro" : "Enquadramento central por segurança"
         };
         clip.TransitionStyle = sceneDensity >= 7 ? "dynamic" : sceneDensity >= 3 ? "editorial" : "smooth";
