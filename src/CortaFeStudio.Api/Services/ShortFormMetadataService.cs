@@ -172,6 +172,7 @@ public static class ShortFormMetadataService
     {
         ("louvor", _) => "Salve para ouvir novamente e envie para alguém que precisa desta canção.",
         ("pregacao", "tiktok") => "Qual frase falou com você? Escreva nos comentários.",
+        ("pregacao", "instagram") => "O que essa mensagem despertou em você?",
         ("pregacao", _) => "Compartilhe com alguém que precisa ouvir esta mensagem.",
         ("podcast", _) => "Você concorda com esse ponto? Conte sua leitura nos comentários.",
         ("aula", _) => "Salve para revisar e aplicar depois.",
