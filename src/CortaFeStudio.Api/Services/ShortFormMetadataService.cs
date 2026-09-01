@@ -122,20 +122,74 @@ public static class ShortFormMetadataService
     {
         ApplyFallbacks(clip, contentType);
         var tags = NormalizeHashtags(clip.Hashtags, contentType);
+        if (contentType is "pregacao" or "louvor" && !tags.Contains("#AmadoJesus", StringComparer.OrdinalIgnoreCase))
+            tags.Insert(Math.Min(3, tags.Count), "#AmadoJesus");
         var nicheTags = tags.Take(5).ToList();
         var youtubeTitle = NormalizeTitle(clip.Title);
-        var youtubeCta = contentType == "aula" ? "Salve para revisar depois." : "Compartilhe com alguém que precisa ouvir isso.";
-        var instagramFirstLine = clip.HookSentence.Trim();
-        if (string.IsNullOrWhiteSpace(instagramFirstLine)) instagramFirstLine = clip.CoverText;
-        instagramFirstLine = NormalizeTitle(instagramFirstLine);
-        var instagramCta = contentType == "podcast" ? "Qual é a sua leitura sobre isso?" : "O que essa mensagem despertou em você?";
+        var hookOptions = BuildHookOptions(clip, contentType);
+        var recommendedHook = hookOptions.FirstOrDefault() ?? youtubeTitle;
+        var youtubeCta = CallToAction(contentType, "youtube");
+        var instagramFirstLine = recommendedHook;
+        var instagramCta = CallToAction(contentType, "instagram");
+        var tiktokCta = CallToAction(contentType, "tiktok");
+        var value = NormalizeCaption(clip.Caption);
+        var warnings = CopyWarnings(recommendedHook, value, nicheTags);
+        var copyScore = Math.Round((double)Math.Clamp(100 - warnings.Count * 12 + (recommendedHook.Length is >= 22 and <= 90 ? 4 : 0) + (nicheTags.Count is >= 4 and <= 6 ? 4 : 0), 0, 100), 0);
         clip.PlatformMetadata = new PlatformMetadata
         {
-            YouTube = new YouTubeMetadata { Title = youtubeTitle[..Math.Min(100, youtubeTitle.Length)], Description = NormalizeCaption($"{clip.Caption}\n\n{youtubeCta}\n\n{string.Join(' ', nicheTags)}"), Hashtags = nicheTags, CallToAction = youtubeCta },
-            Instagram = new InstagramMetadata { FirstLine = instagramFirstLine, Caption = NormalizeCaption($"{instagramFirstLine}\n\n{clip.Caption}\n\n{instagramCta}"), Hashtags = nicheTags, CallToAction = instagramCta },
-            TikTok = new TikTokMetadata { Caption = NormalizeCaption($"{instagramFirstLine}\n\n{clip.Caption}"), Hashtags = nicheTags.Take(4).ToList(), CallToAction = instagramCta },
+            YouTube = new YouTubeMetadata { Title = youtubeTitle[..Math.Min(100, youtubeTitle.Length)], Description = NormalizeCaption($"{recommendedHook}\n\n{value}\n\n{youtubeCta}\n\n{string.Join(' ', nicheTags)}"), Hashtags = nicheTags, CallToAction = youtubeCta },
+            Instagram = new InstagramMetadata { FirstLine = instagramFirstLine, Caption = NormalizeCaption($"{instagramFirstLine}\n\n{value}\n\n{instagramCta}"), Hashtags = nicheTags, CallToAction = instagramCta },
+            TikTok = new TikTokMetadata { Caption = NormalizeCaption($"{recommendedHook}\n\n{value}\n\n{tiktokCta}"), Hashtags = nicheTags.Take(5).ToList(), CallToAction = tiktokCta },
+            RecommendedHook = recommendedHook,
+            HookOptions = hookOptions,
+            CopyScore = copyScore,
+            CopyWarnings = warnings,
             GeneratedAt = DateTime.UtcNow
         };
+    }
+
+    public static List<string> BuildHookOptions(ClipCandidate clip, string contentType)
+    {
+        var options = new List<string>();
+        Add(clip.HookSentence);
+        Add(clip.Title);
+        var sentences = Regex.Split(Clean(clip.Transcript), @"(?<=[.!?])\s+")
+            .Select(NormalizeTitle).Where(value => value.Length is >= 18 and <= 100).ToList();
+        foreach (var sentence in sentences.Where(value => value.Contains('?') || Regex.IsMatch(value, @"\b(mas|porém|porque|nunca|quando|verdade|segredo|erro)\b", RegexOptions.IgnoreCase))) Add(sentence);
+        foreach (var sentence in sentences) Add(sentence);
+        if (options.Count < 3 && !string.IsNullOrWhiteSpace(clip.CoverText)) Add(clip.CoverText);
+        return options.Take(3).ToList();
+
+        void Add(string? value)
+        {
+            var normalized = NormalizeTitle(value);
+            if (normalized.Length < 12 || IsGenericTitle(normalized) || options.Any(existing => Similar(existing, normalized))) return;
+            options.Add(normalized);
+        }
+    }
+
+    private static string CallToAction(string contentType, string platform) => (contentType, platform) switch
+    {
+        ("louvor", _) => "Salve para ouvir novamente e envie para alguém que precisa desta canção.",
+        ("pregacao", "tiktok") => "Qual frase falou com você? Escreva nos comentários.",
+        ("pregacao", "instagram") => "O que essa mensagem despertou em você?",
+        ("pregacao", _) => "Compartilhe com alguém que precisa ouvir esta mensagem.",
+        ("podcast", _) => "Você concorda com esse ponto? Conte sua leitura nos comentários.",
+        ("aula", _) => "Salve para revisar e aplicar depois.",
+        ("negocios", _) => "Qual dessas ideias você aplicaria primeiro?",
+        ("tecnologia", _) => "Salve como referência e compartilhe com quem trabalha com tecnologia.",
+        _ => "Salve este trecho e compartilhe com quem precisa desta ideia."
+    };
+
+    private static List<string> CopyWarnings(string hook, string caption, IReadOnlyCollection<string> hashtags)
+    {
+        var warnings = new List<string>();
+        if (hook.Length < 18) warnings.Add("Gancho curto demais para contextualizar o corte.");
+        if (hook.Length > 100) warnings.Add("Gancho longo demais para leitura imediata.");
+        if (caption.Length < 45) warnings.Add("Descrição precisa explicar melhor o valor do trecho.");
+        if (hashtags.Count < 4) warnings.Add("Poucas hashtags específicas do tema.");
+        if (Regex.IsMatch(hook, @"você precisa (ver|ouvir)|imperdível|chocante", RegexOptions.IgnoreCase)) warnings.Add("Gancho com sinal de clickbait genérico.");
+        return warnings;
     }
 
     public static (string Title, string Description) ForPlatform(ClipCandidate clip, SocialPlatform platform) => platform switch

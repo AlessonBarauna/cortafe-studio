@@ -28,5 +28,9 @@ public sealed class PlatformMetadata
     public YouTubeMetadata YouTube { get; set; } = new();
     public InstagramMetadata Instagram { get; set; } = new();
     public TikTokMetadata TikTok { get; set; } = new();
+    public string RecommendedHook { get; set; } = "";
+    public List<string> HookOptions { get; set; } = [];
+    public double CopyScore { get; set; }
+    public List<string> CopyWarnings { get; set; } = [];
     public DateTime GeneratedAt { get; set; } = DateTime.UtcNow;
 }
