@@ -61,7 +61,18 @@ app.Use(async (context, next) =>
     await next();
 });
 app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = context =>
+    {
+        if (context.File.Name.EndsWith(".css", StringComparison.OrdinalIgnoreCase) || context.File.Name.EndsWith(".js", StringComparison.OrdinalIgnoreCase))
+        {
+            context.Context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
+            context.Context.Response.Headers.Pragma = "no-cache";
+            context.Context.Response.Headers.Expires = "0";
+        }
+    }
+});
 app.MapGet("/favicon.ico", () => Results.Redirect("/favicon.svg", permanent: true));
 
 var api = app.MapGroup("/api");
