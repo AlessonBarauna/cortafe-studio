@@ -11,7 +11,7 @@ public static class RenderStateService
     {
         var state = new
         {
-            clip.Start, clip.End, clip.Title, clip.CropFocus, clip.CropX, clip.FramingTrack,
+            clip.Start, clip.End, clip.Title, clip.CropFocus, clip.CropX, clip.FramingTrack, clip.TransitionStyle,
             clip.LayoutMode, clip.OutputPreset, clip.SubtitleStyle, clip.SubtitleTrack,
             clip.BrandFrameEnabled, clip.BrandTheme, clip.WatermarkEnabled, clip.WatermarkText, clip.WatermarkOpacity, clip.PlaybackSpeed, clip.SilenceTrimmingEnabled
         };

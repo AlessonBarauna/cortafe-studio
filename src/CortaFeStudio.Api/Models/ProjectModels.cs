@@ -106,6 +106,8 @@ public sealed class ClipCandidate
     public string LayoutMode { get; set; } = "fill";
     public string OutputPreset { get; set; } = "vertical";
     public bool FaceTrackingAnalyzed { get; set; }
+    public VisualDirectionAnalysis VisualDirection { get; set; } = new();
+    public string TransitionStyle { get; set; } = "smooth";
     public string SubtitleStyle { get; set; } = "impact";
     public SubtitleTrack? SubtitleTrack { get; set; }
     public bool BrandFrameEnabled { get; set; } = true;
@@ -185,6 +187,18 @@ public sealed class FramingKeyframe
 {
     public double Time { get; set; }
     public double X { get; set; } = .5;
+}
+public sealed class VisualDirectionAnalysis
+{
+    public bool Analyzed { get; set; }
+    public bool SubjectDetected { get; set; }
+    public double SubjectCoverage { get; set; }
+    public double FramingStability { get; set; }
+    public double SubjectProminence { get; set; }
+    public int SceneChanges { get; set; }
+    public double SceneDensity { get; set; }
+    public double Score { get; set; }
+    public string Recommendation { get; set; } = "Enquadramento central";
 }
 public sealed class SocialScoreBreakdown
 {

@@ -29,7 +29,7 @@ public sealed class PipelineEndToEndTests : IDisposable
         var quality = new QualityGateService(tools, store, NullLogger<QualityGateService>.Instance);
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["ProductionConcurrency:Render"] = "1", ["ProductionConcurrency:Metadata"] = "1" }).Build();
         var learning = new EditorialLearningService(dataEnvironment); var editorial = new LongVideoEditorialAnalyzer(new EditorialAnalyzer(learning, new EditorialScoringService(), new EditorialCandidateSelector()));
-        var pipeline = new MediaPipeline(store, tools, new TestHttpClientFactory(), editorial, new AudioAnalyzer(tools, NullLogger<AudioAnalyzer>.Instance), new VideoEnhancementService(tools, NullLogger<VideoEnhancementService>.Instance), new HardwareEncoderDetector(tools, NullLogger<HardwareEncoderDetector>.Instance), quality, new ProductionWorkLimiter(configuration), new StorageCapacityService(dataEnvironment, store, NullLogger<StorageCapacityService>.Instance), new SilenceTrimmingService(), NullLogger<MediaPipeline>.Instance);
+        var pipeline = new MediaPipeline(store, tools, new TestHttpClientFactory(), editorial, new AudioAnalyzer(tools, NullLogger<AudioAnalyzer>.Instance), new VideoEnhancementService(tools, NullLogger<VideoEnhancementService>.Instance), new HardwareEncoderDetector(tools, NullLogger<HardwareEncoderDetector>.Instance), quality, new ProductionWorkLimiter(configuration), new StorageCapacityService(dataEnvironment, store, NullLogger<StorageCapacityService>.Instance), new SilenceTrimmingService(), new FramingService(store, tools), NullLogger<MediaPipeline>.Instance);
 
         await pipeline.RenderClipAsync(project, clip);
 
