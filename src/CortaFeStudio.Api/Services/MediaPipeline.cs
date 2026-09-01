@@ -5,7 +5,7 @@ using CortaFeStudio.Api.Models;
 
 namespace CortaFeStudio.Api.Services;
 
-public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpClientFactory http, LongVideoEditorialAnalyzer editorial, AudioAnalyzer audioAnalyzer, VideoEnhancementService videoEnhancement, HardwareEncoderDetector encoderDetector, QualityGateService qualityGate, ProductionWorkLimiter workLimiter, StorageCapacityService storageCapacity, SilenceTrimmingService silenceTrimming, ILogger<MediaPipeline> logger)
+public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpClientFactory http, LongVideoEditorialAnalyzer editorial, AudioAnalyzer audioAnalyzer, VideoEnhancementService videoEnhancement, HardwareEncoderDetector encoderDetector, QualityGateService qualityGate, ProductionWorkLimiter workLimiter, StorageCapacityService storageCapacity, SilenceTrimmingService silenceTrimming, FramingService framingService, ILogger<MediaPipeline> logger)
 {
     public async Task ProcessAsync(VideoProject p, CancellationToken ct)
     {
@@ -84,10 +84,12 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         await Stage(p, ProjectStatus.Analyzing, 82, $"Preparando {p.Clips.Count} candidatos");
         await Parallel.ForEachAsync(p.Clips, new ParallelOptions { MaxDegreeOfParallelism = 2, CancellationToken = ct }, async (clip, token) =>
         {
+            await AnalyzeFramingSafely(p, clip, token);
             using (await workLimiter.EnterAsync(ProductionWorkKind.Metadata, token))
                 await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, token);
             await CreateCoverAsync(p, clip, token);
         });
+        p.Clips = p.Clips.OrderByDescending(clip => clip.Score).ToList();
         ShortFormMetadataService.EnsureUniqueTitles(p.Clips, p.Options.ContentType);
         p.Status = ProjectStatus.Ready; p.Progress = 100; p.CompletedAt = DateTime.UtcNow; p.Stage = $"{p.Clips.Count} cortes prontos para revisar"; await store.SaveAsync(p);
     }
@@ -320,7 +322,8 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         p.Status = ProjectStatus.Analyzing; p.Progress = 72; p.Stage = "Refazendo o ranking sem transcrever novamente"; await store.SaveAsync(p);
         var analysis = editorial.AnalyzeWithReport(p.Transcript, p.Options);
         p.Clips = analysis.Clips; p.CandidateAnalysis = analysis.Report;
-        foreach (var clip in p.Clips) { clip.BrandTheme = "amado-jesus"; using (await workLimiter.EnterAsync(ProductionWorkKind.Metadata, ct)) await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
+        foreach (var clip in p.Clips) { clip.BrandTheme = "amado-jesus"; await AnalyzeFramingSafely(p, clip, ct); using (await workLimiter.EnterAsync(ProductionWorkKind.Metadata, ct)) await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
+        p.Clips = p.Clips.OrderByDescending(clip => clip.Score).ToList();
         ShortFormMetadataService.EnsureUniqueTitles(p.Clips, p.Options.ContentType);
         await RenderAllAsync(p, ct);
         p.Status = ProjectStatus.Ready; p.Progress = 100; p.Stage = $"{p.Clips.Count} novos cortes renderizados"; await store.SaveAsync(p);
@@ -333,10 +336,23 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         p.Status = ProjectStatus.Analyzing; p.Progress = 78; p.Stage = "Aplicando análise editorial"; await store.SaveAsync(p);
         var analysis = editorial.AnalyzeWithReport(p.Transcript, p.Options);
         p.Clips = analysis.Clips; p.CandidateAnalysis = analysis.Report;
-        foreach (var clip in p.Clips) { using (await workLimiter.EnterAsync(ProductionWorkKind.Metadata, ct)) await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
+        foreach (var clip in p.Clips) { await AnalyzeFramingSafely(p, clip, ct); using (await workLimiter.EnterAsync(ProductionWorkKind.Metadata, ct)) await ShortFormMetadataService.EnrichAsync(http, clip, p.Options.ContentType, ct); await CreateCoverAsync(p, clip, ct); }
+        p.Clips = p.Clips.OrderByDescending(clip => clip.Score).ToList();
         ShortFormMetadataService.EnsureUniqueTitles(p.Clips, p.Options.ContentType);
         if (render) await RenderAllAsync(p, ct);
         p.Status = ProjectStatus.Ready; p.Progress = 100; p.Stage = $"{p.Clips.Count} candidatos editoriais prontos"; await store.SaveAsync(p);
+    }
+
+    private async Task AnalyzeFramingSafely(VideoProject project, ClipCandidate clip, CancellationToken ct)
+    {
+        try { await framingService.AnalyzeAsync(project, clip, ct); }
+        catch (Exception ex)
+        {
+            clip.VisualDirection = new VisualDirectionAnalysis { Analyzed = false, Recommendation = "Enquadramento central por segurança" };
+            clip.CropX = .5; clip.CropFocus = "center";
+            clip.Reasons = clip.Reasons.Append("análise visual indisponível; enquadramento seguro aplicado").Distinct().Take(8).ToList();
+            logger.LogWarning(ex, "[DirecaoVisual] análise indisponível para {ClipId}", clip.Id);
+        }
     }
 
     public async Task RecoverYouTubeCaptionsAndRenderAsync(VideoProject p, CancellationToken ct = default)
