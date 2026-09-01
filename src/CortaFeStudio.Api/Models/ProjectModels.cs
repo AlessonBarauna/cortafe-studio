@@ -77,7 +77,7 @@ public sealed class ProjectOptions
 }
 
 public sealed class TranscriptSegment { public double Start { get; set; } public double End { get; set; } public string Text { get; set; } = ""; public List<TranscriptWord> Words { get; set; } = []; }
-public sealed class TranscriptWord { public double Start { get; set; } public double End { get; set; } public string Word { get; set; } = ""; }
+public sealed class TranscriptWord { public double Start { get; set; } public double End { get; set; } public string Word { get; set; } = ""; public double? Probability { get; set; } }
 public sealed class ClipCandidate
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..10];
@@ -159,6 +159,10 @@ public sealed class SubtitleTrack
     public double Confidence { get; set; }
     public string ConfidenceLabel { get; set; } = "não avaliada";
     public string? QualityWarning { get; set; }
+    public double TimingIntegrity { get; set; }
+    public string RecommendedStyle { get; set; } = "impact";
+    public bool LiteralTranscript { get; set; } = true;
+    public bool RequiresReview { get; set; } = true;
     public List<SubtitleBlock> Blocks { get; set; } = [];
 }
 public sealed class SubtitleBlock
