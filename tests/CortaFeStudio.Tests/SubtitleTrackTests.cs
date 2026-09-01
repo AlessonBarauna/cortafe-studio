@@ -29,6 +29,17 @@ public sealed class SubtitleTrackTests
 
         Assert.False(track.Enabled);
         Assert.True(track.Confidence >= .8);
+        Assert.True(track.LiteralTranscript);
+        Assert.Equal("sermon", track.RecommendedStyle);
+    }
+
+    [Fact]
+    public void Create_NaoTrocaTranscricaoLiteralPorTextoEditorialEditado()
+    {
+        var clip = new ClipCandidate { Start = 0, End = 4, EditorialProfile = "pregacao", EditedTranscript = "texto criativo diferente" };
+        var words = new List<TranscriptWord> { new() { Start = 0, End = 1, Word = "Jesus" }, new() { Start = 1, End = 2, Word = "te" }, new() { Start = 2, End = 3, Word = "ama" } };
+        var track = SubtitleTrackService.Create(clip, [new TranscriptSegment { Start = 0, End = 3, Text = "Jesus te ama", Words = words }]);
+        Assert.Equal("Jesus te ama", Assert.Single(track.Blocks).Text);
     }
     [Fact]
     public void Create_GeraBlocosRelativosAPartirDasPalavras()
