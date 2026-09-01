@@ -36,9 +36,10 @@
     layout.classList.add('cc-editor-grid');
     preview.classList.add('cc-canvas-stage');
     inspector.classList.add('cc-properties-panel');
-    inspector.insertAdjacentHTML('afterbegin', `<header class="cc-panel-head"><div><span>PROPRIEDADES</span><strong id="ccInspectorTitle">Corte selecionado</strong></div><i id="ccInspectorScore">0</i></header>`);
+    inspector.insertAdjacentHTML('afterbegin', `<header class="cc-panel-head"><div><span>CORTE ATIVO</span><strong id="ccInspectorTitle">Corte selecionado</strong></div><i id="ccInspectorScore">0</i></header><label class="cc-clip-picker"><span>Selecionar corte</span><select id="ccClipPicker">${project.clips.map((clip,index)=>`<option value="${clip.id}">${String(index+1).padStart(2,'0')} · ${escapeHtml(clip.title)}</option>`).join('')}</select></label>`);
     const actions = root.querySelector('.section-head .d-flex');
     actions?.insertAdjacentHTML('afterbegin', `<span class="cc-render-chip"><i></i>${project.renderCompleted || project.clips.filter(clip => clip.videoPath).length}/${project.renderTotal || project.clips.length} renderizados</span><details class="cc-more-actions"><summary>Mais</summary><div><button type="button" data-cc-forward="approveAll">Aprovar todos</button><button type="button" data-cc-forward="reanalyze">Melhorar seleção</button></div></details>`);
+    const exportButton = root.querySelector('#renderAll'); if (exportButton && !project.isRendering) exportButton.textContent = 'Exportar cortes';
     layout.insertAdjacentHTML('afterbegin', toolRail());
     layout.insertAdjacentHTML('afterbegin', mediaBin(project));
     layout.insertAdjacentHTML('beforeend', timelineDock(project));
@@ -47,7 +48,7 @@
   }
 
   function toolRail() {
-    return `<nav class="cc-tool-rail" aria-label="Ferramentas principais"><button class="active" type="button" data-cc-mode="cut"><b>⌁</b><span>Editar</span></button><button type="button" data-cc-mode="captions"><b>T</b><span>Legendas</span></button><button type="button" data-cc-mode="visual"><b>◐</b><span>Visual</span></button><button type="button" data-cc-mode="brand"><b>◇</b><span>Marca</span></button><button type="button" data-cc-mode="details"><b>•••</b><span>Detalhes</span></button></nav>`;
+    return `<nav class="cc-tool-rail" aria-label="Ferramentas principais"><div class="cc-editor-mark">AJ</div><button type="button" data-cc-mode="media"><b>⌂</b><span>Mídia</span></button><button class="active" type="button" data-cc-mode="cut"><b>⌁</b><span>Editar</span></button><button type="button" data-cc-mode="captions"><b>T</b><span>Legendas</span></button><button type="button" data-cc-mode="visual"><b>◐</b><span>Visual</span></button><button type="button" data-cc-mode="brand"><b>◇</b><span>Marca</span></button><button type="button" data-cc-mode="details"><b>•••</b><span>Detalhes</span></button></nav>`;
   }
 
   function mediaBin(project) {
@@ -60,11 +61,14 @@
   }
 
   function bindWorkspace(project) {
-    document.querySelectorAll('[data-cc-clip],[data-cc-track]').forEach(button => button.onclick = () => selectClip(project, button.dataset.ccClip || button.dataset.ccTrack));
+    document.querySelectorAll('[data-cc-clip],[data-cc-track]').forEach(button => button.onclick = () => { selectClip(project, button.dataset.ccClip || button.dataset.ccTrack); if(button.dataset.ccClip) document.querySelector('[data-cc-mode="cut"]')?.click(); });
     document.querySelectorAll('[data-cc-mode]').forEach(button => button.onclick = () => {
-      document.querySelector(`.clip-card[data-clip="${activeClipId}"] [data-edit-mode="${button.dataset.ccMode}"]`)?.click();
+      const mediaMode = button.dataset.ccMode === 'media';
+      document.querySelector('.cc-editor-grid')?.classList.toggle('cc-show-media', mediaMode);
+      if (!mediaMode) document.querySelector(`.clip-card[data-clip="${activeClipId}"] [data-edit-mode="${button.dataset.ccMode}"]`)?.click();
       document.querySelectorAll('[data-cc-mode]').forEach(item => item.classList.toggle('active', item === button));
     });
+    document.querySelector('#ccClipPicker').onchange = event => selectClip(project, event.target.value);
     document.querySelectorAll('[data-cc-forward]').forEach(button => button.onclick = () => { document.querySelector(`#${button.dataset.ccForward}`)?.click(); button.closest('details').open = false; });
     document.querySelector('[data-cc-source]').onclick = () => switchEditorTab('source');
     document.querySelectorAll('[data-cc-zoom]').forEach(button => button.onclick = () => { timelineZoom = Math.max(1, Math.min(5, timelineZoom + (button.dataset.ccZoom === 'in' ? .5 : -.5))); document.querySelector('.cc-timeline-content')?.style.setProperty('--cc-zoom', timelineZoom); });
@@ -84,6 +88,7 @@
     root.querySelectorAll('[data-cc-clip],[data-cc-track]').forEach(button => button.classList.toggle('active', (button.dataset.ccClip || button.dataset.ccTrack) === id));
     root.querySelector('#ccInspectorTitle').textContent = clip.title;
     root.querySelector('#ccInspectorScore').textContent = `${Math.round(clip.score)} pts`;
+    root.querySelector('#ccClipPicker').value = id;
     const max = Math.max(1, project.duration || clip.end);
     const clipDuration = Math.max(.1, clip.end - clip.start);
     root.querySelectorAll('[data-cc-track]').forEach(button => { if (button.dataset.ccTrack === id) { button.style.left = '0'; button.style.width = '100%'; button.querySelector('span').textContent = clip.title; } });
@@ -91,6 +96,8 @@
     setValue('ccTrimStart', clip.start); setValue('ccTrimEnd', clip.end); setValue('ccRangeStart', clip.start); setValue('ccRangeEnd', clip.end);
     ['ccRangeStart','ccRangeEnd'].forEach(field => root.querySelector(`#${field}`).max = max);
     root.querySelector('#ccTrimDuration').textContent = time(clipDuration);
+    const card = root.querySelector(`.clip-card[data-clip="${id}"]`);
+    ['start','end'].forEach(name => { const input=card?.querySelector(`[name="${name}"]`); if(input) input.value=(+input.value).toFixed(2); });
     root.querySelector('.cc-timeline-content')?.style.setProperty('--cc-zoom', timelineZoom);
     bindPreviewClock();
   }
