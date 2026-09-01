@@ -39,6 +39,7 @@ public sealed class VideoProject
     public bool Archived { get; set; }
     public bool Favorite { get; set; }
     public bool Pinned { get; set; }
+    public DateTime? DataPurgedAt { get; set; }
 }
 
 public sealed class ProjectFailureAttempt
@@ -254,3 +255,19 @@ public record BatchFeedbackRequest(List<string> ClipIds, string Feedback);
 public record TikTokWorkflowUpdate(string Status, DateTimeOffset? ScheduledAt = null);
 public record LibraryProjectUpdate(bool? Favorite = null, bool? Pinned = null);
 public record BatchProjectDataRequest(List<string> ProjectIds);
+
+public enum RetentionCleanupMode { ProjectData, FullProject }
+public sealed class RetentionPolicy
+{
+    public bool Enabled { get; set; }
+    public int RetentionDays { get; set; } = 7;
+    public RetentionCleanupMode Mode { get; set; } = RetentionCleanupMode.ProjectData;
+    public bool ProtectFavorites { get; set; } = true;
+    public bool ProtectPinned { get; set; } = true;
+    public DateTime? LastRunAt { get; set; }
+    public DateTime? NextRunAt { get; set; }
+}
+public sealed record RetentionPolicyUpdate(bool Enabled, int RetentionDays, RetentionCleanupMode Mode, bool ProtectFavorites = true, bool ProtectPinned = true);
+public sealed record RetentionCandidate(string ProjectId, string Name, DateTime ReferenceDate, long EstimatedBytes, bool WillDeleteProject);
+public sealed record RetentionPreview(RetentionPolicy Policy, DateTime Cutoff, IReadOnlyList<RetentionCandidate> Candidates, long EstimatedBytes);
+public sealed record RetentionExecution(int Processed, long FreedBytes, IReadOnlyList<string> ProjectIds, DateTime CompletedAt);

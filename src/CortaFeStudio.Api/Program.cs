@@ -38,6 +38,8 @@ builder.Services.AddSingleton<ProductionWorkLimiter>();
 builder.Services.AddSingleton<DiagnosticsService>();
 builder.Services.AddSingleton<StorageService>();
 builder.Services.AddSingleton<StorageCapacityService>();
+builder.Services.AddSingleton<ProjectRetentionService>();
+builder.Services.AddHostedService<ProjectRetentionWorker>();
 builder.Services.AddSingleton<SilenceTrimmingService>();
 builder.Services.AddSingleton<FramingService>();
 builder.Services.AddSingleton<ManualClipService>();
@@ -87,6 +89,14 @@ api.MapGet("/storage", (StorageService storage) => storage.Report());
 api.MapGet("/storage/capacity", (StorageOperation operation, double durationSeconds, int itemCount, StorageCapacityService storage) => storage.Check(operation, durationSeconds, itemCount));
 api.MapGet("/storage/new-project-capacity", (int itemCount, long uploadBytes, StorageCapacityService storage) => storage.CheckNewProject(itemCount, uploadBytes));
 api.MapPost("/storage/temporary-cleanup", async (StorageCapacityService storage) => Results.Ok(new { freedBytes = await storage.CleanupTemporaryAsync() }));
+api.MapGet("/storage/retention", (ProjectRetentionService retention) => retention.GetPolicy());
+api.MapGet("/storage/retention/preview", (ProjectRetentionService retention) => retention.Preview());
+api.MapPut("/storage/retention", async (RetentionPolicyUpdate request, ProjectRetentionService retention, CancellationToken ct) =>
+{
+    try { return Results.Ok(await retention.UpdateAsync(request, ct)); }
+    catch (ArgumentOutOfRangeException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+api.MapPost("/storage/retention/run", async (ProjectRetentionService retention, CancellationToken ct) => Results.Ok(await retention.ExecuteAsync(force: true, ct)));
 api.MapGet("/render/encoder", async (HardwareEncoderDetector detector, CancellationToken ct) => await detector.DetectAsync(ct));
 api.MapGet("/projects/{projectId}/clips/{clipId}/quality", async (string projectId, string clipId, ProjectStore store, QualityGateService quality, CancellationToken ct) =>
 {
