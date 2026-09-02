@@ -30,7 +30,8 @@ collectSubtitleTrack = function(card, clip) {
 
 updateSubtitlePreview = function(video, clip) {
   const overlay=document.querySelector('#preview .subtitle-preview'),track=clip.subtitleTrack;
-  if(!overlay||!track||!track.enabled){if(overlay)overlay.textContent='';return}
+  const editing=document.querySelector('[data-cc-mode="captions"].active')!==null;
+  if(!overlay||!track||(!track.enabled&&!editing)){if(overlay)overlay.textContent='';return}
   const relative=video.currentTime-(video.dataset.sourcePreview?clip.start:0),offset=track.offsetSeconds||0;
   const active=track.blocks.find(block=>block.enabled!==false&&relative>=block.start+offset&&relative<=block.end+offset);
   overlay.textContent=active?.text||'';overlay.dataset.style=track.style||'impact';
@@ -53,3 +54,4 @@ async function saveSubtitleTrackNow(card){const clip=current?.clips.find(item=>i
 document.addEventListener('input',event=>{const card=event.target.closest('.clip-card');if(!card||!event.target.closest('.subtitle-editor'))return;if(event.target.name==='subtitleOffsetRange')card.querySelector('[name="subtitleOffset"]').value=event.target.value;else if(event.target.name==='subtitleOffset')card.querySelector('[name="subtitleOffsetRange"]').value=event.target.value;const label=card.querySelector('[data-offset-label]');if(label)label.textContent=formatSubtitleOffset(card.querySelector('[name="subtitleOffset"]').value);refreshSubtitlePreview(card);scheduleSubtitleAutosave(card)});
 document.addEventListener('change',event=>{const card=event.target.closest('.clip-card');if(card&&event.target.closest('.subtitle-editor')){refreshSubtitlePreview(card);scheduleSubtitleAutosave(card)}});
 document.addEventListener('click',event=>{const card=event.target.closest('.clip-card'),action=event.target.closest('.subtitle-actions button,.subtitle-editor button.btn-outline-light');if(!card||!action)return;setTimeout(()=>{refreshSubtitlePreview(card);scheduleSubtitleAutosave(card)},0)});
+document.addEventListener('focusin',event=>{const text=event.target.closest('.subtitle-block textarea');if(!text)return;const card=text.closest('.clip-card'),block=text.closest('.subtitle-block'),clip=current?.clips.find(item=>item.id===card.dataset.clip),video=activateLiveSubtitlePreview(clip);if(!video||!clip)return;const relative=+(block.querySelector('[data-subtitle-start]')?.value||0),absolute=video.dataset.sourcePreview?clip.start+relative:relative;video.currentTime=Math.max(0,absolute+.03);setTimeout(()=>{refreshSubtitlePreview(card);updateSubtitlePreview(video,clip)},0)});
