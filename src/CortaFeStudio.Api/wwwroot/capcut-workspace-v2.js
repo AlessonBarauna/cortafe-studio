@@ -52,7 +52,7 @@
   }
 
   function mediaBin(project) {
-    return `<aside class="cc-media-bin"><header><span class="cc-panel-icon">＋</span><div><strong>Mídia</strong><small>${project.clips.length} cortes</small></div></header><nav><button class="active" type="button">Cortes</button><button type="button" data-cc-source>Original</button></nav><div class="cc-clip-assets">${project.clips.map((clip, index) => `<button type="button" class="cc-asset" data-cc-clip="${clip.id}"><span class="cc-asset-thumb">${clip.coverPath ? `<img src="/api/projects/${project.id}/assets/${clip.coverPath}" alt="">` : '<i>▶</i>'}<em>${index + 1}</em></span><span><strong>${escapeHtml(clip.title)}</strong><small>${time(clip.end - clip.start)} · ${Math.round(clip.score)} pts</small></span></button>`).join('')}</div></aside>`;
+    return `<aside class="cc-media-bin"><header><span class="cc-panel-icon">＋</span><div><strong>Mídia</strong><small>${project.clips.length} cortes</small></div></header><nav><button class="active" type="button">Cortes</button><button type="button" data-cc-source>Original</button></nav><div class="cc-clip-assets">${project.clips.map((clip, index) => `<div class="cc-asset" data-cc-clip="${clip.id}" role="button" tabindex="0"><span class="cc-asset-thumb">${clip.coverPath ? `<img src="/api/projects/${project.id}/assets/${clip.coverPath}" alt="">` : '<i>▶</i>'}<em>${index + 1}</em></span><span><strong>${escapeHtml(clip.title)}</strong><small>${time(clip.end - clip.start)} · ${Math.round(clip.score)} pts</small>${clip.videoPath&&clip.subtitleTrack?.enabled?'<small class="cc-caption-ready">✓ Vídeo com legendas</small>':''}</span>${clip.videoPath?`<button type="button" class="cc-edit-captions" data-cc-edit-captions="${clip.id}">Editar legendas</button>`:''}</div>`).join('')}</div></aside>`;
   }
 
   function timelineDock(project) {
@@ -61,7 +61,8 @@
   }
 
   function bindWorkspace(project) {
-    document.querySelectorAll('[data-cc-clip],[data-cc-track]').forEach(button => button.onclick = () => { selectClip(project, button.dataset.ccClip || button.dataset.ccTrack); if(button.dataset.ccClip) document.querySelector('[data-cc-mode="cut"]')?.click(); });
+    document.querySelectorAll('[data-cc-clip],[data-cc-track]').forEach(button => button.onclick = event => { if(event.target.closest('[data-cc-edit-captions]'))return;selectClip(project, button.dataset.ccClip || button.dataset.ccTrack); if(button.dataset.ccClip) document.querySelector('[data-cc-mode="cut"]')?.click(); });
+    document.querySelectorAll('[data-cc-edit-captions]').forEach(button=>button.onclick=event=>{event.stopPropagation();selectClip(project,button.dataset.ccEditCaptions);document.querySelector('[data-cc-mode="captions"]')?.click()});
     document.querySelectorAll('[data-cc-mode]').forEach(button => button.onclick = () => {
       const mediaMode = button.dataset.ccMode === 'media';
       document.querySelector('.cc-editor-grid')?.classList.toggle('cc-show-media', mediaMode);
