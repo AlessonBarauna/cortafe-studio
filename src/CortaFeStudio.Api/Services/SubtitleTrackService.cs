@@ -60,6 +60,8 @@ public static class SubtitleTrackService
         if (!double.IsFinite(track.OffsetSeconds) || track.OffsetSeconds is < -10 or > 10)
             throw new ArgumentException("O ajuste geral das legendas deve ficar entre -10 e +10 segundos.");
         track.OffsetSeconds = Math.Round(track.OffsetSeconds, 3);
+        track.PositionX = Math.Round(Math.Clamp(double.IsFinite(track.PositionX) && track.PositionX > 0 ? track.PositionX : 50, 5, 95), 2);
+        track.PositionY = Math.Round(Math.Clamp(double.IsFinite(track.PositionY) && track.PositionY > 0 ? track.PositionY : 80, 5, 95), 2);
         track.Blocks ??= [];
         NormalizeTimings(track, clipDuration);
         foreach (var block in track.Blocks)

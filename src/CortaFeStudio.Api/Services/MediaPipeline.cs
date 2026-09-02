@@ -402,13 +402,14 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         var style = SubtitleFormatter.Style(clip, width, height);
         var sb = new StringBuilder($"[Script Info]\nScriptType: v4.00+\nPlayResX: {width}\nPlayResY: {height}\nWrapStyle: 2\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\n{style}\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n");
         var track = SubtitleTrackService.Ensure(clip, segments);
+        var position = SubtitleFormatter.Position(track, width, height);
         if (track.Blocks.Count > 0)
         {
             foreach (var block in track.Blocks.Where(block => block.Enabled && !string.IsNullOrWhiteSpace(block.Text)))
             {
                 var timing = SubtitleTrackService.EffectiveTiming(block, track, clip.End - clip.Start);
                 if (timing is null) continue;
-                sb.AppendLine($"Dialogue: 0,{AssTime(Adjusted(timing.Value.Start))},{AssTime(Adjusted(timing.Value.End))},Impacto,,0,0,0,,{SubtitleFormatter.Plain(block.Text, width)}");
+                sb.AppendLine($"Dialogue: 0,{AssTime(Adjusted(timing.Value.Start))},{AssTime(Adjusted(timing.Value.End))},Impacto,,0,0,0,,{position}{SubtitleFormatter.Plain(block.Text, width)}");
             }
             return sb.ToString();
         }
@@ -429,11 +430,11 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
             {
                 var start = Math.Max(0, group[0].Start - clip.Start); var end = Math.Min(clip.End - clip.Start, group[^1].End - clip.Start + .08);
                 var karaoke = SubtitleFormatter.Karaoke(group, clip, width);
-                sb.AppendLine($"Dialogue: 0,{AssTime(Adjusted(start))},{AssTime(Adjusted(end))},Impacto,,0,0,0,,{karaoke}");
+                sb.AppendLine($"Dialogue: 0,{AssTime(Adjusted(start))},{AssTime(Adjusted(end))},Impacto,,0,0,0,,{position}{karaoke}");
             }
         }
         else foreach (var s in segments.Where(s => s.End >= clip.Start && s.Start <= clip.End))
-            sb.AppendLine($"Dialogue: 0,{AssTime(Adjusted(Math.Max(0, s.Start - clip.Start)))},{AssTime(Adjusted(Math.Min(clip.End - clip.Start, s.End - clip.Start)))},Impacto,,0,0,0,,{SubtitleFormatter.Plain(s.Text, width)}");
+            sb.AppendLine($"Dialogue: 0,{AssTime(Adjusted(Math.Max(0, s.Start - clip.Start)))},{AssTime(Adjusted(Math.Min(clip.End - clip.Start, s.End - clip.Start)))},Impacto,,0,0,0,,{position}{SubtitleFormatter.Plain(s.Text, width)}");
         return sb.ToString();
 
         double Adjusted(double relative)

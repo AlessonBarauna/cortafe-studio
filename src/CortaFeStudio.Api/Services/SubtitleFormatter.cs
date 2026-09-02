@@ -43,6 +43,13 @@ public static class SubtitleFormatter
         return $"Style: Impacto,{font},{size},{primary},{secondary},&H00120B22,&H80000000,-1,0,0,0,100,100,0,0,1,{outline},{shadow},2,{marginX},{marginX},{marginV},1";
     }
 
+    public static string Position(SubtitleTrack track, int width, int height)
+    {
+        var x = Math.Round(width * Math.Clamp(track.PositionX, 5, 95) / 100d);
+        var y = Math.Round(height * Math.Clamp(track.PositionY, 5, 95) / 100d);
+        return $"{{\\pos({x:0},{y:0})}}";
+    }
+
     public static string Karaoke(IReadOnlyList<TranscriptWord> words, ClipCandidate clip, int width)
     {
         var maxWordsPerLine = width >= 1600 ? 5 : clip.SubtitleStyle == "bold" ? 3 : 4;
