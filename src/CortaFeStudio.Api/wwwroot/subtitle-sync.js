@@ -16,7 +16,7 @@ const synchronizedSubtitleCardBase = clipCard;
 clipCard = function(project, clip, index) {
   const track = ensureSubtitleTrackClient(project, clip);
   const sync = `<div class="subtitle-sync mt-3"><div><label class="form-label">Sincronização geral</label><small>Valor negativo adianta a legenda</small></div><button type="button" onclick="nudgeSubtitleTrack(this,-.1)">−0,10s</button><input class="form-control" name="subtitleOffset" type="number" min="-10" max="10" step=".05" value="${+(track.offsetSeconds || 0).toFixed(3)}"><button type="button" onclick="nudgeSubtitleTrack(this,.1)">+0,10s</button><output data-offset-label>${formatSubtitleOffset(track.offsetSeconds || 0)}</output></div><input class="subtitle-offset-range" name="subtitleOffsetRange" type="range" min="-3" max="3" step=".05" value="${track.offsetSeconds || 0}" aria-label="Sincronização geral das legendas"><div class="subtitle-live-note">Texto, estilo e sincronização aparecem imediatamente no player e são salvos automaticamente. Renderize apenas ao <b>Exportar MP4</b>.</div>`;
-  const position = `<div class="subtitle-position"><div><label class="form-label">Posição na tela</label><small>Arraste a legenda no vídeo ou use os controles.</small></div><label>X<input name="subtitlePositionX" type="range" min="5" max="95" step="1" value="${track.positionX || 50}"></label><label>Y<input name="subtitlePositionY" type="range" min="5" max="95" step="1" value="${track.positionY || 80}"></label><button type="button" onclick="resetSubtitlePosition(this)">Centralizar</button></div>`;
+  const position = `<div class="subtitle-position"><div><label class="form-label">Posição de todas as legendas</label><small>Arraste sobre o vídeo e solte. A posição será salva para todas as frases deste corte.</small></div><label>X<input name="subtitlePositionX" type="range" min="5" max="95" step="1" value="${track.positionX || 50}"></label><label>Y<input name="subtitlePositionY" type="range" min="5" max="95" step="1" value="${track.positionY || 80}"></label><button type="button" onclick="resetSubtitlePosition(this)">Centralizar todas</button></div>`;
   let html = synchronizedSubtitleCardBase(project, clip, index).replace('<div class="subtitle-blocks mt-3">', position + sync + '<div class="subtitle-blocks mt-3">');
   html = html.replaceAll('>Ir ao tempo</button>', '>Ir ao tempo</button><button type="button" onclick="syncBlockToPlayhead(this)">Sincronizar ao quadro</button><button type="button" onclick="nudgeSubtitleBlock(this,-.1)">−0,10s</button><button type="button" onclick="nudgeSubtitleBlock(this,.1)">+0,10s</button>');
   return html;
@@ -45,9 +45,44 @@ updateSubtitlePreview = function(video, clip) {
 function formatSubtitleOffset(value){const number=+value||0;return `${number>0?'+':''}${number.toFixed(2).replace('.',',')} s`;}
 function activateLiveSubtitlePreview(clip){const preview=document.querySelector('#preview');if(!preview)return;let video=preview.querySelector('video');if(video&&!video.dataset.sourcePreview&&clip.videoPath){video.dataset.clipId=clip.id;if(!preview.querySelector('.subtitle-preview'))preview.insertAdjacentHTML('beforeend','<div class="subtitle-preview" aria-live="polite"></div>');if(!preview.querySelector('.subtitle-preview-mode'))preview.insertAdjacentHTML('beforeend',`<span class="subtitle-preview-mode">EDIÇÃO AO VIVO · ${time(clip.end-clip.start)}</span>`);return video}if(!video?.dataset.sourcePreview||video.dataset.clipId!==clip.id){preview.innerHTML=`<video playsinline preload="metadata" data-source-preview="true" data-clip-id="${clip.id}" data-clip-start="${clip.start}" data-clip-end="${clip.end}" src="/api/projects/${current.id}/source#t=${clip.start},${clip.end}"></video><div class="subtitle-preview" aria-live="polite"></div><span class="subtitle-preview-mode">PRÉVIA DO CORTE · ${time(clip.end-clip.start)}</span>`;video=preview.querySelector('video');video.addEventListener('loadedmetadata',()=>{video.currentTime=clip.start});video.addEventListener('timeupdate',()=>{const start=+video.dataset.clipStart,end=+video.dataset.clipEnd;if(video.currentTime<start-.05)video.currentTime=start;if(video.currentTime>=end){video.pause();video.currentTime=end}updateSubtitlePreview(video,clip)});}else if(!preview.querySelector('.subtitle-preview'))preview.insertAdjacentHTML('beforeend','<div class="subtitle-preview" aria-live="polite"></div>');return video;}
 function refreshSubtitlePreview(card){const clip=current.clips.find(item=>item.id===card.dataset.clip);clip.subtitleTrack=collectSubtitleTrack(card,clip);const video=activateLiveSubtitlePreview(clip);if(video)updateSubtitlePreview(video,clip);}
-function applySubtitlePosition(overlay,track){overlay.style.setProperty('--subtitle-x',`${track.positionX||50}%`);overlay.style.setProperty('--subtitle-y',`${track.positionY||80}%`)}
+function subtitlePositionValue(value,fallback){const number=Number(value);return Number.isFinite(number)?number:fallback}
+function applySubtitlePosition(overlay,track){overlay.style.setProperty('--subtitle-x',`${subtitlePositionValue(track.positionX,50)}%`);overlay.style.setProperty('--subtitle-y',`${subtitlePositionValue(track.positionY,80)}%`)}
 function resetSubtitlePosition(button){const card=button.closest('.clip-card');card.querySelector('[name="subtitlePositionX"]').value=50;card.querySelector('[name="subtitlePositionY"]').value=80;refreshSubtitlePreview(card);scheduleSubtitleAutosave(card)}
-function enableSubtitleDrag(card){const preview=document.querySelector('#preview'),overlay=preview?.querySelector('.subtitle-preview');if(!overlay||overlay.dataset.dragBound)return;overlay.dataset.dragBound='true';overlay.addEventListener('pointerdown',event=>{event.preventDefault();overlay.setPointerCapture(event.pointerId);overlay.classList.add('dragging')});overlay.addEventListener('pointermove',event=>{if(!overlay.hasPointerCapture(event.pointerId))return;const box=preview.getBoundingClientRect(),halfX=overlay.offsetWidth/box.width*50,halfY=overlay.offsetHeight/box.height*50,x=Math.max(halfX+3,Math.min(97-halfX,(event.clientX-box.left)/box.width*100)),y=Math.max(halfY+3,Math.min(97-halfY,(event.clientY-box.top)/box.height*100));card.querySelector('[name="subtitlePositionX"]').value=x.toFixed(1);card.querySelector('[name="subtitlePositionY"]').value=y.toFixed(1);const clip=current.clips.find(item=>item.id===card.dataset.clip);clip.subtitleTrack=collectSubtitleTrack(card,clip);applySubtitlePosition(overlay,clip.subtitleTrack);subtitleSaveState(card,'Alterações locais','editing')});overlay.addEventListener('pointerup',event=>{if(overlay.hasPointerCapture(event.pointerId))overlay.releasePointerCapture(event.pointerId);overlay.classList.remove('dragging');scheduleSubtitleAutosave(card)})}
+function enableSubtitleDrag(card){
+  const preview=document.querySelector('#preview'),overlay=preview?.querySelector('.subtitle-preview');
+  if(!overlay||overlay.dataset.dragBound)return;
+  overlay.dataset.dragBound='true';
+  let pointerId=null,changed=false;
+  const move=event=>{
+    if(pointerId!==event.pointerId)return;
+    const box=preview.getBoundingClientRect();
+    if(!box.width||!box.height)return;
+    const halfX=overlay.offsetWidth/box.width*50,halfY=overlay.offsetHeight/box.height*50;
+    const x=Math.max(halfX+3,Math.min(97-halfX,(event.clientX-box.left)/box.width*100));
+    const y=Math.max(halfY+3,Math.min(97-halfY,(event.clientY-box.top)/box.height*100));
+    card.querySelector('[name="subtitlePositionX"]').value=x.toFixed(1);
+    card.querySelector('[name="subtitlePositionY"]').value=y.toFixed(1);
+    const clip=current.clips.find(item=>item.id===card.dataset.clip);
+    clip.subtitleTrack=collectSubtitleTrack(card,clip);
+    applySubtitlePosition(overlay,clip.subtitleTrack);
+    subtitleSaveState(card,'Nova posição — solte para salvar','editing');
+    changed=true;
+  };
+  const finish=async event=>{
+    if(pointerId===null||(event.pointerId!==undefined&&event.pointerId!==pointerId))return;
+    const releasedPointer=pointerId;pointerId=null;
+    if(overlay.hasPointerCapture?.(releasedPointer))overlay.releasePointerCapture(releasedPointer);
+    overlay.classList.remove('dragging');
+    if(!changed)return;
+    changed=false;
+    try{await saveSubtitleTrackNow(card);toast('✓ Posição aplicada a todas as legendas deste corte')}catch{}
+  };
+  overlay.addEventListener('pointerdown',event=>{event.preventDefault();pointerId=event.pointerId;changed=false;overlay.setPointerCapture?.(pointerId);overlay.classList.add('dragging')});
+  overlay.addEventListener('pointermove',move);
+  overlay.addEventListener('pointerup',finish);
+  overlay.addEventListener('pointercancel',finish);
+  overlay.addEventListener('lostpointercapture',finish);
+}
 function nudgeSubtitleTrack(button,amount){const card=button.closest('.clip-card'),input=card.querySelector('[name="subtitleOffset"]'),range=card.querySelector('[name="subtitleOffsetRange"]');input.value=Math.max(-10,Math.min(10,+input.value+amount)).toFixed(2);range.value=input.value;input.dispatchEvent(new Event('input',{bubbles:true}));}
 function nudgeSubtitleBlock(button,amount){const block=button.closest('.subtitle-block'),start=block.querySelector('[data-subtitle-start]'),end=block.querySelector('[data-subtitle-end]');const duration=+end.value-+start.value;start.value=Math.max(0,+start.value+amount).toFixed(2);end.value=(+start.value+duration).toFixed(2);start.dispatchEvent(new Event('input',{bubbles:true}));}
 function syncBlockToPlayhead(button){const card=button.closest('.clip-card'),clip=current.clips.find(item=>item.id===card.dataset.clip),video=activateLiveSubtitlePreview(clip),block=button.closest('.subtitle-block');if(!video||!block)return;const start=block.querySelector('[data-subtitle-start]'),end=block.querySelector('[data-subtitle-end]'),duration=+end.value-+start.value,offset=+(card.querySelector('[name="subtitleOffset"]')?.value||0),relative=video.currentTime-clip.start-offset;start.value=Math.max(0,relative).toFixed(2);end.value=Math.min(clip.end-clip.start,Math.max(0,relative)+duration).toFixed(2);start.dispatchEvent(new Event('input',{bubbles:true}));toast('Bloco alinhado ao quadro atual');}
