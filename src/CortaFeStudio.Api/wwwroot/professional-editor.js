@@ -65,8 +65,8 @@ selectClip = function (project, id) {
 
 function previewVideo() { return document.querySelector('#preview video'); }
 function activeEditorCard() { return document.querySelector(`.clip-card[data-clip="${professionalClipId}"]`); }
-function seekPreview(seconds) { const video = previewVideo(); if (video) video.currentTime = Math.max(0, Math.min(video.duration || Infinity, video.currentTime + seconds)); }
-function togglePreview() { const video = previewVideo(); if (!video) return toast('Renderize o corte para visualizar o vídeo final'); video.paused ? video.play() : video.pause(); }
+function seekPreview(seconds) { const video = previewVideo(); if (!video) return; const start=video.dataset.sourcePreview?+video.dataset.clipStart:0,end=video.dataset.sourcePreview?+video.dataset.clipEnd:(video.duration||Infinity); video.currentTime=Math.max(start,Math.min(end,video.currentTime+seconds)); }
+function togglePreview() { const video = previewVideo(); if (!video) return toast('Renderize o corte para visualizar o vídeo final'); const start=video.dataset.sourcePreview?+video.dataset.clipStart:0,end=video.dataset.sourcePreview?+video.dataset.clipEnd:(video.duration||Infinity);if(video.currentTime>=end-.05)video.currentTime=start;video.paused?video.play():video.pause(); }
 function markPreview(edge) {
   const video = previewVideo(), card = activeEditorCard(), clip = current?.clips.find(item => item.id === professionalClipId); if (!video || !card || !clip) return toast('Renderize o corte antes de marcar pelo monitor');
   const absolute = video.dataset.sourcePreview ? video.currentTime : clip.start + video.currentTime; const field = card.querySelector(`[name="${edge}"]`); const timeline = card.querySelector(`[name="timeline${edge[0].toUpperCase() + edge.slice(1)}"]`);
