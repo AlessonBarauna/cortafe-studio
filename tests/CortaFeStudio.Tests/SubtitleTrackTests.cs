@@ -215,4 +215,22 @@ public sealed class SubtitleTrackTests
         Assert.Contains("0:00:00.50", ass);
         Assert.Contains("0:00:01.50", ass);
     }
+
+    [Fact]
+    public void BuildAss_RefletePosicaoEscolhidaNoVideoFinal()
+    {
+        var clip = new ClipCandidate
+        {
+            Start = 0, End = 10, OutputPreset = "vertical",
+            SubtitleTrack = new SubtitleTrack
+            {
+                PositionX = 25, PositionY = 35,
+                Blocks = [new SubtitleBlock { Start = 1, End = 2, Text = "No canto escolhido" }]
+            }
+        };
+
+        var ass = MediaPipeline.BuildAss([], clip);
+
+        Assert.Contains("{\\pos(270,672)}", ass);
+    }
 }
