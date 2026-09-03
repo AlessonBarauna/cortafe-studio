@@ -31,7 +31,8 @@
     if (visibleDetails) visibleDetails.open = true;
     if (mode === 'captions') {
       const clip = current?.clips.find(item => item.id === card.dataset.clip);
-      if (clip) activateLiveSubtitlePreview(clip);
+      const video = document.querySelector('#preview video');
+      if (clip && video) updateSubtitlePreview(video, clip);
     }
   }
 
