@@ -31,14 +31,14 @@ public static class SubtitleFormatter
         };
         var (font, size, primary, secondary, outline, shadow) = clip.SubtitleStyle switch
         {
-            "clean" => ("Arial", 40, "&H00FFFFFF", "&H00FFFFFF", 2, 0),
-            "podcast" => ("Arial", 43, "&H00FFFFFF", "&H00F0B44D", 3, 1),
-            "sermon" => ("Arial Black", 46, "&H00FFFFFF", "&H0000B7FF", 3, 1),
-            "motivational" => ("Arial Black", 47, "&H00FFFFFF", "&H0048D7FF", 3, 1),
-            "minimal" => ("Arial", 38, "&H00FFFFFF", "&H00FFFFFF", 2, 0),
-            "worship" => ("Georgia", 42, "&H00FFFFFF", "&H00E8C58B", 3, 1),
-            "bold" => ("Arial Black", 49, "&H00FFFFFF", "&H0000B7FF", 4, 1),
-            _ => ("Arial", 45, "&H00FFFFFF", "&H0000B7FF", 3, 1)
+            "clean" => ("Arial", 36, "&H00FFFFFF", "&H00FFFFFF", 2, 0),
+            "podcast" => ("Arial", 38, "&H00FFFFFF", "&H00F0B44D", 3, 1),
+            "sermon" => ("Arial Black", 40, "&H00FFFFFF", "&H0000B7FF", 3, 1),
+            "motivational" => ("Arial Black", 41, "&H00FFFFFF", "&H0048D7FF", 3, 1),
+            "minimal" => ("Arial", 34, "&H00FFFFFF", "&H00FFFFFF", 2, 0),
+            "worship" => ("Georgia", 38, "&H00FFFFFF", "&H00E8C58B", 3, 1),
+            "bold" => ("Arial Black", 42, "&H00FFFFFF", "&H0000B7FF", 4, 1),
+            _ => ("Arial", 39, "&H00FFFFFF", "&H0000B7FF", 3, 1)
         };
         return $"Style: Impacto,{font},{size},{primary},{secondary},&H00120B22,&H80000000,-1,0,0,0,100,100,0,0,1,{outline},{shadow},2,{marginX},{marginX},{marginV},1";
     }
@@ -53,9 +53,10 @@ public static class SubtitleFormatter
     public static string Karaoke(IReadOnlyList<TranscriptWord> words, ClipCandidate clip, int width)
     {
         var maxWordsPerLine = width >= 1600 ? 5 : clip.SubtitleStyle == "bold" ? 3 : 4;
-        var maxCharactersPerLine = width >= 1600 ? 42 : clip.SubtitleStyle == "bold" ? 19 : 23;
+        var maxCharactersPerLine = width >= 1600 ? 38 : clip.SubtitleStyle == "bold" ? 17 : 21;
         var lineLength = 0;
         var wordsOnLine = 0;
+        var lineCount = 1;
         var parts = new List<string>();
         var clipDuration = Math.Max(.1, clip.End - clip.Start);
         IReadOnlyList<EditorialMoment> moments = clip.EditorialProfile == "louvor" ? [] : EditorialMomentDetector.Detect(words, clipDuration);
@@ -64,15 +65,10 @@ public static class SubtitleFormatter
         {
             var text = Escape(word.Word.Trim());
             if (text.Length == 0) continue;
-
-            var needsBreak = wordsOnLine > 0 &&
-                (wordsOnLine >= maxWordsPerLine || lineLength + 1 + text.Length > maxCharactersPerLine);
+            var wouldOverflow = wordsOnLine > 0 && (wordsOnLine >= maxWordsPerLine || lineLength + 1 + text.Length > maxCharactersPerLine);
+            var needsBreak = wouldOverflow && lineCount < 2;
             var separator = needsBreak ? "\\N" : wordsOnLine > 0 ? " " : "";
-            if (needsBreak)
-            {
-                lineLength = 0;
-                wordsOnLine = 0;
-            }
+            if (needsBreak) { lineLength = 0; wordsOnLine = 0; lineCount++; }
 
             var duration = Math.Max(1, (int)Math.Round((word.End - word.Start) * 100));
             var editorialKind = moments
@@ -80,11 +76,9 @@ public static class SubtitleFormatter
                 .OrderByDescending(moment => moment.Strength)
                 .Select(moment => moment.Kind)
                 .FirstOrDefault() ?? "";
-            var emphasis = IsEmphasisWord(text) || editorialKind.Length > 0;
-            var token = emphasis
+            var token = IsEmphasisWord(text) || editorialKind.Length > 0
                 ? EditorialToken(text, duration, editorialKind)
                 : $"{{\\kf{duration}}}{text}";
-
             parts.Add(separator + token);
             lineLength += (lineLength > 0 ? 1 : 0) + text.Length;
             wordsOnLine++;
@@ -96,71 +90,58 @@ public static class SubtitleFormatter
 
     public static IReadOnlyList<IReadOnlyList<TranscriptWord>> SemanticUnits(IReadOnlyList<TranscriptWord> source)
     {
-        var words = source.Where(word => !string.IsNullOrWhiteSpace(word.Word)).OrderBy(word => word.Start).ToList();
+        // Preserva a ordem textual original. Alguns provedores entregam timestamps
+        // parcialmente sobrepostos; reordenar por Start pode trocar palavras de lugar.
+        var words = source.Where(word => !string.IsNullOrWhiteSpace(word.Word)).ToList();
         var units = new List<List<TranscriptWord>>();
         for (var index = 0; index < words.Count;)
         {
             var unit = new List<TranscriptWord>();
             while (index < words.Count && unit.Count < 5)
             {
-                var word = words[index++]; unit.Add(word);
+                var word = words[index++];
+                unit.Add(word);
                 var pause = index < words.Count ? words[index].Start - word.End : 0;
-                var punctuation = word.Word.TrimEnd().EndsWithAny('.', '!', '?', ':', ';');
-                if (unit.Count >= 2 && (pause >= .42 || punctuation)) break;
-                if (unit.Count >= 4 && index < words.Count && !IsConnector(words[index].Word)) break;
+                var punctuation = word.Word.TrimEnd().EndsWithAny('.', '!', '?', ':', ';', ',');
+                if (unit.Count >= 2 && (pause >= .22 || punctuation)) break;
+                if (unit.Count >= 3 && !IsConnector(word.Word)) break;
             }
-            if (unit.Count == 1 && units.Count > 0 && units[^1].Count < 5 && !IsConnector(unit[0].Word)) units[^1].Add(unit[0]);
-            else units.Add(unit);
-        }
 
-        for (var index = 0; index < units.Count - 1; index++)
-        {
-            var current = units[index]; var next = units[index + 1];
-            if (current.Count > 2 && next.Count < 5 && IsConnector(current[^1].Word)) { next.Insert(0, current[^1]); current.RemoveAt(current.Count - 1); }
-            if (next.Count == 1 && current.Count < 5) { current.Add(next[0]); units.RemoveAt(index + 1); index--; }
+            // Evita bloco solitário, que fica visualmente "piscando" no vídeo.
+            if (unit.Count == 1 && index < words.Count)
+                unit.Add(words[index++]);
+            units.Add(unit);
         }
-        if (units.Count > 1 && units[0].Count == 1 && units[1].Count < 5)
-        {
-            units[1].Insert(0, units[0][0]); units.RemoveAt(0);
-        }
-        return units;
+        return units.Where(unit => unit.Count > 0).ToList();
     }
 
     public static string Plain(string text, int width)
     {
-        var limit = width >= 1600 ? 42 : 23;
-        var maxWordsPerLine = width >= 1600 ? 6 : 4;
+        var limit = width >= 1600 ? 38 : 21;
+        var maxWordsPerLine = width >= 1600 ? 5 : 4;
         var length = 0;
         var wordsOnLine = 0;
+        var lineCount = 1;
         var parts = new List<string>();
-
         foreach (var raw in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
         {
             var word = Escape(raw);
-            var needsBreak = wordsOnLine > 0 &&
-                (wordsOnLine >= maxWordsPerLine || length + 1 + word.Length > limit);
+            var wouldOverflow = wordsOnLine > 0 && (wordsOnLine >= maxWordsPerLine || length + 1 + word.Length > limit);
+            var needsBreak = wouldOverflow && lineCount < 2;
             var separator = needsBreak ? "\\N" : wordsOnLine > 0 ? " " : "";
-            if (needsBreak)
-            {
-                length = 0;
-                wordsOnLine = 0;
-            }
-
+            if (needsBreak) { length = 0; wordsOnLine = 0; lineCount++; }
             parts.Add(separator + word);
             length += (length > 0 ? 1 : 0) + word.Length;
             wordsOnLine++;
         }
-
         return string.Concat(parts);
     }
 
     public static bool IsEmphasisWord(string value)
     {
-        var folded = Fold(value)
-            .Trim(' ', ',', '.', '?', '!', ':', ';', '-', '—', '"', '\'', '(', ')');
+        var folded = Fold(value).Trim(' ', ',', '.', '?', '!', ':', ';', '-', '—', '"', '\'', '(', ')');
         if (EmphasisWords.Contains(folded)) return true;
-        return folded.Length >= 8 &&
-            (folded.EndsWith("dade", StringComparison.Ordinal) || folded.EndsWith("cao", StringComparison.Ordinal) || folded.EndsWith("mente", StringComparison.Ordinal));
+        return folded.Length >= 8 && (folded.EndsWith("dade", StringComparison.Ordinal) || folded.EndsWith("cao", StringComparison.Ordinal) || folded.EndsWith("mente", StringComparison.Ordinal));
     }
 
     private static string EditorialToken(string text, int duration, string kind)
@@ -172,24 +153,19 @@ public static class SubtitleFormatter
             "conclusion" => "&H00B7E3A1&",
             _ => "&H0000B7FF&"
         };
-        var scale = kind == "climax" ? "\\fscx108\\fscy108" : kind == "hook" ? "\\fscx104\\fscy104" : "";
+        var scale = kind == "climax" ? "\\fscx106\\fscy106" : kind == "hook" ? "\\fscx103\\fscy103" : "";
         return $"{{\\kf{duration}\\b1\\1c{color}{scale}}}{text}{{\\rImpacto}}";
     }
 
     private static bool IsConnector(string value) => Connectors.Contains(Fold(value).Trim(' ', ',', '.', '?', '!', ':', ';', '-', '—', '"', '\'', '(', ')'));
-
-    private static string Escape(string value) =>
-        value.Replace("\n", " ").Replace("{", "(").Replace("}", ")");
+    private static string Escape(string value) => value.Replace("\n", " ").Replace("{", "(").Replace("}", ")");
 
     private static string Fold(string value)
     {
         var normalized = value.Normalize(NormalizationForm.FormD);
         var builder = new StringBuilder();
         foreach (var character in normalized)
-        {
-            if (CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark)
-                builder.Append(char.ToLowerInvariant(character));
-        }
+            if (CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark) builder.Append(char.ToLowerInvariant(character));
         return builder.ToString().Normalize(NormalizationForm.FormC);
     }
 }
