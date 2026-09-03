@@ -50,3 +50,85 @@
 
   setTimeout(installRetentionButton, 600);
 })();
+
+/* Editor reliability patch. Este arquivo carrega antes do Editor V4, por isso pode
+   preservar as ações internas do editor de legendas que o V4 interceptava. */
+(function(){
+  const saveChains=new Map();
+  const saveVersions=new Map();
+
+  // Captura os botões reais das legendas antes do listener do Editor V4.
+  // O V4 confundia o data-edit-mode do CARD com um botão de aba e exibia apenas "LEGENDAS aberto".
+  document.addEventListener('click',event=>{
+    const subtitleAction=event.target.closest('.subtitle-editor button[onclick]');
+    if(subtitleAction){
+      const handler=subtitleAction.onclick;
+      if(typeof handler==='function'){
+        event.preventDefault();event.stopImmediatePropagation();
+        handler.call(subtitleAction,event);
+      }
+      return;
+    }
+    const captionsTool=event.target.closest('.cc-tool-rail [data-cc-mode="captions"]');
+    if(captionsTool){
+      setTimeout(()=>{
+        const clipId=document.querySelector('.clip-card.active')?.dataset.clip||document.querySelector('#ccClipPicker')?.value;
+        if(current&&clipId&&typeof prepareSubtitleWorkspaceClip==='function')prepareSubtitleWorkspaceClip(current,clipId);
+      },0);
+    }
+  },true);
+
+  // Salva a fotografia exata do texto no momento da edição. Respostas antigas não podem
+  // redesenhar a tela nem apagar caracteres digitados depois.
+  saveSubtitleTrackNow=async function(card,explicit=false){
+    const clip=current?.clips.find(item=>item.id===card?.dataset.clip);if(!clip||!card)return;
+    clearTimeout(subtitleAutosaveTimers.get(clip.id));
+    const version=(saveVersions.get(clip.id)||0)+1;saveVersions.set(clip.id,version);
+    const outgoing=collectSubtitleTrack(card,clip);
+    subtitleSaveState(card,'Salvando…','saving');
+    const previous=saveChains.get(clip.id)||Promise.resolve();
+    const task=previous.catch(()=>{}).then(async()=>{
+      const saved=await api(`/api/projects/${current.id}/clips/${clip.id}/subtitles`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(outgoing)});
+      clip.subtitleTrack=saved;
+      if(saveVersions.get(clip.id)===version){
+        if(explicit)redrawSubtitleBlocks(card,saved.blocks||[]);
+        const enabled=card.querySelector('[name="subtitlesEnabled"]');if(enabled)enabled.checked=saved.enabled!==false;
+        const style=card.querySelector('[name="subtitleTrackStyle"]');if(style)style.value=saved.style||style.value;
+        const offset=card.querySelector('[name="subtitleOffset"]'),range=card.querySelector('[name="subtitleOffsetRange"]');
+        if(offset&&document.activeElement!==offset)offset.value=saved.offsetSeconds||0;if(range&&document.activeElement!==range)range.value=saved.offsetSeconds||0;
+        const x=card.querySelector('[name="subtitlePositionX"]'),y=card.querySelector('[name="subtitlePositionY"]');
+        if(x&&document.activeElement!==x)x.value=saved.positionX||50;if(y&&document.activeElement!==y)y.value=saved.positionY||72;
+        subtitleSaveState(card,explicit?'Salvo no projeto':'Salvo automaticamente','saved');
+        const video=activateLiveSubtitlePreview(clip);if(video)updateSubtitlePreview(video,clip);
+      }
+      return saved;
+    });
+    saveChains.set(clip.id,task);
+    try{return await task}catch(error){subtitleSaveState(card,'Falha ao salvar','error');toast(error.message);throw error}finally{if(saveChains.get(clip.id)===task)saveChains.delete(clip.id)}
+  };
+
+  // Torna a edição em massa realmente seletiva: cada corte ganha seu próprio checkbox
+  // no painel IA & Lote, sincronizado com os checkboxes internos já usados pelo motor de lote.
+  const renderBase=renderProject;
+  renderProject=function(project){
+    renderBase(project);
+    if(project.status!=='ready')return;
+    requestAnimationFrame(()=>requestAnimationFrame(()=>installBatchPicker(project)));
+  };
+
+  function installBatchPicker(project){
+    const suite=document.querySelector('.aj-productivity-suite');if(!suite||suite.querySelector('.aj-batch-picker'))return;
+    const picker=document.createElement('section');picker.className='aj-batch-picker';
+    picker.innerHTML=`<div class="aj-batch-picker-head"><div><strong>Escolha os cortes</strong><small>Marque só os vídeos que devem receber o mesmo Template/Brand Kit.</small></div><button type="button" data-batch-clear>Limpar seleção</button></div><div class="aj-batch-picker-list">${project.clips.map((clip,index)=>`<label><input type="checkbox" data-batch-clip="${clip.id}"><span><b>${String(index+1).padStart(2,'0')}</b>${escapeHtml(clip.title)}</span><em>${Math.round(clip.score)} pts</em></label>`).join('')}</div><p class="aj-batch-help"><b>O que faz:</b> aplica de uma vez estilo de legenda, composição, transição, velocidade, remoção de pausas e/ou identidade visual aos cortes marcados. Não altera o texto falado nem junta vídeos.</p>`;
+    const controls=suite.querySelector('.aj-productivity-controls');controls?.before(picker);
+    picker.querySelectorAll('[data-batch-clip]').forEach(input=>input.addEventListener('change',()=>syncBatchInput(input)));
+    picker.querySelector('[data-batch-clear]').onclick=()=>{picker.querySelectorAll('[data-batch-clip]').forEach(input=>{input.checked=false;syncBatchInput(input)});const all=suite.querySelector('[data-batch-select-all]');if(all)all.checked=false;};
+    const selectAll=suite.querySelector('[data-batch-select-all]');
+    if(selectAll)selectAll.addEventListener('change',()=>setTimeout(()=>picker.querySelectorAll('[data-batch-clip]').forEach(input=>input.checked=selectAll.checked),0));
+  }
+
+  function syncBatchInput(input){
+    const card=document.querySelector(`.clip-card[data-clip="${input.dataset.batchClip}"]`),hidden=card?.querySelector('[data-batch-select]');
+    if(!hidden)return;hidden.checked=input.checked;hidden.dispatchEvent(new Event('change',{bubbles:true}));
+  }
+})();
