@@ -5,6 +5,7 @@ namespace CortaFeStudio.Api.Services;
 
 public sealed class AutopilotService : BackgroundService
 {
+    private static readonly HashSet<string> MediaExtensions = new(StringComparer.OrdinalIgnoreCase) { ".mp4", ".mov", ".mkv", ".webm", ".mp3", ".wav", ".m4a" };
     private readonly ProjectStore _store;
     private readonly ProjectQueue _queue;
     private readonly ToolService _tools;
@@ -56,9 +57,33 @@ public sealed class AutopilotService : BackgroundService
                     source.LastSeenAt ??= previous.LastSeenAt;
                 }
             }
+
+            foreach (var folder in request.WatchedFolders)
+            {
+                folder.Name = string.IsNullOrWhiteSpace(folder.Name) ? "Pasta de vídeos" : folder.Name.Trim();
+                folder.Path = folder.Path?.Trim() ?? "";
+                if (string.IsNullOrWhiteSpace(folder.Path)) throw new ArgumentException($"Informe o caminho da pasta em “{folder.Name}”.");
+                var fullPath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(folder.Path));
+                if (!Directory.Exists(fullPath)) throw new ArgumentException($"A pasta “{fullPath}” não existe ou não está acessível.");
+                folder.Path = fullPath;
+                folder.ContentType = NormalizeContentType(folder.ContentType);
+                folder.WhisperModel = NormalizeWhisperModel(folder.WhisperModel);
+                folder.ClipCount = Math.Clamp(folder.ClipCount, 1, 20);
+                if (string.IsNullOrWhiteSpace(folder.Id)) folder.Id = Guid.NewGuid().ToString("N")[..10];
+                var previous = _configuration.WatchedFolders.FirstOrDefault(item => item.Id == folder.Id);
+                if (previous is not null)
+                {
+                    folder.ImportedFileKeys = previous.ImportedFileKeys.ToList();
+                    folder.LastScanAt ??= previous.LastScanAt;
+                    folder.LastImportedFile ??= previous.LastImportedFile;
+                    folder.LastError ??= previous.LastError;
+                }
+            }
+
             _configuration.Enabled = request.Enabled;
             _configuration.PollMinutes = Math.Clamp(request.PollMinutes, 5, 180);
             _configuration.Sources = request.Sources.GroupBy(item => item.Id).Select(group => group.First()).Take(30).ToList();
+            _configuration.WatchedFolders = request.WatchedFolders.GroupBy(item => item.Id).Select(group => group.First()).Take(20).ToList();
             await SaveUnsafeAsync(ct);
             return Snapshot();
         }
@@ -71,72 +96,11 @@ public sealed class AutopilotService : BackgroundService
         try
         {
             var result = new AutopilotCheckResult();
-            var sources = Snapshot().Sources.Where(source => source.Enabled).ToList();
-            foreach (var source in sources)
-            {
-                ct.ThrowIfCancellationRequested();
-                result.SourcesChecked++;
-                try
-                {
-                    var media = await DiscoverLatestCompletedAsync(source, ct);
-                    if (media is null)
-                    {
-                        source.LastError = "Nenhum culto/vídeo concluído foi encontrado.";
-                        result.Messages.Add($"{source.Name}: nenhum conteúdo concluído encontrado.");
-                        await MergeSourceStateAsync(source, ct);
-                        continue;
-                    }
-
-                    var firstCheck = string.IsNullOrWhiteSpace(source.LastSeenMediaId);
-                    var changed = !string.Equals(source.LastSeenMediaId, media.Id, StringComparison.Ordinal);
-                    source.LastSeenMediaId = media.Id;
-                    source.LastSeenAt = DateTime.UtcNow;
-                    source.LastError = null;
-
-                    if (firstCheck && !queueCurrentOnFirstCheck)
-                    {
-                        result.Messages.Add($"{source.Name}: monitoramento iniciado em “{media.Title}”. O próximo culto novo será processado.");
-                        await MergeSourceStateAsync(source, ct);
-                        continue;
-                    }
-                    if (!changed)
-                    {
-                        result.Messages.Add($"{source.Name}: sem conteúdo novo.");
-                        await MergeSourceStateAsync(source, ct);
-                        continue;
-                    }
-                    if (string.Equals(source.LastQueuedMediaId, media.Id, StringComparison.Ordinal) ||
-                        _store.ListAll().Any(project => string.Equals(project.Source, media.Url, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        source.LastQueuedMediaId = media.Id;
-                        result.Messages.Add($"{source.Name}: “{media.Title}” já existe na biblioteca.");
-                        await MergeSourceStateAsync(source, ct);
-                        continue;
-                    }
-
-                    var options = new ProjectOptions
-                    {
-                        ContentType = source.ContentType,
-                        ClipCount = source.ClipCount,
-                        WhisperModel = source.WhisperModel,
-                        Topic = source.Topic
-                    };
-                    options.ApplyAutomaticDuration();
-                    var project = await _store.CreateAsync(media.Title, SourceKind.YouTube, media.Url, options);
-                    await _queue.EnqueueAsync(project.Id);
-                    source.LastQueuedMediaId = media.Id;
-                    result.ProjectsQueued++;
-                    result.Messages.Add($"{source.Name}: “{media.Title}” entrou automaticamente na fila.");
-                    await MergeSourceStateAsync(source, ct);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    source.LastError = ex.Message;
-                    result.Messages.Add($"{source.Name}: {ex.Message}");
-                    _logger.LogWarning(ex, "[Autopilot] Falha ao consultar {Source}", source.Name);
-                    await MergeSourceStateAsync(source, ct);
-                }
-            }
+            var snapshot = Snapshot();
+            foreach (var source in snapshot.Sources.Where(source => source.Enabled))
+                await CheckRemoteSourceAsync(source, result, queueCurrentOnFirstCheck, ct);
+            foreach (var folder in snapshot.WatchedFolders.Where(folder => folder.Enabled))
+                await CheckFolderAsync(folder, result, queueCurrentOnFirstCheck, ct);
 
             await _stateLock.WaitAsync(ct);
             try
@@ -149,6 +113,119 @@ public sealed class AutopilotService : BackgroundService
             return result;
         }
         finally { _checkLock.Release(); }
+    }
+
+    private async Task CheckRemoteSourceAsync(AutopilotSource source, AutopilotCheckResult result, bool queueCurrentOnFirstCheck, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        result.SourcesChecked++;
+        try
+        {
+            var media = await DiscoverLatestCompletedAsync(source, ct);
+            if (media is null)
+            {
+                source.LastError = "Nenhum culto/vídeo concluído foi encontrado.";
+                result.Messages.Add($"{source.Name}: nenhum conteúdo concluído encontrado.");
+                await MergeSourceStateAsync(source, ct);
+                return;
+            }
+
+            var firstCheck = string.IsNullOrWhiteSpace(source.LastSeenMediaId);
+            var changed = !string.Equals(source.LastSeenMediaId, media.Id, StringComparison.Ordinal);
+            source.LastSeenMediaId = media.Id;
+            source.LastSeenAt = DateTime.UtcNow;
+            source.LastError = null;
+
+            if (firstCheck && !queueCurrentOnFirstCheck)
+            {
+                result.Messages.Add($"{source.Name}: monitoramento iniciado em “{media.Title}”. O próximo culto novo será processado.");
+                await MergeSourceStateAsync(source, ct);
+                return;
+            }
+            if (!changed)
+            {
+                result.Messages.Add($"{source.Name}: sem conteúdo novo.");
+                await MergeSourceStateAsync(source, ct);
+                return;
+            }
+            if (string.Equals(source.LastQueuedMediaId, media.Id, StringComparison.Ordinal) ||
+                _store.ListAll().Any(project => string.Equals(project.Source, media.Url, StringComparison.OrdinalIgnoreCase)))
+            {
+                source.LastQueuedMediaId = media.Id;
+                result.Messages.Add($"{source.Name}: “{media.Title}” já existe na biblioteca.");
+                await MergeSourceStateAsync(source, ct);
+                return;
+            }
+
+            var project = await _store.CreateAsync(media.Title, SourceKind.YouTube, media.Url, BuildOptions(source.ContentType, source.ClipCount, source.WhisperModel, source.Topic));
+            await _queue.EnqueueAsync(project.Id);
+            source.LastQueuedMediaId = media.Id;
+            result.ProjectsQueued++;
+            result.Messages.Add($"{source.Name}: “{media.Title}” entrou automaticamente na fila.");
+            await MergeSourceStateAsync(source, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            source.LastError = ex.Message;
+            result.Messages.Add($"{source.Name}: {ex.Message}");
+            _logger.LogWarning(ex, "[Autopilot] Falha ao consultar {Source}", source.Name);
+            await MergeSourceStateAsync(source, ct);
+        }
+    }
+
+    private async Task CheckFolderAsync(WatchedFolderSource folder, AutopilotCheckResult result, bool queueCurrentOnFirstCheck, CancellationToken ct)
+    {
+        result.FoldersChecked++;
+        try
+        {
+            var fullPath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(folder.Path));
+            if (!Directory.Exists(fullPath)) throw new DirectoryNotFoundException($"Pasta não encontrada: {fullPath}");
+            var search = folder.IncludeSubfolders ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+            var files = Directory.EnumerateFiles(fullPath, "*", search)
+                .Where(path => MediaExtensions.Contains(Path.GetExtension(path)))
+                .Select(path => new FileInfo(path))
+                .Where(file => file.Exists && file.Length > 1024 && DateTime.UtcNow - file.LastWriteTimeUtc > TimeSpan.FromSeconds(30))
+                .OrderBy(file => file.LastWriteTimeUtc)
+                .ToList();
+
+            var firstCheck = folder.ImportedFileKeys.Count == 0 && folder.LastScanAt is null;
+            if (firstCheck && !queueCurrentOnFirstCheck)
+            {
+                folder.ImportedFileKeys = files.Select(FileKey).TakeLast(500).ToList();
+                folder.LastScanAt = DateTime.UtcNow;
+                folder.LastError = null;
+                result.Messages.Add($"{folder.Name}: pasta preparada com {files.Count} arquivo(s) já existente(s); somente novos arquivos serão importados.");
+                await MergeFolderStateAsync(folder, ct);
+                return;
+            }
+
+            var imported = 0;
+            foreach (var file in files)
+            {
+                ct.ThrowIfCancellationRequested();
+                var key = FileKey(file);
+                if (folder.ImportedFileKeys.Contains(key, StringComparer.OrdinalIgnoreCase)) continue;
+                if (!CanReadCompletedFile(file.FullName)) continue;
+                var project = await _store.CreateFromLocalPathAsync(file.FullName, BuildOptions(folder.ContentType, folder.ClipCount, folder.WhisperModel, folder.Topic), ct);
+                await _queue.EnqueueAsync(project.Id);
+                folder.ImportedFileKeys.Add(key);
+                folder.LastImportedFile = file.FullName;
+                imported++;
+                result.ProjectsQueued++;
+            }
+            if (folder.ImportedFileKeys.Count > 500) folder.ImportedFileKeys = folder.ImportedFileKeys.TakeLast(500).ToList();
+            folder.LastScanAt = DateTime.UtcNow;
+            folder.LastError = null;
+            result.Messages.Add(imported > 0 ? $"{folder.Name}: {imported} novo(s) arquivo(s) entrou(aram) na fila." : $"{folder.Name}: nenhum arquivo novo.");
+            await MergeFolderStateAsync(folder, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            folder.LastError = ex.Message;
+            result.Messages.Add($"{folder.Name}: {ex.Message}");
+            _logger.LogWarning(ex, "[Autopilot] Falha ao vigiar pasta {Folder}", folder.Name);
+            await MergeFolderStateAsync(folder, ct);
+        }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -208,6 +285,22 @@ public sealed class AutopilotService : BackgroundService
         finally { _stateLock.Release(); }
     }
 
+    private async Task MergeFolderStateAsync(WatchedFolderSource folder, CancellationToken ct)
+    {
+        await _stateLock.WaitAsync(ct);
+        try
+        {
+            var target = _configuration.WatchedFolders.FirstOrDefault(item => item.Id == folder.Id);
+            if (target is null) return;
+            target.ImportedFileKeys = folder.ImportedFileKeys.ToList();
+            target.LastScanAt = folder.LastScanAt;
+            target.LastImportedFile = folder.LastImportedFile;
+            target.LastError = folder.LastError;
+            await SaveUnsafeAsync(ct);
+        }
+        finally { _stateLock.Release(); }
+    }
+
     private AutopilotConfiguration Load()
     {
         try
@@ -223,6 +316,21 @@ public sealed class AutopilotService : BackgroundService
         var temporary = _configPath + ".tmp";
         await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(_configuration, _json), ct);
         File.Move(temporary, _configPath, true);
+    }
+
+    private static ProjectOptions BuildOptions(string contentType, int clipCount, string whisperModel, string? topic)
+    {
+        var options = new ProjectOptions { ContentType = contentType, ClipCount = clipCount, WhisperModel = whisperModel, Topic = topic };
+        options.ApplyAutomaticDuration();
+        return options;
+    }
+
+    private static string FileKey(FileInfo file) => $"{file.FullName}|{file.Length}|{file.LastWriteTimeUtc.Ticks}";
+    private static bool CanReadCompletedFile(string path)
+    {
+        try { using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read); return stream.Length > 1024; }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
     }
 
     private static bool IsSupportedWatchUrl(string url) => Uri.TryCreate(url, UriKind.Absolute, out var uri) &&

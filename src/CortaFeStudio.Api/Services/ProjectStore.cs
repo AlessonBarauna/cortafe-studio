@@ -12,6 +12,7 @@ public sealed class ProjectStore
     private readonly string _database;
     private readonly SemaphoreSlim _lock = new(1, 1);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+    private static readonly HashSet<string> MediaExtensions = new(StringComparer.OrdinalIgnoreCase) { ".mp4", ".mov", ".mkv", ".webm", ".mp3", ".wav", ".m4a" };
 
     public ProjectStore(IWebHostEnvironment env)
     {
@@ -50,9 +51,26 @@ public sealed class ProjectStore
     public async Task<VideoProject> CreateFromUploadAsync(string? name, IFormFile file, ProjectOptions options)
     {
         var p = await CreateAsync(string.IsNullOrWhiteSpace(name) ? Path.GetFileNameWithoutExtension(file.FileName) : name, SourceKind.Upload, file.FileName, options);
-        var safeExt = new[] { ".mp4", ".mov", ".mkv", ".webm", ".mp3", ".wav", ".m4a" }.Contains(Path.GetExtension(file.FileName).ToLowerInvariant()) ? Path.GetExtension(file.FileName) : ".bin";
+        var extension = Path.GetExtension(file.FileName);
+        var safeExt = MediaExtensions.Contains(extension) ? extension : ".bin";
         var target = Path.Combine(ProjectDirectory(p.Id), "source" + safeExt);
         await using var output = File.Create(target); await file.CopyToAsync(output); p.LocalMedia = Path.GetFileName(target); await SaveAsync(p); return p;
+    }
+
+    public async Task<VideoProject> CreateFromLocalPathAsync(string path, ProjectOptions options, CancellationToken ct = default)
+    {
+        var fullPath = Path.GetFullPath(path);
+        if (!File.Exists(fullPath)) throw new FileNotFoundException("O arquivo monitorado não existe mais.", fullPath);
+        var extension = Path.GetExtension(fullPath);
+        if (!MediaExtensions.Contains(extension)) throw new ArgumentException("Formato de mídia não suportado pela pasta vigiada.", nameof(path));
+        var project = await CreateAsync(Path.GetFileNameWithoutExtension(fullPath), SourceKind.Upload, fullPath, options);
+        var target = Path.Combine(ProjectDirectory(project.Id), "source" + extension.ToLowerInvariant());
+        await using (var input = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
+        await using (var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
+            await input.CopyToAsync(output, ct);
+        project.LocalMedia = Path.GetFileName(target);
+        await SaveAsync(project);
+        return project;
     }
 
     public async Task<VideoProject?> UpdateAsync(string id, Action<VideoProject> action)
