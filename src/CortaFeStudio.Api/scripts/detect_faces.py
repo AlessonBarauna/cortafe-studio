@@ -91,6 +91,11 @@ def main():
     dominant_side = max(side_counts, key=side_counts.get)
     dominant_centers = [center for center in centers if participant_side(center) == dominant_side]
     crop_x = sum(dominant_centers) / len(dominant_centers) if dominant_centers else (sum(centers) / len(centers) if centers else .5)
+    side_centers = {
+        side: round(sum(values) / len(values), 4)
+        for side in ("left", "right")
+        if (values := [center for center in centers if participant_side(center) == side])
+    }
     result = {
         "detected": bool(centers), "cropX": crop_x,
         "samples": len(centers), "sampleCount": sample_count,
@@ -99,7 +104,8 @@ def main():
         "sceneChanges": scene_changes, "sceneTimes": scene_times, "track": observations,
         "multiPerson": multi_person_samples > 0, "multiPersonSamples": multi_person_samples,
         "speakerSwitches": speaker_switches,
-        "activeSpeakerConfidence": decisive_samples / multi_person_samples if multi_person_samples else 0
+        "activeSpeakerConfidence": decisive_samples / multi_person_samples if multi_person_samples else 0,
+        "participantCenters": side_centers
     }
     with open(output, "w", encoding="utf-8") as handle: json.dump(result, handle)
 

@@ -8,12 +8,14 @@ clipCard = function (project, clip, index) {
     <summary>Direção visual</summary>
     <div class="editor-grid mt-3">
       <label>Foco do vídeo<select class="form-select" name="cropFocus">${option('top', clip.cropFocus, 'Superior')}${option('center', clip.cropFocus || 'center', 'Central')}${option('bottom', clip.cropFocus, 'Inferior')}</select></label>
-      <label>Composição<select class="form-select" name="layoutMode">${option('fill', clip.layoutMode || 'fill', 'Preencher 9:16')}${option('blur', clip.layoutMode, 'Fundo desfocado')}</select></label>
+      <label>Composição<select class="form-select" name="layoutMode" onchange="toggleSplitControls(this)">${option('fill', clip.layoutMode || 'fill', 'Locutor em foco')}${option('split', clip.layoutMode, 'Dois participantes · tela dividida')}${option('blur', clip.layoutMode, 'Plano aberto · fundo desfocado')}</select></label>
       <label>Formato de saída<select class="form-select" name="outputPreset">${option('vertical', clip.outputPreset || 'vertical', 'Vertical · 1080×1920')}${option('portrait', clip.outputPreset, 'Feed retrato · 1080×1350')}${option('square', clip.outputPreset, 'Quadrado · 1080×1080')}${option('landscape', clip.outputPreset, 'Horizontal · 1920×1080')}</select></label>
       <label>Transições de cena<select class="form-select" name="transitionStyle">${option('smooth', clip.transitionStyle || 'smooth', 'Suave · contínua')}${option('editorial', clip.transitionStyle, 'Editorial · cortes elegantes')}${option('dynamic', clip.transitionStyle, 'Dinâmica · ritmo rápido')}</select><small class="text-secondary d-block mt-1">Usa as mudanças de cena detectadas no vídeo.</small></label>
       ${speedControl}
       <label class="form-check editor-check"><input class="form-check-input" type="checkbox" name="silenceTrimmingEnabled" ${clip.silenceTrimmingEnabled !== false ? 'checked' : ''}><span>Reduzir apenas pausas longas</span><small class="text-secondary d-block">Mantém a fala e remove silêncios seguros.</small></label>
       <label>Posição horizontal<input class="form-range" name="cropX" type="range" min="0" max="1" step=".01" value="${clip.cropX ?? .5}"></label>
+      <label class="split-control ${clip.layoutMode === 'split' ? '' : 'd-none'}">Participante superior<input class="form-range" name="splitLeftX" type="range" min="0" max="1" step=".01" value="${clip.splitLeftX ?? .25}"></label>
+      <label class="split-control ${clip.layoutMode === 'split' ? '' : 'd-none'}">Participante inferior<input class="form-range" name="splitRightX" type="range" min="0" max="1" step=".01" value="${clip.splitRightX ?? .75}"></label>
       <label>Estilo da legenda<select class="form-select" name="subtitleStyle">${option('impact', clip.subtitleStyle || 'impact', 'Impacto')}${option('clean', clip.subtitleStyle, 'Limpa')}${option('podcast', clip.subtitleStyle, 'Podcast')}${option('sermon', clip.subtitleStyle, 'Pregação')}${option('motivational', clip.subtitleStyle, 'Motivacional')}${option('minimal', clip.subtitleStyle, 'Minimalista')}${option('worship', clip.subtitleStyle, 'Louvor')}${option('bold', clip.subtitleStyle, 'Palco')}</select></label>
       <label>Posição na capa<select class="form-select" name="coverPosition">${option('top', clip.coverPosition, 'Superior')}${option('center', clip.coverPosition, 'Centro')}${option('bottom', clip.coverPosition || 'bottom', 'Inferior')}</select></label>
       <label>Cor de destaque<input class="form-control form-control-color" name="coverAccent" type="color" value="${escapeHtml(clip.coverAccent || '#C7A35A')}"></label>
@@ -31,7 +33,7 @@ saveClip = async function (project, card) {
     start: +value('start'), end: +value('end'), title: value('title'), coverText: value('coverText'),
     caption: value('caption'), approved: true, cropFocus: value('cropFocus'),
     subtitleStyle: value('subtitleStyle'), coverAccent: value('coverAccent'),
-    coverPosition: value('coverPosition'), coverTimestamp: +value('coverTimestamp'), cropX: +value('cropX'), layoutMode: value('layoutMode'), outputPreset: value('outputPreset'), playbackSpeed: +(value('playbackSpeed') || 1), silenceTrimmingEnabled: card.querySelector('[name="silenceTrimmingEnabled"]')?.checked ?? true, transitionStyle: value('transitionStyle')
+    coverPosition: value('coverPosition'), coverTimestamp: +value('coverTimestamp'), cropX: +value('cropX'), layoutMode: value('layoutMode'), splitLeftX: +value('splitLeftX'), splitRightX: +value('splitRightX'), outputPreset: value('outputPreset'), playbackSpeed: +(value('playbackSpeed') || 1), silenceTrimmingEnabled: card.querySelector('[name="silenceTrimmingEnabled"]')?.checked ?? true, transitionStyle: value('transitionStyle')
   };
   await api(`/api/projects/${project.id}/clips/${clip.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   Object.assign(clip, body);
@@ -50,3 +52,7 @@ async function refreshCover(projectId, clipId) {
 }
 
 async function analyzeFraming(projectId, clipId) { try { toast('Analisando rostos no trecho…'); await api(`/api/projects/${projectId}/clips/${clipId}/analyze-framing`, { method: 'POST' }); toast('Enquadramento ajustado'); openProject(projectId); } catch (error) { toast(error.message.includes('cv2') ? 'Instale o componente de visão pelo instalador do projeto' : error.message); } }
+
+function toggleSplitControls(select) {
+  select.closest('.editor-tools')?.querySelectorAll('.split-control').forEach(control => control.classList.toggle('d-none', select.value !== 'split'));
+}
