@@ -132,10 +132,19 @@ public static class RenderFilterFactory
         {
             var current = points[index]; var next = points[index + 1];
             var duration = Math.Max(.001, next.Time - current.Time);
-            var interpolation = $"{Number(current.X)}+({Number(next.X)}-{Number(current.X)})*(t-{Scalar(current.Time)})/{Scalar(duration)}";
+            var interpolation = Math.Abs(next.X - current.X) >= .22
+                ? FastSpeakerSwitch(current, next)
+                : $"{Number(current.X)}+({Number(next.X)}-{Number(current.X)})*(t-{Scalar(current.Time)})/{Scalar(duration)}";
             expression = $"if(lte(t\\,{Scalar(next.Time)})\\,{interpolation}\\,{expression})";
         }
         return expression;
+    }
+
+    private static string FastSpeakerSwitch(FramingKeyframe current, FramingKeyframe next)
+    {
+        var transitionDuration = Math.Min(.16, Math.Max(.06, (next.Time - current.Time) / 4));
+        var transitionStart = Math.Max(current.Time, next.Time - transitionDuration);
+        return $"if(lt(t\\,{Scalar(transitionStart)})\\,{Number(current.X)}\\,{Number(current.X)}+({Number(next.X)}-{Number(current.X)})*(t-{Scalar(transitionStart)})/{Scalar(transitionDuration)})";
     }
 
     private static string Number(double value) => Math.Clamp(value, 0, 1).ToString("0.###", CultureInfo.InvariantCulture);

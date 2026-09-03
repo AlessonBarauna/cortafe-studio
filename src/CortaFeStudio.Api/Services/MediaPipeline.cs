@@ -227,6 +227,8 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
 
     public async Task RenderClipAsync(VideoProject p, ClipCandidate clip, CancellationToken ct = default)
     {
+        if (p.Options.ContentType is "podcast" or "entrevista" && clip.FramingAnalysisVersion < 2)
+            await framingService.AnalyzeAsync(p, clip, ct);
         var cachedOutput = string.IsNullOrWhiteSpace(clip.VideoPath) ? null : store.ResolveAsset(p.Id, clip.VideoPath);
         if (!clip.RenderOutdated && cachedOutput is not null && clip.LastRenderFingerprint == RenderStateService.Fingerprint(clip))
         {

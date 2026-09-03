@@ -112,7 +112,7 @@ public sealed class RenderFilterFactoryTests
     }
 
     [Fact]
-    public void Framing_ComRastreamento_InterpolaMovimentoAoLongoDoTempo()
+    public void Framing_ComTrocaDeLocutor_EvitaPercorrerCentroVazioLentamente()
     {
         var clip = new ClipCandidate
         {
@@ -126,10 +126,28 @@ public sealed class RenderFilterFactoryTests
 
         var filter = RenderFilterFactory.Framing(clip);
 
-        Assert.Contains("if(lte(t\\,2)\\,0.3+(0.7-0.3)*(t-0)/2", filter);
+        Assert.Contains("if(lte(t\\,2)\\,if(lt(t\\,1.84)\\,0.3\\,0.3+(0.7-0.3)*(t-1.84)/0.16)", filter);
         Assert.Contains("lte(t\\,4)", filter);
-        Assert.Contains("*(t-2)/2", filter);
+        Assert.Contains("0.7+(0.5-0.7)*(t-2)/2", filter);
         Assert.Contains("iw*(", filter);
+    }
+
+    [Fact]
+    public void Framing_ComMovimentoPequeno_MantemInterpolacaoSuave()
+    {
+        var clip = new ClipCandidate
+        {
+            FramingTrack =
+            [
+                new FramingKeyframe { Time = 0, X = .31 },
+                new FramingKeyframe { Time = 2, X = .39 }
+            ]
+        };
+
+        var filter = RenderFilterFactory.Framing(clip);
+
+        Assert.Contains("0.31+(0.39-0.31)*(t-0)/2", filter);
+        Assert.DoesNotContain("if(lt(t\\,1.84)", filter);
     }
 
     [Theory]
