@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using CortaFeStudio.Api.Models;
@@ -88,18 +87,22 @@ TRANSCRIÇÃO:
                 transcript = Truncate(clip.Transcript, 1600),
                 title = clip.Title
             });
+            var topicMap = topics.Select(t => new { t.Title, t.Summary, t.Start, t.End });
             var prompt = $"""
 Você é um editor sênior de Reels, Shorts e TikTok para {Profile(options.ContentType)}.
 Avalie cada corte sem alterar os IDs. Considere: gancho, ideia completa, valor emocional, clareza sem contexto anterior, potencial de compartilhamento e fidelidade ao conteúdo.
 Retorne SOMENTE um array JSON:
 [{{"clipId":"id","score":0.0,"reason":"motivo curto","topic":"tema","shareability":0.0,"emotionalValue":0.0,"standaloneClarity":0.0}}]
 Todos os números devem estar entre 0 e 100. Evite elogios genéricos.
-Mapa de temas: {JsonSerializer.Serialize(topics.Select(t => new {{ t.Title, t.Summary, t.Start, t.End }}))}
+Mapa de temas: {JsonSerializer.Serialize(topicMap)}
 Cortes: {JsonSerializer.Serialize(input)}
 """;
             var generated = Generate<List<SemanticClipEvaluation>>(prompt);
             if (generated is null || generated.Count == 0) return fallback;
-            var byId = generated.Where(x => !string.IsNullOrWhiteSpace(x.ClipId)).ToDictionary(x => x.ClipId, StringComparer.OrdinalIgnoreCase);
+            var byId = generated
+                .Where(x => !string.IsNullOrWhiteSpace(x.ClipId))
+                .GroupBy(x => x.ClipId, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
             foreach (var item in fallback)
             {
                 if (!byId.TryGetValue(item.ClipId, out var ai)) continue;
@@ -142,7 +145,7 @@ Cortes: {JsonSerializer.Serialize(payload)}
                 .Select(series => new EditorialSeries
                 {
                     Id = series.Id,
-                    Title = series.Title?.Trim() ?? "Série",
+                    Title = string.IsNullOrWhiteSpace(series.Title) ? "Série" : series.Title.Trim(),
                     Summary = series.Summary?.Trim() ?? "",
                     Score = Clamp(series.Score),
                     ClipIds = series.ClipIds.Where(validIds.Contains).Distinct(StringComparer.OrdinalIgnoreCase).Take(5).ToList()
@@ -165,7 +168,9 @@ Cortes: {JsonSerializer.Serialize(payload)}
         using var outer = JsonDocument.Parse(body);
         if (!outer.RootElement.TryGetProperty("response", out var value)) return default;
         var raw = value.GetString();
-        return string.IsNullOrWhiteSpace(raw) ? default : JsonSerializer.Deserialize<T>(raw, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        return string.IsNullOrWhiteSpace(raw)
+            ? default
+            : JsonSerializer.Deserialize<T>(raw, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
     }
 
     private static List<List<TranscriptSegment>> TranscriptChunks(IReadOnlyList<TranscriptSegment> transcript, double duration)
@@ -249,7 +254,11 @@ internal sealed class HeuristicEditorialAiProvider : IEditorialAiProvider
             topics.Add(new EditorialTopic
             {
                 Title = keywords.Count > 0 ? TitleCase(string.Join(" · ", keywords.Take(3))) : $"Tema {topics.Count + 1}",
-                Summary = Summarize(text), Start = start, End = end, Confidence = .55, Keywords = keywords
+                Summary = Summarize(text),
+                Start = start,
+                End = end,
+                Confidence = .55,
+                Keywords = keywords
             });
         }
         var globalText = string.Join(' ', transcript.Select(s => s.Text));
@@ -265,12 +274,16 @@ internal sealed class HeuristicEditorialAiProvider : IEditorialAiProvider
 
     public List<SemanticClipEvaluation> Evaluate(IReadOnlyList<ClipCandidate> clips, ProjectOptions options, IReadOnlyList<EditorialTopic> topics) => clips.Select(clip =>
     {
-        var topic = topics.Where(t => t.End >= clip.Start && t.Start <= clip.End).OrderByDescending(t => Overlap(t.Start, t.End, clip.Start, clip.End)).FirstOrDefault();
+        var topic = topics
+            .Where(t => t.End >= clip.Start && t.Start <= clip.End)
+            .OrderByDescending(t => Overlap(t.Start, t.End, clip.Start, clip.End))
+            .FirstOrDefault();
         var lower = clip.Transcript.ToLowerInvariant();
         var sentences = clip.Transcript.Count(c => c is '.' or '?' or '!');
         var emotional = Count(lower, "deus", "jesus", "amor", "dor", "cura", "perdão", "perdao", "fé", "fe", "verdade", "propósito", "proposito", "esperança", "esperanca");
         var direct = Count(lower, " você ", " voce ", " seu ", " sua ", " nunca ", " precisa ", " verdade ", " problema ");
-        var contextPenalty = Count(lower[..Math.Min(lower.Length, 100)], "como eu disse", "continuando", "isso aqui", "esse ponto", "voltando");
+        var opening = lower[..Math.Min(lower.Length, 100)];
+        var contextPenalty = Count(opening, "como eu disse", "continuando", "isso aqui", "esse ponto", "voltando");
         var standalone = Math.Clamp(55 + sentences * 4 - contextPenalty * 20, 0, 100);
         var share = Math.Clamp(45 + direct * 8 + emotional * 4 + (clip.Score - 50) * .35, 0, 100);
         var emotionalValue = Math.Clamp(35 + emotional * 9, 0, 100);
@@ -280,14 +293,22 @@ internal sealed class HeuristicEditorialAiProvider : IEditorialAiProvider
             ClipId = clip.Id,
             Score = Math.Round(score, 1),
             Topic = topic?.Title ?? EditorialDiversityService.Topic(clip.Transcript),
-            Shareability = Math.Round(share, 1), EmotionalValue = Math.Round(emotionalValue, 1), StandaloneClarity = Math.Round(standalone, 1),
-            Reason = standalone >= 75 && share >= 70 ? "ideia independente com bom potencial de compartilhamento" : standalone < 50 ? "depende mais do contexto anterior" : "conteúdo coerente e aproveitável como corte"
+            Shareability = Math.Round(share, 1),
+            EmotionalValue = Math.Round(emotionalValue, 1),
+            StandaloneClarity = Math.Round(standalone, 1),
+            Reason = standalone >= 75 && share >= 70
+                ? "ideia independente com bom potencial de compartilhamento"
+                : standalone < 50
+                    ? "depende mais do contexto anterior"
+                    : "conteúdo coerente e aproveitável como corte"
         };
     }).ToList();
 
     public List<EditorialSeries> Cluster(IReadOnlyList<ClipCandidate> clips, IReadOnlyList<SemanticClipEvaluation> evaluations, ProjectOptions options)
     {
-        var byTopic = evaluations.Where(e => !string.IsNullOrWhiteSpace(e.Topic)).GroupBy(e => e.Topic, StringComparer.OrdinalIgnoreCase);
+        var byTopic = evaluations
+            .Where(e => !string.IsNullOrWhiteSpace(e.Topic))
+            .GroupBy(e => e.Topic, StringComparer.OrdinalIgnoreCase);
         var result = new List<EditorialSeries>();
         foreach (var group in byTopic)
         {
@@ -308,17 +329,48 @@ internal sealed class HeuristicEditorialAiProvider : IEditorialAiProvider
         {
             var seed = remaining[0];
             var group = remaining.Where(c => EditorialDiversityService.Similarity(seed.Transcript, c.Transcript) >= .12).Take(5).ToList();
-            if (group.Count < 2) { remaining.RemoveAt(0); continue; }
-            result.Add(new EditorialSeries { Title = EditorialDiversityService.Topic(seed.Transcript), Summary = "Cortes semanticamente relacionados.", ClipIds = group.Select(c => c.Id).ToList(), Score = Math.Round(group.Average(c => c.Score), 1) });
+            if (group.Count < 2)
+            {
+                remaining.RemoveAt(0);
+                continue;
+            }
+            result.Add(new EditorialSeries
+            {
+                Title = EditorialDiversityService.Topic(seed.Transcript),
+                Summary = "Cortes semanticamente relacionados.",
+                ClipIds = group.Select(c => c.Id).ToList(),
+                Score = Math.Round(group.Average(c => c.Score), 1)
+            });
             foreach (var item in group) remaining.Remove(item);
         }
         return result.Take(8).ToList();
     }
 
-    private static List<string> Keywords(string text, int count) => Tokens(text).GroupBy(x => x, StringComparer.OrdinalIgnoreCase).OrderByDescending(g => g.Count()).ThenByDescending(g => g.Key.Length).Select(g => g.Key).Take(count).ToList();
-    private static IEnumerable<string> Tokens(string text) => text.ToLowerInvariant().Split([' ', ',', '.', '?', '!', ':', ';', '—', '-', '\n', '\r', '(', ')', '"'], StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()).Where(x => x.Length > 4 && !StopWords.Contains(x));
-    private static string Summarize(string text) { var clean = string.Join(' ', text.Split(' ', StringSplitOptions.RemoveEmptyEntries)); return clean.Length <= 220 ? clean : clean[..217] + "..."; }
-    private static string TitleCase(string value) => System.Globalization.CultureInfo.GetCultureInfo("pt-BR").TextInfo.ToTitleCase(value.ToLowerInvariant());
+    private static List<string> Keywords(string text, int count) => Tokens(text)
+        .GroupBy(x => x, StringComparer.OrdinalIgnoreCase)
+        .OrderByDescending(g => g.Count())
+        .ThenByDescending(g => g.Key.Length)
+        .Select(g => g.Key)
+        .Take(count)
+        .ToList();
+
+    private static IEnumerable<string> Tokens(string text) => text
+        .ToLowerInvariant()
+        .Split([' ', ',', '.', '?', '!', ':', ';', '—', '-', '\n', '\r', '(', ')', '"'], StringSplitOptions.RemoveEmptyEntries)
+        .Select(x => x.Trim())
+        .Where(x => x.Length > 4 && !StopWords.Contains(x));
+
+    private static string Summarize(string text)
+    {
+        var clean = string.Join(' ', text.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        return clean.Length <= 220 ? clean : clean[..217] + "...";
+    }
+
+    private static string TitleCase(string value) => System.Globalization.CultureInfo
+        .GetCultureInfo("pt-BR")
+        .TextInfo
+        .ToTitleCase(value.ToLowerInvariant());
+
     private static int Count(string value, params string[] needles) => needles.Count(value.Contains);
     private static double Overlap(double aStart, double aEnd, double bStart, double bEnd) => Math.Max(0, Math.Min(aEnd, bEnd) - Math.Max(aStart, bStart));
 }
