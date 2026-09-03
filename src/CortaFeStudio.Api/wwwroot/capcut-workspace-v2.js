@@ -2,6 +2,8 @@
   let editorProject = null;
   let activeClipId = null;
   let timelineZoom = 1;
+  let waveformSamples = null;
+  let waveformProjectId = null;
 
   const renderBase = renderProject;
   renderProject = function (project) {
@@ -23,7 +25,11 @@
   const homeBase = home;
   home = async function () { leaveEditorMode(); return homeBase(); };
 
-  function leaveEditorMode() { document.body.classList.remove('cc-editor-active'); }
+  function leaveEditorMode() {
+    document.body.classList.remove('cc-editor-active');
+    waveformSamples = null;
+    waveformProjectId = null;
+  }
 
   function mountWorkspace(project) {
     const root = document.querySelector('#projectView');
@@ -45,6 +51,7 @@
     layout.insertAdjacentHTML('afterbegin', mediaBin(project));
     layout.insertAdjacentHTML('beforeend', timelineDock(project));
     bindWorkspace(project);
+    loadWaveform(project);
     if (activeClipId) selectClip(project, activeClipId);
   }
 
@@ -58,7 +65,48 @@
 
   function timelineDock(project) {
     const duration = Math.max(1, project.duration || Math.max(...project.clips.map(clip => clip.end)));
-    return `<section class="cc-timeline-dock"><header><div class="cc-timeline-tools"><button type="button" data-cc-action="split" title="Dividir">✂</button><button type="button" data-cc-action="duplicate" title="Duplicar">▣</button><button type="button" data-cc-action="delete" title="Excluir corte">⌫</button><span></span><button type="button" data-cc-zoom="out">−</button><b>Timeline</b><button type="button" data-cc-zoom="in">＋</button></div><output id="ccTimelineClock">00:00:00</output></header><div class="cc-timeline-scroll"><div class="cc-timeline-content" data-selected-lane="video" style="--cc-zoom:1"><div class="cc-ruler">${Array.from({ length: 13 }, (_, index) => `<i style="left:${index / 12 * 100}%"><span>${time(duration * index / 12)}</span></i>`).join('')}</div><div class="cc-track-label" data-cc-lane="video"><b>V1</b><span>Vídeo</span></div><div class="cc-video-track" data-cc-lane="video">${project.clips.map(clip => `<button type="button" data-cc-track="${clip.id}" style="left:${clip.start / duration * 100}%;width:${Math.max(.8, (clip.end - clip.start) / duration * 100)}%"><span>${escapeHtml(clip.title)}</span></button>`).join('')}</div><div class="cc-track-label cc-audio-label" data-cc-lane="audio"><b>A1</b><span>Áudio</span></div><div class="cc-audio-track" id="ccAudioWave" data-cc-lane="audio">${Array.from({ length: 180 }, (_, i) => `<i style="height:${18 + (i * 29 % 68)}%"></i>`).join('')}</div><div class="cc-playhead" id="ccPlayhead"><i></i></div></div></div><div class="cc-trim-controls"><label>Entrada <input id="ccTrimStart" type="number" step=".1"></label><div class="cc-trim-range"><input id="ccRangeStart" type="range" min="0" max="${duration}" step=".1"><input id="ccRangeEnd" type="range" min="0" max="${duration}" step=".1"></div><label>Saída <input id="ccTrimEnd" type="number" step=".1"></label><strong id="ccTrimDuration">00:00</strong></div></section>`;
+    return `<section class="cc-timeline-dock"><header><div class="cc-timeline-tools"><button type="button" data-cc-action="split" title="Dividir">✂</button><button type="button" data-cc-action="duplicate" title="Duplicar">▣</button><button type="button" data-cc-action="delete" title="Excluir corte">⌫</button><span></span><button type="button" data-cc-zoom="out">−</button><b>Timeline</b><button type="button" data-cc-zoom="in">＋</button></div><output id="ccTimelineClock">00:00:00</output></header><div class="cc-timeline-scroll"><div class="cc-timeline-content" data-selected-lane="video" style="--cc-zoom:1"><div class="cc-ruler">${Array.from({ length: 13 }, (_, index) => `<i style="left:${index / 12 * 100}%"><span>${time(duration * index / 12)}</span></i>`).join('')}</div><div class="cc-track-label" data-cc-lane="video"><b>V1</b><span>Vídeo</span></div><div class="cc-video-track" data-cc-lane="video">${project.clips.map(clip => `<button type="button" data-cc-track="${clip.id}" style="left:${clip.start / duration * 100}%;width:${Math.max(.8, (clip.end - clip.start) / duration * 100)}%"><span>${escapeHtml(clip.title)}</span></button>`).join('')}</div><div class="cc-track-label cc-audio-label" data-cc-lane="audio"><b>A1</b><span>Áudio</span></div><div class="cc-audio-track" id="ccAudioWave" data-cc-lane="audio" aria-label="Forma de onda do áudio"><small>carregando áudio…</small></div><div class="cc-playhead" id="ccPlayhead"><i></i></div></div></div><div class="cc-trim-controls"><label>Entrada <input id="ccTrimStart" type="number" step=".1"></label><div class="cc-trim-range"><input id="ccRangeStart" type="range" min="0" max="${duration}" step=".1"><input id="ccRangeEnd" type="range" min="0" max="${duration}" step=".1"></div><label>Saída <input id="ccTrimEnd" type="number" step=".1"></label><strong id="ccTrimDuration">00:00</strong></div></section>`;
+  }
+
+  async function loadWaveform(project) {
+    const wave = document.querySelector('#ccAudioWave');
+    if (!wave) return;
+    if (waveformProjectId === project.id && waveformSamples?.length) return renderWaveformForClip(project, activeClipId);
+    try {
+      waveformProjectId = project.id;
+      const data = await api(`/api/projects/${project.id}/waveform`);
+      waveformSamples = Array.isArray(data?.samples) ? data.samples : [];
+      renderWaveformForClip(project, activeClipId);
+    } catch {
+      waveformSamples = [];
+      wave.innerHTML = '<small>forma de onda indisponível</small>';
+    }
+  }
+
+  function renderWaveformForClip(project, clipId) {
+    const wave = document.querySelector('#ccAudioWave');
+    const clip = project.clips.find(item => item.id === clipId);
+    if (!wave || !clip) return;
+    if (!waveformSamples?.length) {
+      wave.innerHTML = '<small>carregando áudio…</small>';
+      return;
+    }
+    const totalDuration = Math.max(1, project.duration || clip.end);
+    const startIndex = Math.max(0, Math.floor(clip.start / totalDuration * waveformSamples.length));
+    const endIndex = Math.min(waveformSamples.length, Math.ceil(clip.end / totalDuration * waveformSamples.length));
+    let slice = waveformSamples.slice(startIndex, Math.max(startIndex + 1, endIndex));
+    const targetBars = 220;
+    if (slice.length > targetBars) {
+      const compact = [];
+      for (let index = 0; index < targetBars; index++) {
+        const left = Math.floor(index * slice.length / targetBars);
+        const right = Math.max(left + 1, Math.floor((index + 1) * slice.length / targetBars));
+        compact.push(Math.max(...slice.slice(left, right)));
+      }
+      slice = compact;
+    }
+    wave.innerHTML = slice.map(value => `<i style="height:${Math.max(6, Math.min(100, Number(value || 0) * 100))}%"></i>`).join('');
+    wave.dataset.realWaveform = 'true';
   }
 
   function bindWorkspace(project) {
@@ -102,6 +150,7 @@
     const card = root.querySelector(`.clip-card[data-clip="${id}"]`);
     ['start','end'].forEach(name => { const input=card?.querySelector(`[name="${name}"]`); if(input) input.value=(+input.value).toFixed(2); });
     root.querySelector('.cc-timeline-content')?.style.setProperty('--cc-zoom', timelineZoom);
+    renderWaveformForClip(project, id);
     bindPreviewClock();
   }
 

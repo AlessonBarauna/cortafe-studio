@@ -57,6 +57,8 @@ public static class SubtitleFormatter
         var lineLength = 0;
         var wordsOnLine = 0;
         var parts = new List<string>();
+        var clipDuration = Math.Max(.1, clip.End - clip.Start);
+        IReadOnlyList<EditorialMoment> moments = clip.EditorialProfile == "louvor" ? [] : EditorialMomentDetector.Detect(words, clipDuration);
 
         foreach (var word in words)
         {
@@ -73,9 +75,14 @@ public static class SubtitleFormatter
             }
 
             var duration = Math.Max(1, (int)Math.Round((word.End - word.Start) * 100));
-            var emphasis = IsEmphasisWord(text);
+            var editorialKind = moments
+                .Where(moment => word.Start >= moment.Start - .08 && word.Start <= moment.End + .08)
+                .OrderByDescending(moment => moment.Strength)
+                .Select(moment => moment.Kind)
+                .FirstOrDefault() ?? "";
+            var emphasis = IsEmphasisWord(text) || editorialKind.Length > 0;
             var token = emphasis
-                ? $"{{\\kf{duration}\\b1\\1c&H0000B7FF&}}{text}{{\\rImpacto}}"
+                ? EditorialToken(text, duration, editorialKind)
                 : $"{{\\kf{duration}}}{text}";
 
             parts.Add(separator + token);
@@ -154,6 +161,19 @@ public static class SubtitleFormatter
         if (EmphasisWords.Contains(folded)) return true;
         return folded.Length >= 8 &&
             (folded.EndsWith("dade", StringComparison.Ordinal) || folded.EndsWith("cao", StringComparison.Ordinal) || folded.EndsWith("mente", StringComparison.Ordinal));
+    }
+
+    private static string EditorialToken(string text, int duration, string kind)
+    {
+        var color = kind switch
+        {
+            "scripture" => "&H00E8C58B&",
+            "climax" => "&H0048D7FF&",
+            "conclusion" => "&H00B7E3A1&",
+            _ => "&H0000B7FF&"
+        };
+        var scale = kind == "climax" ? "\\fscx108\\fscy108" : kind == "hook" ? "\\fscx104\\fscy104" : "";
+        return $"{{\\kf{duration}\\b1\\1c{color}{scale}}}{text}{{\\rImpacto}}";
     }
 
     private static bool IsConnector(string value) => Connectors.Contains(Fold(value).Trim(' ', ',', '.', '?', '!', ':', ';', '-', '—', '"', '\'', '(', ')'));
