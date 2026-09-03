@@ -47,6 +47,17 @@ public sealed class RenderFilterFactoryTests
     }
 
     [Fact]
+    public void Framing_ModoDividido_MantemOsDoisParticipantesVisiveis()
+    {
+        var filter = RenderFilterFactory.Framing(new ClipCandidate { LayoutMode = "split", SplitLeftX = .2, SplitRightX = .8 });
+
+        Assert.Contains("split=2[person_a][person_b]", filter);
+        Assert.Contains("iw*0.2-540", filter);
+        Assert.Contains("iw*0.8-540", filter);
+        Assert.Contains("[top][bottom]vstack=inputs=2", filter);
+    }
+
+    [Fact]
     public void CreativeLook_AplicaAcabamentoOldSchoolSemExagero()
     {
         var filter = RenderFilterFactory.CreativeLook(60);

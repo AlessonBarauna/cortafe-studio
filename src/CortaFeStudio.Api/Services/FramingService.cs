@@ -26,6 +26,12 @@ public sealed class FramingService(ProjectStore store, ToolService tools)
         var multiPerson = root.TryGetProperty("multiPerson", out var multi) && multi.GetBoolean();
         var speakerSwitches = root.TryGetProperty("speakerSwitches", out var switches) ? switches.GetInt32() : 0;
         var activeSpeakerConfidence = Read(root, "activeSpeakerConfidence");
+        if (root.TryGetProperty("participantCenters", out var participantCenters))
+        {
+            if (participantCenters.TryGetProperty("left", out var left)) clip.SplitLeftX = left.GetDouble();
+            if (participantCenters.TryGetProperty("right", out var right)) clip.SplitRightX = right.GetDouble();
+        }
+        if (multiPerson && activeSpeakerConfidence < .35 && clip.LayoutMode == "fill") clip.LayoutMode = "split";
         var sceneChanges = root.TryGetProperty("sceneChanges", out var scenes) ? scenes.GetInt32() : 0;
         var sceneTimes = root.TryGetProperty("sceneTimes", out var times)
             ? times.EnumerateArray().Select(value => value.GetDouble()).Where(value => value >= 1 && value <= Math.Max(1, clip.End - clip.Start - 1)).ToList()

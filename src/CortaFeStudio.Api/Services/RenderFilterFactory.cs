@@ -18,9 +18,12 @@ public static class RenderFilterFactory
     public static string Framing(ClipCandidate clip)
     {
         var (width, height) = Dimensions(clip.OutputPreset);
-        var baseFraming = clip.LayoutMode == "blur"
-            ? $"split=2[bg][fg];[bg]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},gblur=sigma=34,eq=brightness=-0.18[back];[fg]scale={width}:-2[front];[back][front]overlay=(W-w)/2:(H-h)/2"
-            : $"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}:{CropX(clip, width)}:{CropY(clip.CropFocus, height)}";
+        var baseFraming = clip.LayoutMode switch
+        {
+            "blur" => $"split=2[bg][fg];[bg]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},gblur=sigma=34,eq=brightness=-0.18[back];[fg]scale={width}:-2[front];[back][front]overlay=(W-w)/2:(H-h)/2",
+            "split" => SplitScreen(clip, width, height),
+            _ => $"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}:{CropX(clip, width)}:{CropY(clip.CropFocus, height)}"
+        };
 
         var moments = PunchInPlanner.Plan(clip);
         return moments.Count == 0 ? $"{baseFraming},{SignatureMotion(width, height)}" : $"{baseFraming},{PunchIn(moments, width, height)}";
@@ -123,6 +126,16 @@ public static class RenderFilterFactory
 
     public static string CropX(double focus, int width = 1080) =>
         $"max(0\\,min(iw-{width}\\,iw*{Math.Clamp(focus, 0, 1).ToString("0.###", CultureInfo.InvariantCulture)}-{width / 2}))";
+
+    public static string SplitScreen(ClipCandidate clip, int width, int height)
+    {
+        var topHeight = height / 2 / 2 * 2;
+        var bottomHeight = height - topHeight;
+        return $"split=2[person_a][person_b];" +
+               $"[person_a]scale={width}:{topHeight}:force_original_aspect_ratio=increase,crop={width}:{topHeight}:{CropX(clip.SplitLeftX, width)}:(ih-{topHeight})/2[top];" +
+               $"[person_b]scale={width}:{bottomHeight}:force_original_aspect_ratio=increase,crop={width}:{bottomHeight}:{CropX(clip.SplitRightX, width)}:(ih-{bottomHeight})/2[bottom];" +
+               "[top][bottom]vstack=inputs=2";
+    }
 
     private static string TrackingExpression(IReadOnlyList<FramingKeyframe> source)
     {

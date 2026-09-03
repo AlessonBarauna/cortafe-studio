@@ -266,6 +266,8 @@ api.MapPut("/projects/{id}/clips/{clipId}", async (string id, string clipId, Cli
         if (update.CropX is { } cropX && Math.Abs(cropX - clip.CropX) > .001) clip.FramingTrack.Clear();
         clip.CropX = Math.Clamp(update.CropX ?? clip.CropX, 0, 1);
         clip.LayoutMode = update.LayoutMode ?? clip.LayoutMode;
+        clip.SplitLeftX = Math.Clamp(update.SplitLeftX ?? clip.SplitLeftX, 0, 1);
+        clip.SplitRightX = Math.Clamp(update.SplitRightX ?? clip.SplitRightX, 0, 1);
         if (update.OutputPreset is "vertical" or "portrait" or "square" or "landscape") clip.OutputPreset = update.OutputPreset;
         clip.BrandFrameEnabled = update.BrandFrameEnabled ?? clip.BrandFrameEnabled;
         clip.BrandTheme = update.BrandTheme ?? clip.BrandTheme;
