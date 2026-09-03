@@ -60,7 +60,8 @@ public static class EditorialIntelligencePipeline
     {
         if (clips.Count == 0) return intelligence;
         var provider = EditorialAiProviderFactory.CreateDefault();
-        var evaluations = provider.Evaluate(clips, options, intelligence.Topics);
+        var clipList = clips as IReadOnlyList<ClipCandidate> ?? clips.ToList();
+        var evaluations = provider.Evaluate(clipList, options, intelligence.Topics);
         intelligence.Evaluations = evaluations;
 
         var evaluationsById = evaluations
@@ -84,7 +85,7 @@ public static class EditorialIntelligencePipeline
                 .ToList();
         }
 
-        intelligence.Series = provider.Cluster(clips, evaluations, options);
+        intelligence.Series = provider.Cluster(clipList, evaluations, options);
         MarkSeries(clips, intelligence.Series);
         intelligence.Provider = provider.Name;
         intelligence.GeneratedAt = DateTime.UtcNow;
