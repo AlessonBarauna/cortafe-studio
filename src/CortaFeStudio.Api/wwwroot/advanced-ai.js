@@ -1,10 +1,11 @@
-// Attention AI V4 · camada local multissinal
+// Attention AI V4 + Smart Camera V5 · camada local multissinal
 (function(){
   const previousRenderProject = renderProject;
   renderProject = function(project){
     previousRenderProject(project);
     if(project.status !== 'ready') return;
     installAttentionAi(project);
+    installSmartCamera(project);
   };
 
   function clamp(value,min=0,max=100){ return Math.max(min,Math.min(max,Number.isFinite(+value)?+value:0)); }
@@ -78,6 +79,77 @@
     selectClip(project,id);
     card.scrollIntoView({behavior:'smooth',block:'center'});
     card.animate([{boxShadow:'0 0 0 0 rgba(199,163,90,0)'},{boxShadow:'0 0 0 4px rgba(199,163,90,.45)'},{boxShadow:'0 0 0 0 rgba(199,163,90,0)'}],{duration:900});
+  }
+
+  function installSmartCamera(project){
+    const view=document.querySelector('#projectView');
+    if(!view||view.querySelector('.smart-camera-panel'))return;
+    const attention=view.querySelector('.attention-ai-panel');
+    const host=document.createElement('section');
+    host.className='smart-camera-panel';
+    host.innerHTML=`<div><span class="eyebrow">SMART CAMERA · IA LOCAL</span><h3>Câmera inteligente</h3><small class="text-secondary">Rosto, troca de locutor, cenas e trilha de movimento já são analisados pelo OpenCV local.</small></div><div class="smart-camera-actions"><button type="button" class="btn btn-gold" data-camera-batch>Analisar câmera dos selecionados</button><span data-camera-state>Selecione cortes na edição em massa acima.</span></div>`;
+    attention?.after(host);
+    host.querySelector('[data-camera-batch]').addEventListener('click',button=>analyzeSelectedCameras(project,button.currentTarget,host));
+    project.clips.forEach(clip=>installClipCamera(project,clip));
+  }
+
+  function selectedIdsFromUi(){
+    return [...document.querySelectorAll('.clip-card')].filter(card=>card.querySelector('[data-batch-select]')?.checked).map(card=>card.dataset.clip).filter(Boolean);
+  }
+
+  function cameraLabel(clip){
+    if(clip.layoutMode==='split')return 'Split inteligente';
+    if(clip.layoutMode==='blur')return 'Fundo seguro';
+    if((clip.framingTrack||[]).length>1)return 'Tracking do locutor';
+    return clip.faceTrackingAnalyzed?'Rosto principal':'Ainda não analisada';
+  }
+
+  function installClipCamera(project,clip){
+    const card=document.querySelector(`.clip-card[data-clip="${clip.id}"]`);
+    if(!card||card.querySelector('.smart-camera-card'))return;
+    const target=card.querySelector('.cc-mode-visual')||card.querySelector('.cc-mode-details')||card;
+    const panel=document.createElement('section');
+    panel.className='smart-camera-card';
+    panel.innerHTML=`<header><div><strong>SMART CAMERA</strong><small data-camera-label>${escapeHtml(cameraLabel(clip))}</small></div><span>${clip.visualDirection?.analyzed?Math.round(n(clip.visualDirection.score,0))+'/100':'pendente'}</span></header><p>${escapeHtml(clip.visualDirection?.recommendation||'Analise o corte para escolher o melhor enquadramento.')}</p><div class="smart-camera-presets"><button type="button" data-camera-analyze>IA automática</button><button type="button" data-camera-mode="fill">Pessoa em foco</button><button type="button" data-camera-mode="split">Duas pessoas</button><button type="button" data-camera-mode="blur">Fundo seguro</button></div>`;
+    target.prepend(panel);
+    panel.querySelector('[data-camera-analyze]').addEventListener('click',event=>analyzeOneCamera(project,clip,event.currentTarget,panel));
+    panel.querySelectorAll('[data-camera-mode]').forEach(button=>button.addEventListener('click',()=>setCameraMode(project,clip,button.dataset.cameraMode,panel)));
+  }
+
+  async function analyzeOneCamera(project,clip,button,panel){
+    const original=button.textContent; button.disabled=true; button.textContent='Analisando…';
+    try{
+      const result=await api(`/api/projects/${project.id}/clips/${clip.id}/analyze-framing`,{method:'POST'});
+      Object.assign(clip,result); updateCameraPanel(panel,clip); toast('✓ Câmera analisada com IA local');
+    }catch(error){toast(error.message)}finally{button.disabled=false;button.textContent=original}
+  }
+
+  async function analyzeSelectedCameras(project,button,host){
+    const ids=selectedIdsFromUi(); if(!ids.length)return toast('Selecione os cortes que deseja analisar');
+    button.disabled=true; const state=host.querySelector('[data-camera-state]');
+    try{
+      let done=0;
+      for(const id of ids){
+        state.textContent=`Analisando ${done+1}/${ids.length}…`;
+        const clip=project.clips.find(item=>item.id===id); if(!clip)continue;
+        const result=await api(`/api/projects/${project.id}/clips/${id}/analyze-framing`,{method:'POST'}); Object.assign(clip,result); done++;
+        const panel=document.querySelector(`.clip-card[data-clip="${id}"] .smart-camera-card`); if(panel)updateCameraPanel(panel,clip);
+      }
+      state.textContent=`✓ ${done} ${done===1?'corte analisado':'cortes analisados'}`; toast('Smart Camera concluída');
+    }catch(error){state.textContent='Falha na análise';toast(error.message)}finally{button.disabled=false}
+  }
+
+  async function setCameraMode(project,clip,mode,panel){
+    try{
+      await api(`/api/projects/${project.id}/clips/${clip.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({layoutMode:mode})});
+      clip.layoutMode=mode; updateCameraPanel(panel,clip); toast(`Câmera: ${cameraLabel(clip)}`);
+    }catch(error){toast(error.message)}
+  }
+
+  function updateCameraPanel(panel,clip){
+    const label=panel.querySelector('[data-camera-label]'); if(label)label.textContent=cameraLabel(clip);
+    const score=panel.querySelector('header>span'); if(score)score.textContent=clip.visualDirection?.analyzed?`${Math.round(n(clip.visualDirection.score,0))}/100`:'pendente';
+    const description=panel.querySelector('p'); if(description)description.textContent=clip.visualDirection?.recommendation||'Enquadramento atualizado.';
   }
 
   window.AmadoJesusAttentionAi={metrics:attentionMetrics};
