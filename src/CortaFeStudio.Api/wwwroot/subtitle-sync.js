@@ -105,9 +105,35 @@ async function saveSubtitlesExplicitly(button){const card=button.closest('.clip-
 async function saveAndRenderSubtitles(button){const card=button.closest('.clip-card'),clipId=card.dataset.clip,toggle=card.querySelector('[name="subtitlesEnabled"]');if(toggle&&!toggle.checked){toggle.checked=true;refreshSubtitlePreview(card)}button.disabled=true;button.textContent='Salvando legendas…';try{await saveSubtitleTrackNow(card,true);button.textContent='Gerando vídeo final…';await api(`/api/projects/${current.id}/clips/${clipId}/render`,{method:'POST'});await openProject(current.id);selectClip(current,clipId);await prepareSubtitleWorkspaceClip(current,clipId);document.querySelector('[data-cc-mode="captions"]')?.click();toast('✓ Vídeo salvo com as legendas prontas')}catch(error){toast(error.message);button.disabled=false;button.textContent='Gerar vídeo com legendas'}}
 
 const subtitleAutosaveTimers=new Map();
+const subtitleSaveChains=new Map();
 function subtitleSaveState(card,label,state=''){const host=card.querySelector('.subtitle-autosave-state');if(!host)return;host.className=`subtitle-autosave-state ${state}`.trim();const text=host.querySelector('b');if(text)text.textContent=label;}
 function scheduleSubtitleAutosave(card){const clip=current?.clips.find(item=>item.id===card.dataset.clip);if(!clip)return;subtitleSaveState(card,'Alterações locais','editing');clearTimeout(subtitleAutosaveTimers.get(clip.id));subtitleAutosaveTimers.set(clip.id,setTimeout(()=>saveSubtitleTrackNow(card),700));}
-async function saveSubtitleTrackNow(card,explicit=false){const clip=current?.clips.find(item=>item.id===card.dataset.clip);if(!clip)return;clearTimeout(subtitleAutosaveTimers.get(clip.id));subtitleSaveState(card,'Salvando…','saving');const outgoing=collectSubtitleTrack(card,clip);try{const saved=await api(`/api/projects/${current.id}/clips/${clip.id}/subtitles`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(outgoing)});clip.subtitleTrack=saved;redrawSubtitleBlocks(card,saved.blocks||[]);const enabled=card.querySelector('[name="subtitlesEnabled"]');if(enabled)enabled.checked=saved.enabled!==false;const style=card.querySelector('[name="subtitleTrackStyle"]');if(style)style.value=saved.style||style.value;const offset=card.querySelector('[name="subtitleOffset"]'),range=card.querySelector('[name="subtitleOffsetRange"]');if(offset)offset.value=saved.offsetSeconds||0;if(range)range.value=saved.offsetSeconds||0;const x=card.querySelector('[name="subtitlePositionX"]'),y=card.querySelector('[name="subtitlePositionY"]');if(x)x.value=saved.positionX||50;if(y)y.value=saved.positionY||72;subtitleSaveState(card,explicit?'Salvo no projeto':'Salvo automaticamente','saved');const video=activateLiveSubtitlePreview(clip);if(video)updateSubtitlePreview(video,clip);return saved}catch(error){subtitleSaveState(card,'Falha ao salvar','error');toast(error.message);throw error}}
+function applySavedSubtitleTrack(card,clip,saved,explicit){
+  clip.subtitleTrack=saved;
+  redrawSubtitleBlocks(card,saved.blocks||[]);
+  const enabled=card.querySelector('[name="subtitlesEnabled"]');if(enabled)enabled.checked=saved.enabled!==false;
+  const style=card.querySelector('[name="subtitleTrackStyle"]');if(style)style.value=saved.style||style.value;
+  const offset=card.querySelector('[name="subtitleOffset"]'),range=card.querySelector('[name="subtitleOffsetRange"]');if(offset)offset.value=saved.offsetSeconds||0;if(range)range.value=saved.offsetSeconds||0;
+  const x=card.querySelector('[name="subtitlePositionX"]'),y=card.querySelector('[name="subtitlePositionY"]');if(x)x.value=saved.positionX||50;if(y)y.value=saved.positionY||72;
+  subtitleSaveState(card,explicit?'Salvo no projeto':'Salvo automaticamente','saved');
+  const video=activateLiveSubtitlePreview(clip);if(video)updateSubtitlePreview(video,clip);
+  return saved;
+}
+async function persistSubtitleTrack(card,clip,explicit){
+  if(!card.isConnected) return clip.subtitleTrack;
+  subtitleSaveState(card,'Salvando…','saving');
+  const outgoing=collectSubtitleTrack(card,clip);
+  const saved=await api(`/api/projects/${current.id}/clips/${clip.id}/subtitles`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(outgoing)});
+  return applySavedSubtitleTrack(card,clip,saved,explicit);
+}
+async function saveSubtitleTrackNow(card,explicit=false){
+  const clip=current?.clips.find(item=>item.id===card.dataset.clip);if(!clip)return;
+  clearTimeout(subtitleAutosaveTimers.get(clip.id));
+  const previous=subtitleSaveChains.get(clip.id)||Promise.resolve();
+  const task=previous.catch(()=>{}).then(()=>persistSubtitleTrack(card,clip,explicit));
+  subtitleSaveChains.set(clip.id,task);
+  try{return await task}catch(error){subtitleSaveState(card,'Falha ao salvar','error');toast(error.message);throw error}finally{if(subtitleSaveChains.get(clip.id)===task)subtitleSaveChains.delete(clip.id)}
+}
 
 document.addEventListener('input',event=>{const card=event.target.closest('.clip-card');if(!card||!event.target.closest('.subtitle-editor'))return;if(event.target.name==='subtitleOffsetRange')card.querySelector('[name="subtitleOffset"]').value=event.target.value;else if(event.target.name==='subtitleOffset')card.querySelector('[name="subtitleOffsetRange"]').value=event.target.value;const label=card.querySelector('[data-offset-label]');if(label)label.textContent=formatSubtitleOffset(card.querySelector('[name="subtitleOffset"]').value);refreshSubtitlePreview(card);scheduleSubtitleAutosave(card)});
 document.addEventListener('change',event=>{const card=event.target.closest('.clip-card');if(card&&event.target.closest('.subtitle-editor')){refreshSubtitlePreview(card);scheduleSubtitleAutosave(card)}});
