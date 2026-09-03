@@ -58,7 +58,7 @@ public static class SubtitleFormatter
         var wordsOnLine = 0;
         var parts = new List<string>();
         var clipDuration = Math.Max(.1, clip.End - clip.Start);
-        var moments = clip.EditorialProfile == "louvor" ? [] : EditorialMomentDetector.Detect(words, clipDuration);
+        IReadOnlyList<EditorialMoment> moments = clip.EditorialProfile == "louvor" ? [] : EditorialMomentDetector.Detect(words, clipDuration);
 
         foreach (var word in words)
         {
