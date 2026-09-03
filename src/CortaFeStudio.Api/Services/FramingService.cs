@@ -53,6 +53,12 @@ public sealed class FramingService(ProjectStore store, ToolService tools)
             .Append(detected ? $"pessoa em foco em {coverage:P0} do take" : "enquadramento central por segurança")
             .Append(multiPerson ? $"locutor ativo acompanhado ({speakerSwitches} troca(s) de participante)" : "um participante principal detectado")
             .Append(sceneChanges > 0 ? $"{sceneChanges} mudança(s) de cena detectada(s)" : "take visualmente contínuo").Distinct().Take(8).ToList();
+
+        // A análise visual é o ponto em que já temos rosto, densidade de cenas e
+        // score editorial. O diretor combina tudo e define ritmo, legenda, layout
+        // seguro e estilo de transição antes do render.
+        new AiEditingDirectorService().Direct(clip, project.Options);
+
         await store.SaveAsync(project); return clip;
     }
 
