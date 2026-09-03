@@ -354,6 +354,24 @@ api.MapPost("/projects/{id}/clips/{clipId}/analyze-framing", async (string id, s
     var project = store.Get(id); var clip = project?.Clips.FirstOrDefault(item => item.Id == clipId); if (project is null || clip is null) return Results.NotFound();
     try { return Results.Ok(await framing.AnalyzeAsync(project, clip)); } catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
+api.MapPut("/projects/{id}/clips/{clipId}/framing-track", async (string id, string clipId, FramingTrackUpdate request, ProjectStore store) =>
+{
+    var project = store.Get(id); var clip = project?.Clips.FirstOrDefault(item => item.Id == clipId);
+    if (project is null || clip is null) return Results.NotFound();
+    var duration = Math.Max(.1, clip.End - clip.Start);
+    if (request.Keyframes.Count > 60 || request.Keyframes.Any(point => !double.IsFinite(point.Time) || !double.IsFinite(point.X)))
+        return Results.BadRequest(new { error = "A trilha de câmera contém pontos inválidos." });
+    var previousFingerprint = RenderStateService.Fingerprint(clip);
+    clip.FramingTrack = request.Keyframes.OrderBy(point => point.Time).Select(point => new FramingKeyframe
+    {
+        Time = Math.Round(Math.Clamp(point.Time, 0, duration), 3),
+        X = Math.Round(Math.Clamp(point.X, 0, 1), 3)
+    }).GroupBy(point => point.Time).Select(group => group.Last()).ToList();
+    clip.FaceTrackingAnalyzed = true; clip.FramingAnalysisVersion = 2;
+    RenderStateService.MarkIfChanged(clip, previousFingerprint);
+    await store.SaveAsync(project);
+    return Results.Ok(clip.FramingTrack);
+});
 
 api.MapPost("/projects/{id}/clips/{clipId}/duplicate", async (string id, string clipId, ProjectStore store) =>
 {

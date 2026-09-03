@@ -51,6 +51,8 @@
     if (!heading || heading.querySelector('.v4-project-state')) return;
     const rendered = project.clips.filter(clip => clip.videoPath && !clip.renderOutdated).length;
     heading.querySelector('h2')?.insertAdjacentHTML('afterend', `<span class="v4-project-state"><i></i>${rendered}/${project.clips.length} vídeos prontos</span>`);
+    const actions = heading.lastElementChild;
+    if (actions && !actions.querySelector('[data-v4-compare]')) actions.insertAdjacentHTML('afterbegin', '<button type="button" class="btn btn-outline-light" data-v4-compare>Comparar original</button>');
   }
 
   function decorateTimeline() {
@@ -141,6 +143,17 @@
   }
 
   document.addEventListener('click', event => {
+    const compare = event.target.closest('[data-v4-compare]');
+    if (compare) {
+      const stage = document.querySelector('.aj-editor-v4 .cc-canvas-stage'), preview = document.querySelector('#preview'), clip = current?.clips.find(item => item.id === activeClip);
+      if (!stage || !preview || !clip || !current?.localMedia) return;
+      const existing = stage.querySelector('.v4-original-preview');
+      if (existing) { existing.remove(); stage.classList.remove('v4-comparing'); compare.textContent = 'Comparar original'; return; }
+      const original = document.createElement('div'); original.className = 'v4-original-preview';
+      original.innerHTML = `<span>ORIGINAL</span><video controls muted src="/api/projects/${current.id}/assets/${current.localMedia}#t=${clip.start},${clip.end}"></video>`;
+      preview.before(original); stage.classList.add('v4-comparing'); compare.textContent = 'Fechar comparação';
+      return;
+    }
     const tool = event.target.closest('.aj-editor-v4 .cc-tool-rail [data-cc-mode]');
     if (tool) {
       event.preventDefault();

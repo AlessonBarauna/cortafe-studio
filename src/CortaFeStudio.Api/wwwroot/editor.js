@@ -21,6 +21,7 @@ clipCard = function (project, clip, index) {
       <label>Cor de destaque<input class="form-control form-control-color" name="coverAccent" type="color" value="${escapeHtml(clip.coverAccent || '#C7A35A')}"></label>
       <label>Frame da capa (segundos)<input class="form-control" name="coverTimestamp" type="number" min="${clip.start}" max="${clip.end}" step=".1" value="${timestamp}"></label>
     </div>
+    <div class="camera-keyframes mt-3"><div><strong>Câmera manual</strong><small>${clip.framingTrack?.length || 0} pontos na timeline</small></div><div class="d-flex gap-2 flex-wrap"><button type="button" class="btn btn-sm btn-outline-warning" onclick="addCameraKeyframe('${project.id}','${clip.id}',this)">+ Ponto no tempo atual</button><button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetCameraKeyframes('${project.id}','${clip.id}')">Limpar pontos</button></div></div>
     <div class="d-flex gap-2 mt-3 flex-wrap"><button type="button" class="btn btn-sm btn-outline-warning" onclick="refreshCover('${project.id}','${clip.id}')">Atualizar capa</button><button type="button" class="btn btn-sm btn-outline-light" onclick="analyzeFraming('${project.id}','${clip.id}')">Detectar rosto</button>${index === 0 ? `<a class="btn btn-sm btn-outline-light" href="/api/projects/${project.id}/exports/project.json" download>Exportar projeto JSON</a>` : ''}</div>
   </details>`;
   return clipCardWithEditorial(project, clip, index).replace('<div class="d-flex gap-2 mt-3"><button class="btn btn-outline-light flex-fill" data-save>', controls + '<div class="d-flex gap-2 mt-3"><button class="btn btn-outline-light flex-fill" data-save>');
@@ -55,4 +56,25 @@ async function analyzeFraming(projectId, clipId) { try { toast('Analisando rosto
 
 function toggleSplitControls(select) {
   select.closest('.editor-tools')?.querySelectorAll('.split-control').forEach(control => control.classList.toggle('d-none', select.value !== 'split'));
+}
+
+async function addCameraKeyframe(projectId, clipId, button) {
+  const clip = current.clips.find(item => item.id === clipId), card = button.closest('.clip-card'), video = document.querySelector('#preview video');
+  if (!clip || !video) return toast('Abra a prévia do corte antes de marcar a câmera');
+  const relativeTime = Math.max(0, Math.min(clip.end - clip.start, video.dataset.sourcePreview ? video.currentTime - clip.start : video.currentTime));
+  const x = +(card.querySelector('[name="cropX"]')?.value || clip.cropX || .5);
+  const keyframes = [...(clip.framingTrack || []).filter(point => Math.abs(point.time - relativeTime) > .08), { time: relativeTime, x }].sort((a, b) => a.time - b.time);
+  await saveFramingTrack(projectId, clip, keyframes);
+  toast(`Câmera marcada em ${relativeTime.toFixed(1)} s`); openProject(projectId);
+}
+
+async function resetCameraKeyframes(projectId, clipId) {
+  const clip = current.clips.find(item => item.id === clipId); if (!clip) return;
+  await saveFramingTrack(projectId, clip, []);
+  toast('Pontos manuais removidos'); openProject(projectId);
+}
+
+async function saveFramingTrack(projectId, clip, keyframes) {
+  await api(`/api/projects/${projectId}/clips/${clip.id}/framing-track`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keyframes }) });
+  clip.framingTrack = keyframes; clip.renderOutdated = true;
 }
