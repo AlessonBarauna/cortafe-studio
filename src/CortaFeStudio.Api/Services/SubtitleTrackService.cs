@@ -10,10 +10,14 @@ public static class SubtitleTrackService
     {
         if (clip.SubtitleTrack is not null)
         {
+            var wasEnabled = clip.SubtitleTrack.Enabled;
             if (clip.SubtitleTrack.Confidence <= 0)
             {
                 var existingWords = RelativeWords(clip, transcript);
                 ApplyConfidence(clip.SubtitleTrack, existingWords, clip);
+                // Uma faixa já existente representa uma escolha salva do usuário/projeto.
+                // A confiança pode sinalizar revisão, mas não deve desligar retroativamente o que já estava ligado.
+                clip.SubtitleTrack.Enabled = wasEnabled;
             }
 
             var reflowed = ReflowOversizedBlocks(clip.SubtitleTrack, clip.End - clip.Start);
