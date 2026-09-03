@@ -1,6 +1,7 @@
 (function () {
   let activeMode = 'cut';
   let activeClip = null;
+  let timelineDrag = null;
 
   const renderBeforeV4 = renderProject;
   renderProject = function (project) {
@@ -27,6 +28,8 @@
     decorateRail();
     decorateTopbar(project);
     decorateTimeline();
+    decorateTransport();
+    observePreview();
     if (activeClip) decorateActiveClip(project, activeClip);
     setEditorMode(activeMode, false);
   }
@@ -54,6 +57,54 @@
     const timeline = document.querySelector('.cc-timeline-dock');
     if (!timeline || timeline.querySelector('.v4-timeline-title')) return;
     timeline.querySelector('.cc-timeline-tools')?.insertAdjacentHTML('afterbegin', '<strong class="v4-timeline-title">LINHA DO TEMPO</strong>');
+  }
+
+  function decorateTransport() {
+    const transport = document.querySelector('.cc-canvas-stage .transport');
+    if (!transport || transport.querySelector('.v4-playback-tools')) return;
+    transport.insertAdjacentHTML('beforeend', `<div class="v4-playback-tools"><output id="v4Timecode">00:00.00 / 00:00.00</output><button type="button" data-v4-mute title="Ativar ou silenciar áudio">🔊</button><input data-v4-volume type="range" min="0" max="1" step=".05" value="1" aria-label="Volume da prévia"><select data-v4-speed aria-label="Velocidade da prévia"><option value=".75">0,75x</option><option value="1" selected>1x</option><option value="1.25">1,25x</option><option value="1.5">1,50x</option><option value="2">2x</option></select></div>`);
+    transport.querySelector('[data-v4-mute]').onclick = () => { const video = previewVideoV4(); if (!video) return; video.muted = !video.muted; syncTransport(video); };
+    transport.querySelector('[data-v4-volume]').oninput = event => { const video = previewVideoV4(); if (!video) return; video.volume = +event.target.value; video.muted = video.volume === 0; syncTransport(video); };
+    transport.querySelector('[data-v4-speed]').onchange = event => { const video = previewVideoV4(); if (video) video.playbackRate = +event.target.value; };
+    bindVideoTransport();
+  }
+
+  function observePreview() {
+    const preview = document.querySelector('#preview');
+    if (!preview || preview.dataset.v4Observed) return;
+    preview.dataset.v4Observed = 'true';
+    new MutationObserver(() => bindVideoTransport()).observe(preview, { childList: true });
+  }
+
+  function previewVideoV4() { return document.querySelector('#preview video'); }
+  function bindVideoTransport() {
+    const video = previewVideoV4();
+    if (!video || video.dataset.v4TransportBound) return;
+    video.dataset.v4TransportBound = 'true';
+    video.addEventListener('timeupdate', () => syncTransport(video));
+    video.addEventListener('durationchange', () => syncTransport(video));
+    video.addEventListener('volumechange', () => syncTransport(video));
+    video.addEventListener('play', () => document.querySelector('.transport-play')?.classList.add('is-playing'));
+    video.addEventListener('pause', () => document.querySelector('.transport-play')?.classList.remove('is-playing'));
+    syncTransport(video);
+  }
+
+  function clipTiming(video) {
+    const clip = current?.clips.find(item => item.id === activeClip);
+    if (!clip) return { current: 0, duration: 0 };
+    const duration = Math.max(.01, clip.end - clip.start);
+    const currentTime = video.dataset.sourcePreview ? video.currentTime - clip.start : video.currentTime;
+    return { current: Math.max(0, Math.min(duration, currentTime)), duration };
+  }
+
+  function preciseTime(seconds) { const value = Math.max(0, seconds || 0), minutes = Math.floor(value / 60), rest = value - minutes * 60; return `${String(minutes).padStart(2,'0')}:${rest.toFixed(2).padStart(5,'0')}`; }
+  function syncTransport(video) {
+    const timing = clipTiming(video), output = document.querySelector('#v4Timecode');
+    if (output) output.textContent = `${preciseTime(timing.current)} / ${preciseTime(timing.duration)}`;
+    const playhead = document.querySelector('#ccPlayhead');
+    if (playhead) playhead.style.left = `${Math.max(0, Math.min(100, timing.current / timing.duration * 100))}%`;
+    const mute = document.querySelector('[data-v4-mute]'); if (mute) mute.textContent = video.muted || video.volume === 0 ? '🔇' : '🔊';
+    const volume = document.querySelector('[data-v4-volume]'); if (volume && document.activeElement !== volume) volume.value = video.muted ? 0 : video.volume;
   }
 
   function decorateActiveClip(project, id) {
@@ -105,17 +156,28 @@
     }
   }, true);
 
+  function seekTimeline(event, lane) {
+    const video = previewVideoV4(), clip = current?.clips.find(item => item.id === activeClip);
+    if (!video || !clip) return;
+    const box = lane.getBoundingClientRect(), ratio = Math.max(0, Math.min(1, (event.clientX - box.left) / box.width));
+    video.currentTime = (video.dataset.sourcePreview ? clip.start : 0) + (clip.end - clip.start) * ratio;
+    syncTransport(video);
+  }
+
   document.addEventListener('pointerdown', event => {
     const lane = event.target.closest('.aj-editor-v4 .cc-video-track,.aj-editor-v4 .cc-audio-track');
-    const video = document.querySelector('#preview video');
-    if (!lane || !video || event.target.closest('[data-cc-track]')) return;
-    const box = lane.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (event.clientX - box.left) / box.width));
-    const clip = current?.clips.find(item => item.id === activeClip);
-    if (!clip) return;
-    const duration = clip.end - clip.start;
-    video.currentTime = (video.dataset.sourcePreview ? clip.start : 0) + duration * ratio;
-    const playhead = document.querySelector('#ccPlayhead');
-    if (playhead) playhead.style.left = `${ratio * 100}%`;
+    if (!lane) return;
+    timelineDrag = { lane, pointerId: event.pointerId };
+    lane.setPointerCapture?.(event.pointerId);
+    seekTimeline(event, lane);
+  }, true);
+  document.addEventListener('pointermove', event => { if (timelineDrag?.pointerId === event.pointerId) seekTimeline(event, timelineDrag.lane); }, true);
+  document.addEventListener('pointerup', event => { if (timelineDrag?.pointerId === event.pointerId) timelineDrag = null; }, true);
+  document.addEventListener('keydown', event => {
+    if (!document.querySelector('.aj-editor-v4') || ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) return;
+    const video = previewVideoV4(); if (!video) return;
+    if (event.key.toLowerCase() === 'k') { event.preventDefault(); video.paused ? video.play() : video.pause(); }
+    if (event.key.toLowerCase() === 'j') { event.preventDefault(); video.currentTime = Math.max(0, video.currentTime - 1); }
+    if (event.key.toLowerCase() === 'l') { event.preventDefault(); video.currentTime = Math.min(video.duration || Infinity, video.currentTime + 1); }
   }, true);
 })();
