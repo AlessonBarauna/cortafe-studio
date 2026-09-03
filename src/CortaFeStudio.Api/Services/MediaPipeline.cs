@@ -227,6 +227,14 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
 
     public async Task RenderClipAsync(VideoProject p, ClipCandidate clip, CancellationToken ct = default)
     {
+        if (p.Options.ContentType is "podcast" or "entrevista" && clip.FramingAnalysisVersion < 2)
+        {
+            try { await framingService.AnalyzeAsync(p, clip, ct); }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "[Framing] Atualizacao do foco do locutor indisponivel; mantendo enquadramento anterior do corte {ClipId}", clip.Id);
+            }
+        }
         var cachedOutput = string.IsNullOrWhiteSpace(clip.VideoPath) ? null : store.ResolveAsset(p.Id, clip.VideoPath);
         if (!clip.RenderOutdated && cachedOutput is not null && clip.LastRenderFingerprint == RenderStateService.Fingerprint(clip))
         {

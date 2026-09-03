@@ -103,6 +103,7 @@ public sealed class ClipCandidate
     public string CropFocus { get; set; } = "center";
     public double CropX { get; set; } = .5;
     public List<FramingKeyframe> FramingTrack { get; set; } = [];
+    public int FramingAnalysisVersion { get; set; }
     public string LayoutMode { get; set; } = "fill";
     public string OutputPreset { get; set; } = "vertical";
     public bool FaceTrackingAnalyzed { get; set; }
