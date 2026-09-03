@@ -49,15 +49,15 @@ internal sealed class OllamaEditorialAiProvider : IEditorialAiProvider
             var topics = new List<EditorialTopic>();
             foreach (var chunk in chunks)
             {
-                var prompt = $"""
+                var prompt = $$"""
 Você é um diretor editorial sênior de vídeos curtos em português do Brasil.
-Analise este trecho de {Profile(options.ContentType)} e descubra os assuntos semanticamente completos.
+Analise este trecho de {{Profile(options.ContentType)}} e descubra os assuntos semanticamente completos.
 Retorne SOMENTE JSON válido no formato:
-{{"mainTheme":"...","summary":"...","topics":[{{"title":"...","summary":"...","start":0.0,"end":90.0,"confidence":0.0,"keywords":["..."]}}]}}
+{"mainTheme":"...","summary":"...","topics":[{"title":"...","summary":"...","start":0.0,"end":90.0,"confidence":0.0,"keywords":["..."]}]}
 Regras: use segundos absolutos informados entre colchetes; gere de 2 a 7 temas; não invente assunto; cada tema deve ter começo e fim coerentes; prefira assuntos que possam originar cortes independentes.
 
 TRANSCRIÇÃO:
-{BuildTimedText(chunk, 12000)}
+{{BuildTimedText(chunk, 12000)}}
 """;
                 var parsed = Generate<EditorialIntelligenceResult>(prompt);
                 if (parsed?.Topics.Count > 0) topics.AddRange(parsed.Topics);
@@ -88,14 +88,14 @@ TRANSCRIÇÃO:
                 title = clip.Title
             });
             var topicMap = topics.Select(t => new { t.Title, t.Summary, t.Start, t.End });
-            var prompt = $"""
-Você é um editor sênior de Reels, Shorts e TikTok para {Profile(options.ContentType)}.
+            var prompt = $$"""
+Você é um editor sênior de Reels, Shorts e TikTok para {{Profile(options.ContentType)}}.
 Avalie cada corte sem alterar os IDs. Considere: gancho, ideia completa, valor emocional, clareza sem contexto anterior, potencial de compartilhamento e fidelidade ao conteúdo.
 Retorne SOMENTE um array JSON:
-[{{"clipId":"id","score":0.0,"reason":"motivo curto","topic":"tema","shareability":0.0,"emotionalValue":0.0,"standaloneClarity":0.0}}]
+[{"clipId":"id","score":0.0,"reason":"motivo curto","topic":"tema","shareability":0.0,"emotionalValue":0.0,"standaloneClarity":0.0}]
 Todos os números devem estar entre 0 e 100. Evite elogios genéricos.
-Mapa de temas: {JsonSerializer.Serialize(topicMap)}
-Cortes: {JsonSerializer.Serialize(input)}
+Mapa de temas: {{JsonSerializer.Serialize(topicMap)}}
+Cortes: {{JsonSerializer.Serialize(input)}}
 """;
             var generated = Generate<List<SemanticClipEvaluation>>(prompt);
             if (generated is null || generated.Count == 0) return fallback;
@@ -132,12 +132,12 @@ Cortes: {JsonSerializer.Serialize(input)}
                 semanticTopic = evaluations.FirstOrDefault(e => e.ClipId == c.Id)?.Topic,
                 score = evaluations.FirstOrDefault(e => e.ClipId == c.Id)?.Score ?? c.Score
             });
-            var prompt = $"""
-Organize estes cortes de {Profile(options.ContentType)} em séries editoriais para publicação sequencial.
+            var prompt = $$"""
+Organize estes cortes de {{Profile(options.ContentType)}} em séries editoriais para publicação sequencial.
 Retorne SOMENTE JSON válido no formato:
-[{{"title":"nome concreto da série","summary":"uma frase","clipIds":["id1","id2"],"score":0.0}}]
+[{"title":"nome concreto da série","summary":"uma frase","clipIds":["id1","id2"],"score":0.0}]
 Regras: uma série precisa ter pelo menos 2 cortes; no máximo 5 por série; não repetir ID dentro da mesma série; agrupe por significado, não apenas palavras iguais; títulos em português do Brasil.
-Cortes: {JsonSerializer.Serialize(payload)}
+Cortes: {{JsonSerializer.Serialize(payload)}}
 """;
             var generated = Generate<List<EditorialSeries>>(prompt);
             var validIds = clips.Select(c => c.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
