@@ -17,6 +17,7 @@
     selectBase(project, id);
     activeClipId = id;
     syncWorkspace(project, id);
+    prepareSubtitleWorkspaceClip(project, id);
   };
 
   const homeBase = home;
@@ -62,7 +63,7 @@
 
   function bindWorkspace(project) {
     document.querySelectorAll('[data-cc-clip],[data-cc-track]').forEach(button => button.onclick = event => { if(event.target.closest('[data-cc-edit-captions]'))return;selectClip(project, button.dataset.ccClip || button.dataset.ccTrack); if(button.dataset.ccClip) document.querySelector('[data-cc-mode="cut"]')?.click(); });
-    document.querySelectorAll('[data-cc-edit-captions]').forEach(button=>button.onclick=event=>{event.stopPropagation();selectClip(project,button.dataset.ccEditCaptions);document.querySelector('[data-cc-mode="captions"]')?.click()});
+    document.querySelectorAll('[data-cc-edit-captions]').forEach(button=>button.onclick=async event=>{event.stopPropagation();selectClip(project,button.dataset.ccEditCaptions);await prepareSubtitleWorkspaceClip(project,button.dataset.ccEditCaptions);document.querySelector('[data-cc-mode="captions"]')?.click()});
     document.querySelectorAll('[data-cc-mode]').forEach(button => button.onclick = () => {
       const mediaMode = button.dataset.ccMode === 'media';
       document.querySelector('.cc-editor-grid')?.classList.toggle('cc-show-media', mediaMode);
