@@ -295,5 +295,5 @@ public sealed class RetentionPolicy
 }
 public sealed record RetentionPolicyUpdate(bool Enabled, int RetentionDays, RetentionCleanupMode Mode, bool ProtectFavorites = true, bool ProtectPinned = true);
 public sealed record RetentionCandidate(string ProjectId, string Name, DateTime ReferenceDate, long EstimatedBytes, bool WillDeleteProject);
-public sealed record RetentionPreview(RetentionPolicy Policy, DateTime Cutoff, IReadOnlyList<RetentionCandidate> Candidates, long EstimatedBytes, bool WillDeleteProject);
+public sealed record RetentionPreview(RetentionPolicy Policy, DateTime Cutoff, IReadOnlyList<RetentionCandidate> Candidates, long EstimatedBytes);
 public sealed record RetentionExecution(int Processed, long FreedBytes, IReadOnlyList<string> ProjectIds, DateTime CompletedAt);
