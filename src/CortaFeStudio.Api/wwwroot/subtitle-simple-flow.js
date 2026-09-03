@@ -20,8 +20,26 @@
         redrawSubtitleBlocks(card,saved.blocks||[]);
         subtitleSaveState(card,'Salvo no projeto','saved');
       }
+
+      // Antes de desenhar a legenda, garante uma base visual do próprio corte.
+      // O endpoint de preview usa o mesmo framing/layout do vídeo final, sem queimar legendas.
+      // Assim a edição não cai no vídeo-fonte horizontal (ex.: 8:39 / 9:51) dentro do quadro 9:16.
+      if(card&&typeof prepareSubtitleWorkspaceClip==='function'){
+        try{
+          subtitleSaveState(card,'Preparando prévia vertical…','saving');
+          await prepareSubtitleWorkspaceClip(current,clipId);
+          subtitleSaveState(card,'Legendas salvas · prévia vertical','saved');
+        }catch(error){
+          console.warn('Falha ao preparar a prévia vertical do corte',error);
+          subtitleSaveState(card,'Legendas salvas · prévia limitada','editing');
+        }
+      }
+
       const video=typeof activateLiveSubtitlePreview==='function'?activateLiveSubtitlePreview(clip):document.querySelector('#preview video');
-      if(video&&typeof updateSubtitlePreview==='function')updateSubtitlePreview(video,clip);
+      if(video&&typeof updateSubtitlePreview==='function'){
+        updateSubtitlePreview(video,clip);
+        if(card&&typeof enableSubtitleDrag==='function')enableSubtitleDrag(card);
+      }
       refreshCaptionBadges();
       if(announce)toast('✓ Legendas carregadas do projeto');
       return saved;
@@ -34,7 +52,22 @@
   function activeClipId(){return document.querySelector('.clip-card.active')?.dataset.clip||document.querySelector('#ccClipPicker')?.value||null;}
   function captionsOpen(){return document.querySelector('.cc-tool-rail [data-cc-mode="captions"].active')!==null||document.querySelector('.clip-card.active')?.dataset.editMode==='captions';}
 
-  const originalSaveExplicit=window.saveSubtitlesExplicitly;
+  // Em modo Legendas, a camada editável deve aparecer sobre a prévia limpa vertical.
+  // Fora do modo Legendas, um MP4 final pode já ter as legendas queimadas; nesse caso evitamos duplicá-las.
+  updateSubtitlePreview=function(video,clip){
+    const overlay=document.querySelector('#preview .subtitle-preview'),track=clip?.subtitleTrack;
+    const editing=captionsOpen();
+    const livePreview=!!(video?.dataset.sourcePreview||video?.dataset.clipPreview||video?.dataset.subtitlePreviewKind);
+    if(video&&!editing&&!livePreview&&clip?.videoPath){if(overlay)overlay.textContent='';return;}
+    if(!overlay||!track||(!track.enabled&&!editing)){if(overlay)overlay.textContent='';return;}
+    const relative=video.currentTime-(video.dataset.sourcePreview?clip.start:0),offset=track.offsetSeconds||0;
+    const active=(track.blocks||[]).find(block=>block.enabled!==false&&relative>=block.start+offset&&relative<=block.end+offset);
+    overlay.textContent=active?.text||'';
+    overlay.dataset.style=track.style||'impact';
+    if(typeof applySubtitlePosition==='function')applySubtitlePosition(overlay,track);
+    document.querySelectorAll(`[data-clip="${clip.id}"] .subtitle-block`).forEach(block=>block.classList.toggle('active',block.dataset.subtitleId===active?.id));
+  };
+
   window.saveSubtitlesExplicitly=async function(button){
     const card=button.closest('.clip-card'),clip=current?.clips.find(item=>item.id===card?.dataset.clip);if(!card||!clip)return;
     button.disabled=true;const old=button.textContent;button.textContent='Salvando…';
