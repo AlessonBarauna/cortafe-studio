@@ -1,0 +1,28 @@
+/* Auditoria final do editor: mantém IA/lote fora do fluxo principal e maximiza o monitor. */
+body.cc-editor-active .cc-workspace-v2>.aj-productivity-suite,
+body.cc-editor-active .cc-workspace-v2>.attention-ai-panel,
+body.cc-editor-active .cc-workspace-v2>.smart-camera-panel,
+body.cc-editor-active .cc-workspace-v2>.sermon-intelligence-summary{display:none!important}
+
+.cc-editor-insights-drawer{position:fixed;z-index:2400;top:58px;right:0;bottom:0;width:min(620px,calc(100vw - 74px));display:grid;grid-template-rows:58px minmax(0,1fr);border-left:1px solid rgba(240,180,77,.28);background:#0d0c12;box-shadow:-22px 0 70px #000b;color:#f2eee6;transform:translateX(102%);transition:transform .2s ease}
+.cc-editor-insights-drawer.open{transform:translateX(0)}
+.cc-editor-insights-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.1);background:#14121c}
+.cc-editor-insights-head div{display:grid;gap:2px}.cc-editor-insights-head strong{font-size:12px}.cc-editor-insights-head small{color:#9d99aa;font-size:9px}.cc-editor-insights-head button{width:34px;height:34px;border:1px solid rgba(255,255,255,.12);border-radius:7px;background:#211e29;color:#f2eee6;font-size:18px}
+.cc-editor-insights-body{min-height:0;padding:12px;overflow:auto}.cc-editor-insights-body>section{margin:0 0 12px!important;border-radius:12px!important}.cc-editor-insights-body .aj-productivity-controls{grid-template-columns:1fr 1fr!important}.cc-editor-insights-body .aj-productivity-controls [data-batch-count]{grid-column:1/-1!important}.cc-editor-insights-body .attention-ai-track{height:48px}.cc-editor-insights-body .attention-segment{top:6px;height:34px}.cc-editor-insights-body .smart-camera-panel,.cc-editor-insights-body .sermon-intelligence-summary{align-items:flex-start;flex-direction:column}
+[data-editor-insights].active{border-color:#f0b44d!important;color:#f0b44d!important}
+
+@media(min-width:821px){
+  body.cc-editor-active .cc-workspace-v2>.cc-editor-grid{grid-template-rows:minmax(0,1fr) 190px!important}
+}
+.cc-canvas-stage{min-height:0!important}.cc-canvas-stage #preview{position:relative!important;display:grid!important;place-items:center!important;align-self:center!important;justify-self:center!important;min-width:0!important;min-height:0!important;overflow:hidden!important;background:#000!important}
+.cc-canvas-stage #preview video,.cc-canvas-stage #preview img{display:block!important;width:100%!important;height:100%!important;object-fit:contain!important}
+.editor-preview-tools{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-left:auto}.editor-preview-tools button{min-width:auto!important;height:26px!important;padding:0 8px!important}.editor-preview-state{max-width:150px;overflow:hidden;color:#9d99aa;font-size:8px;text-overflow:ellipsis;white-space:nowrap}.editor-preview-state.busy{color:#f0b44d}.editor-preview-state.ok{color:#69d3a1}.editor-preview-state.dirty{color:#f0c57a}
+
+.editor-live-brand{position:absolute;z-index:8;inset:0;pointer-events:none;--brand:#c7a35a;--panel:rgba(23,18,14,.72)}.editor-live-brand.theme-worship{--brand:#b98cff;--panel:rgba(19,13,36,.72)}.editor-live-brand.theme-podcast{--brand:#ff5a5f;--panel:rgba(23,17,25,.72)}.editor-live-brand .brand-frame{position:absolute;inset:2.2%;border:2px solid color-mix(in srgb,var(--brand) 45%,transparent)}.editor-live-brand .brand-bottom{position:absolute;left:0;right:0;bottom:0;height:6.2%;border-top:1px solid color-mix(in srgb,var(--brand) 72%,transparent);background:var(--panel)}.editor-live-brand strong{position:absolute;left:5%;right:5%;bottom:1.4%;overflow:hidden;color:var(--brand);font:800 clamp(8px,1.2vw,18px)/1 "DM Sans",sans-serif;text-align:center;text-overflow:ellipsis;white-space:nowrap;text-shadow:0 1px 2px #000}
+
+body.cc-preview-focus .cc-workspace-v2>.cc-editor-grid{grid-template-columns:minmax(0,1fr)!important;grid-template-rows:minmax(0,1fr)!important}
+body.cc-preview-focus .cc-tool-rail,body.cc-preview-focus .cc-media-bin,body.cc-preview-focus .cc-properties-panel,body.cc-preview-focus .cc-timeline-dock{display:none!important}
+body.cc-preview-focus .cc-canvas-stage{grid-column:1!important;grid-row:1!important;padding:14px 28px!important}
+body.cc-preview-focus .cc-canvas-stage #preview{box-shadow:0 24px 80px #000!important}
+
+@media(max-width:820px){.cc-editor-insights-drawer{top:58px;width:100vw}.editor-preview-state{display:none}.editor-preview-tools button{padding:0 6px!important;font-size:8px!important}}
