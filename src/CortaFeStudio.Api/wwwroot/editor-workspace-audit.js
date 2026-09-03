@@ -15,8 +15,9 @@
     selectBase(project,id);
     requestAnimationFrame(()=>requestAnimationFrame(()=>{
       mountAudit(project);
-      syncPreviewGeometry(project.clips.find(clip=>clip.id===id));
-      renderLiveBrand(project.clips.find(clip=>clip.id===id));
+      const clip=project.clips.find(item=>item.id===id);
+      syncPreviewGeometry(clip);
+      renderLiveBrand(clip);
     }));
   };
 
@@ -80,31 +81,44 @@
   function bindEditorAuditEvents(){
     const root=document.querySelector('.cc-workspace-v2');if(!root||root.dataset.auditBound)return;root.dataset.auditBound='1';
     root.addEventListener('change',event=>{
-      const card=event.target.closest('.clip-card');if(!card)return;
-      const clip=current?.clips.find(item=>item.id===card.dataset.clip);if(!clip)return;
-      if(event.target.closest('.cc-mode-visual')||event.target.closest('.editor-tools')){
-        applyVisualValues(card,clip);syncPreviewGeometry(clip);setPreviewState('Alteração visual · atualizando','dirty');schedulePreviewRefresh(card.dataset.clip);
-      }
-      if(event.target.closest('.cc-mode-brand')||event.target.closest('.brand-editor')){
-        applyBrandValues(card,clip);renderLiveBrand(clip);setPreviewState('Marca refletida na prévia','ok');
+      const card=event.target.closest('.clip-card');
+      if(card){
+        const clip=current?.clips.find(item=>item.id===card.dataset.clip);if(!clip)return;
+        if(event.target.closest('.cc-mode-visual')||event.target.closest('.editor-tools')){
+          applyVisualValues(card,clip);syncPreviewGeometry(clip);setPreviewState('Alteração visual · atualizando','dirty');schedulePreviewRefresh(card.dataset.clip);
+        }
+        if(event.target.closest('.cc-mode-brand')||event.target.closest('.brand-editor')){
+          applyBrandValues(card,clip);renderLiveBrand(clip);setPreviewState('Marca · atualizando prévia','dirty');schedulePreviewRefresh(card.dataset.clip);
+        }
       }
     });
     root.addEventListener('input',event=>{
       const card=event.target.closest('.clip-card');if(!card)return;
       const clip=current?.clips.find(item=>item.id===card.dataset.clip);if(!clip)return;
-      if(event.target.closest('.cc-mode-brand')||event.target.closest('.brand-editor')){applyBrandValues(card,clip);renderLiveBrand(clip);}
+      if(event.target.closest('.cc-mode-brand')||event.target.closest('.brand-editor')){
+        applyBrandValues(card,clip);renderLiveBrand(clip);
+        if(!isCleanPreview(clip))schedulePreviewRefresh(card.dataset.clip);
+      }
       if(event.target.name==='outputPreset'){applyVisualValues(card,clip);syncPreviewGeometry(clip);}
     });
     root.addEventListener('click',event=>{
       const mode=event.target.closest('[data-cc-mode]')?.dataset.ccMode;
       if(mode==='visual'||mode==='brand'||mode==='captions')setTimeout(()=>{const clip=activeClip(current);syncPreviewGeometry(clip);renderLiveBrand(clip);},80);
+      if(event.target.closest('[data-camera-mode],[data-camera-analyze]')){
+        setPreviewState('Smart Camera · aguardando análise','busy');
+        setTimeout(()=>{const clip=activeClip(current);if(clip)schedulePreviewRefresh(clip.id);},900);
+      }
     });
-    document.addEventListener('keydown',event=>{if(event.key==='Escape'&&document.body.classList.contains('cc-preview-focus')){document.body.classList.remove('cc-preview-focus');const button=document.querySelector('[data-editor-preview-focus]');if(button)button.textContent='Ampliar';requestAnimationFrame(()=>fitPreview(activeClip(current)));}});
+    document.addEventListener('keydown',event=>{
+      if(event.key==='Escape'&&document.body.classList.contains('cc-preview-focus')){
+        document.body.classList.remove('cc-preview-focus');const button=document.querySelector('[data-editor-preview-focus]');if(button)button.textContent='Ampliar';requestAnimationFrame(()=>fitPreview(activeClip(current)));
+      }
+    });
   }
 
   function schedulePreviewRefresh(clipId){
     clearTimeout(previewTimers.get(clipId));
-    previewTimers.set(clipId,setTimeout(()=>{if(activeClip(current)?.id===clipId)refreshEditingPreview(current,false);},500));
+    previewTimers.set(clipId,setTimeout(()=>{if(activeClip(current)?.id===clipId)refreshEditingPreview(current,false);},650));
   }
 
   async function refreshEditingPreview(project,explicit){
@@ -126,7 +140,11 @@
   function showCleanPreview(clip,relative){
     if(typeof activateLiveSubtitlePreview==='function'){
       const video=activateLiveSubtitlePreview(clip);
-      if(video){const restore=()=>{video.currentTime=Math.min(Number.isFinite(video.duration)?video.duration:clip.end-clip.start,relative)};video.readyState>=1?restore():video.addEventListener('loadedmetadata',restore,{once:true});if(typeof updateSubtitlePreview==='function')updateSubtitlePreview(video,clip);}
+      if(video){
+        const restore=()=>{video.currentTime=Math.min(Number.isFinite(video.duration)?video.duration:clip.end-clip.start,relative)};
+        video.readyState>=1?restore():video.addEventListener('loadedmetadata',restore,{once:true});
+        if(typeof updateSubtitlePreview==='function')updateSubtitlePreview(video,clip);
+      }
       return;
     }
     const preview=document.querySelector('#preview');if(!preview||!clip.previewPath)return;
@@ -146,12 +164,15 @@
     if(enabled)clip.brandFrameEnabled=enabled.checked;if(watermark)clip.watermarkEnabled=watermark.checked;if(theme)clip.brandTheme=theme.value;if(text)clip.watermarkText=text.value;if(opacity)clip.watermarkOpacity=number(opacity.value,.82);
   }
 
+  function isCleanPreview(clip){
+    const video=document.querySelector('#preview video');
+    return !!(video?.dataset.clipPreview||video?.dataset.sourcePreview||(clip?.previewPath&&video?.src?.includes(clip.previewPath)));
+  }
+
   function renderLiveBrand(clip){
     const preview=document.querySelector('#preview');if(!preview||!clip)return;
     preview.querySelector('.editor-live-brand')?.remove();
-    const video=preview.querySelector('video');
-    const clean=!!(video?.dataset.clipPreview||video?.dataset.sourcePreview||clip.previewPath&&video?.src?.includes(clip.previewPath));
-    if(!clean)return;
+    if(!isCleanPreview(clip))return;
     const card=activeCard();if(card)applyBrandValues(card,clip);
     if(clip.brandFrameEnabled===false&&clip.watermarkEnabled===false)return;
     preview.querySelector('.brand-preview')?.remove();
