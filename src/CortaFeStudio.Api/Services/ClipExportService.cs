@@ -42,7 +42,8 @@ public sealed class ClipExportService(ProjectStore store)
         await using (var stream = File.Create(temporary))
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create))
         {
-            var csv = new StringBuilder("ordem;arquivo;titulo;descricao;hashtags;tema;status;data_sugerida;duracao_segundos\r\n");
+            var csv = new StringBuilder("ordem;arquivo;capa;titulo;descricao;hashtags;tema;status;data_sugerida;duracao_segundos\r\n");
+            var editorialManifest = new List<object>();
             var start = DateTimeOffset.Now.Date.AddDays(1); var times = new[] { new TimeSpan(10, 0, 0), new TimeSpan(19, 0, 0) };
             for (var index = 0; index < rendered.Count; index++)
             {
@@ -50,17 +51,33 @@ public sealed class ClipExportService(ProjectStore store)
                 var safeTitle = SafeFileName(clip.Title); var fileName = $"{index + 1:00}-{safeTitle}.mp4";
                 var videoEntry = archive.CreateEntry($"videos/{fileName}", CompressionLevel.NoCompression);
                 await using (var input = File.OpenRead(rendered[index].Path)) await using (var output = videoEntry.Open()) await input.CopyToAsync(output, ct);
+                var coverFileName = "";
+                if (!string.IsNullOrWhiteSpace(clip.CoverPath))
+                {
+                    var coverPath = Path.Combine(directory, clip.CoverPath);
+                    if (File.Exists(coverPath))
+                    {
+                        coverFileName = $"{index + 1:00}-{safeTitle}{Path.GetExtension(coverPath)}";
+                        var coverEntry = archive.CreateEntry($"capas/{coverFileName}", CompressionLevel.Optimal);
+                        await using var coverInput = File.OpenRead(coverPath); await using var coverOutput = coverEntry.Open(); await coverInput.CopyToAsync(coverOutput, ct);
+                    }
+                }
                 var hashtags = string.Join(' ', clip.Hashtags); var postText = $"{clip.Title}\n\n{clip.Caption}\n\n{hashtags}".Trim();
                 var textEntry = archive.CreateEntry($"legendas/{index + 1:00}-{safeTitle}.txt", CompressionLevel.Optimal);
                 await using (var writer = new StreamWriter(textEntry.Open(), new UTF8Encoding(false))) await writer.WriteAsync(postText.AsMemory(), ct);
                 var suggested = new DateTimeOffset(start.AddDays(index / 2).Add(times[index % 2]), TimeZoneInfo.Local.GetUtcOffset(start));
-                csv.AppendLine(string.Join(';', index + 1, Csv(fileName), Csv(clip.Title), Csv(clip.Caption), Csv(hashtags), Csv(clip.DiversityTopic), Csv(clip.TikTokWorkflowStatus), Csv(suggested.ToString("yyyy-MM-dd HH:mm")), Math.Round((clip.End - clip.Start) / RenderFilterFactory.NormalizePlaybackSpeed(clip.PlaybackSpeed), 1)));
+                var finalDuration = Math.Round((clip.End - clip.Start) / RenderFilterFactory.NormalizePlaybackSpeed(clip.PlaybackSpeed), 1);
+                csv.AppendLine(string.Join(';', index + 1, Csv(fileName), Csv(coverFileName), Csv(clip.Title), Csv(clip.Caption), Csv(hashtags), Csv(clip.DiversityTopic), Csv(clip.TikTokWorkflowStatus), Csv(suggested.ToString("yyyy-MM-dd HH:mm")), finalDuration));
+                editorialManifest.Add(new { order = index + 1, video = $"videos/{fileName}", cover = string.IsNullOrWhiteSpace(coverFileName) ? null : $"capas/{coverFileName}", clip.Title, clip.Caption, clip.Hashtags, scheduledAt = suggested, durationSeconds = finalDuration, clip.Score, hookScore = clip.SocialScore.Hook, subtitleReviewRequired = clip.SubtitleTrack?.RequiresReview ?? false });
             }
             var manifest = archive.CreateEntry("programacao-tiktok-studio.csv", CompressionLevel.Optimal);
             await using (var writer = new StreamWriter(manifest.Open(), new UTF8Encoding(true))) await writer.WriteAsync(csv.ToString().AsMemory(), ct);
+            var jsonManifest = archive.CreateEntry("manifesto-editorial.json", CompressionLevel.Optimal);
+            await using (var writer = new StreamWriter(jsonManifest.Open(), new UTF8Encoding(false)))
+                await writer.WriteAsync(System.Text.Json.JsonSerializer.Serialize(editorialManifest, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web) { WriteIndented = true }).AsMemory(), ct);
             var guide = archive.CreateEntry("LEIA-ME.txt", CompressionLevel.Optimal);
             await using (var writer = new StreamWriter(guide.Open(), new UTF8Encoding(false)))
-                await writer.WriteAsync("PACOTE TIKTOK STUDIO\n\n1. Abra a pasta videos.\n2. Envie os MP4s ao TikTok Studio na ordem numérica.\n3. Consulte programacao-tiktok-studio.csv para título, descrição e hashtags.\n4. Cada texto completo também está na pasta legendas.\n5. Revise direitos autorais antes de programar.\n".AsMemory(), ct);
+                await writer.WriteAsync("PACOTE TIKTOK STUDIO\n\n1. Abra a pasta videos.\n2. Escolha a imagem correspondente na pasta capas.\n3. Envie os MP4s ao TikTok Studio na ordem numérica.\n4. Consulte programacao-tiktok-studio.csv para título, descrição, hashtags e agenda.\n5. Cada texto completo também está na pasta legendas.\n6. Consulte manifesto-editorial.json para pontuação e revisão de legendas.\n7. Revise direitos autorais antes de programar.\n".AsMemory(), ct);
         }
         File.Move(temporary, target, true); return target;
     }
