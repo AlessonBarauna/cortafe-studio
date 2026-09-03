@@ -25,18 +25,21 @@ public sealed class ClipExportServiceTests : IDisposable
     {
         var store = new ProjectStore(new TestEnvironment(_root)); var project = await store.CreateAsync("Campanha", SourceKind.Upload, "video.mp4", null); var directory = store.ProjectDirectory(project.Id);
         await File.WriteAllBytesAsync(Path.Combine(directory, "clip-a.mp4"), [1, 2, 3]);
-        project.Clips = [new() { Title = "Um título chamativo", Caption = "Assista até o final.", Hashtags = ["#fe", "#reflexao"], VideoPath = "clip-a.mp4", Approved = true, Score = 92, Start = 0, End = 65 }];
+        await File.WriteAllBytesAsync(Path.Combine(directory, "cover-a.jpg"), [4, 5, 6]);
+        project.Clips = [new() { Title = "Um título chamativo", Caption = "Assista até o final.", Hashtags = ["#fe", "#reflexao"], VideoPath = "clip-a.mp4", CoverPath = "cover-a.jpg", Approved = true, Score = 92, Start = 0, End = 65 }];
 
         var zip = await new ClipExportService(store).CreateTikTokStudioPackageAsync(project);
 
         using var archive = ZipFile.OpenRead(zip);
         Assert.Contains(archive.Entries, entry => entry.FullName.StartsWith("videos/") && entry.Name.EndsWith(".mp4"));
         Assert.Contains(archive.Entries, entry => entry.FullName.StartsWith("legendas/") && entry.Name.EndsWith(".txt"));
+        Assert.Contains(archive.Entries, entry => entry.FullName.StartsWith("capas/") && entry.Name.EndsWith(".jpg"));
         Assert.Contains(archive.Entries, entry => entry.Name == "programacao-tiktok-studio.csv");
+        Assert.Contains(archive.Entries, entry => entry.Name == "manifesto-editorial.json");
         Assert.Contains(archive.Entries, entry => entry.Name == "LEIA-ME.txt");
         var manifest = archive.GetEntry("programacao-tiktok-studio.csv")!;
         using var reader = new StreamReader(manifest.Open()); var csv = await reader.ReadToEndAsync();
-        Assert.Contains("data_sugerida", csv); Assert.Contains("tema", csv);
+        Assert.Contains("data_sugerida", csv); Assert.Contains("tema", csv); Assert.Contains("capa", csv);
     }
 
     [Fact]
