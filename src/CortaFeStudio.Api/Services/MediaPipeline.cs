@@ -285,13 +285,14 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
 
     public async Task<string> RenderPreviewAsync(VideoProject project, ClipCandidate clip, CancellationToken ct = default)
     {
-        var dir = store.ProjectDirectory(project.Id); var fingerprint = RenderStateService.Fingerprint(clip); var output = $"preview-{clip.Id}.mp4"; var path = Path.Combine(dir, output);
+        var dir = store.ProjectDirectory(project.Id); var fingerprint = RenderStateService.Fingerprint(clip); var output = $"preview-av-{clip.Id}.mp4"; var path = Path.Combine(dir, output);
         if (clip.LastPreviewFingerprint == fingerprint && File.Exists(path)) return output;
         if (string.IsNullOrWhiteSpace(project.LocalMedia)) throw new InvalidOperationException("O vídeo original não está disponível para gerar a prévia.");
         using var renderSlot = await workLimiter.EnterAsync(ProductionWorkKind.Render, ct);
         var framing = RenderFilterFactory.Framing(clip); var speed = project.Options.ContentType == "louvor" ? 1 : RenderFilterFactory.NormalizePlaybackSpeed(clip.PlaybackSpeed);
         var filter = ComposeVideoFilter("null", framing, null, null, RenderFilterFactory.CreativeLook(clip), speed) + ",scale=360:-2";
-        await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-ss", F(clip.Start), "-to", F(clip.End), "-i", Path.Combine(dir, project.LocalMedia), "-vf", filter, "-an", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30", "-pix_fmt", "yuv420p", "-movflags", "+faststart", path], dir, ct);
+        var audioFilter = speed > 1 ? $"atempo={F(speed)}" : "anull";
+        await tools.RunAsync(tools.Find("ffmpeg"), ["-y", "-ss", F(clip.Start), "-to", F(clip.End), "-i", Path.Combine(dir, project.LocalMedia), "-vf", filter, "-af", audioFilter, "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-movflags", "+faststart", path], dir, ct);
         clip.PreviewPath = output; clip.LastPreviewFingerprint = fingerprint; await store.SaveAsync(project); return output;
     }
 
