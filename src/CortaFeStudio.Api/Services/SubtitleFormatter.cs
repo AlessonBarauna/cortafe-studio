@@ -21,24 +21,24 @@ public static class SubtitleFormatter
 
     public static string Style(ClipCandidate clip, int width, int height)
     {
-        var marginX = width >= 1600 ? 210 : 135;
+        var marginX = width >= 1600 ? 220 : 165;
         var marginV = height switch
         {
-            >= 1800 => 235,
-            >= 1300 => 175,
-            >= 1000 => 145,
-            _ => 100
+            >= 1800 => 300,
+            >= 1300 => 230,
+            >= 1000 => 185,
+            _ => 135
         };
         var (font, size, primary, secondary, outline, shadow) = clip.SubtitleStyle switch
         {
-            "clean" => ("Arial", 40, "&H00FFFFFF", "&H00FFFFFF", 2, 0),
-            "podcast" => ("Arial", 43, "&H00FFFFFF", "&H00F0B44D", 3, 1),
-            "sermon" => ("Arial Black", 46, "&H00FFFFFF", "&H0000B7FF", 3, 1),
-            "motivational" => ("Arial Black", 47, "&H00FFFFFF", "&H0048D7FF", 3, 1),
-            "minimal" => ("Arial", 38, "&H00FFFFFF", "&H00FFFFFF", 2, 0),
-            "worship" => ("Georgia", 42, "&H00FFFFFF", "&H00E8C58B", 3, 1),
-            "bold" => ("Arial Black", 49, "&H00FFFFFF", "&H0000B7FF", 4, 1),
-            _ => ("Arial", 45, "&H00FFFFFF", "&H0000B7FF", 3, 1)
+            "clean" => ("Arial", 36, "&H00FFFFFF", "&H00FFFFFF", 2, 0),
+            "podcast" => ("Arial", 38, "&H00FFFFFF", "&H00F0B44D", 3, 1),
+            "sermon" => ("Arial Black", 40, "&H00FFFFFF", "&H0000B7FF", 3, 1),
+            "motivational" => ("Arial Black", 41, "&H00FFFFFF", "&H0048D7FF", 3, 1),
+            "minimal" => ("Arial", 34, "&H00FFFFFF", "&H00FFFFFF", 2, 0),
+            "worship" => ("Georgia", 38, "&H00FFFFFF", "&H00E8C58B", 3, 1),
+            "bold" => ("Arial Black", 42, "&H00FFFFFF", "&H0000B7FF", 4, 1),
+            _ => ("Arial", 39, "&H00FFFFFF", "&H0000B7FF", 3, 1)
         };
         return $"Style: Impacto,{font},{size},{primary},{secondary},&H00120B22,&H80000000,-1,0,0,0,100,100,0,0,1,{outline},{shadow},2,{marginX},{marginX},{marginV},1";
     }
@@ -53,9 +53,10 @@ public static class SubtitleFormatter
     public static string Karaoke(IReadOnlyList<TranscriptWord> words, ClipCandidate clip, int width)
     {
         var maxWordsPerLine = width >= 1600 ? 5 : clip.SubtitleStyle == "bold" ? 3 : 4;
-        var maxCharactersPerLine = width >= 1600 ? 42 : clip.SubtitleStyle == "bold" ? 19 : 23;
+        var maxCharactersPerLine = width >= 1600 ? 38 : clip.SubtitleStyle == "bold" ? 17 : 21;
         var lineLength = 0;
         var wordsOnLine = 0;
+        var lineCount = 1;
         var parts = new List<string>();
         var clipDuration = Math.Max(.1, clip.End - clip.Start);
         IReadOnlyList<EditorialMoment> moments = clip.EditorialProfile == "louvor" ? [] : EditorialMomentDetector.Detect(words, clipDuration);
@@ -65,13 +66,15 @@ public static class SubtitleFormatter
             var text = Escape(word.Word.Trim());
             if (text.Length == 0) continue;
 
-            var needsBreak = wordsOnLine > 0 &&
+            var wouldOverflow = wordsOnLine > 0 &&
                 (wordsOnLine >= maxWordsPerLine || lineLength + 1 + text.Length > maxCharactersPerLine);
+            var needsBreak = wouldOverflow && lineCount < 2;
             var separator = needsBreak ? "\\N" : wordsOnLine > 0 ? " " : "";
             if (needsBreak)
             {
                 lineLength = 0;
                 wordsOnLine = 0;
+                lineCount++;
             }
 
             var duration = Math.Max(1, (int)Math.Round((word.End - word.Start) * 100));
@@ -101,49 +104,56 @@ public static class SubtitleFormatter
         for (var index = 0; index < words.Count;)
         {
             var unit = new List<TranscriptWord>();
-            while (index < words.Count && unit.Count < 5)
+            while (index < words.Count && unit.Count < 4)
             {
-                var word = words[index++]; unit.Add(word);
+                var word = words[index++];
+                unit.Add(word);
                 var pause = index < words.Count ? words[index].Start - word.End : 0;
-                var punctuation = word.Word.TrimEnd().EndsWithAny('.', '!', '?', ':', ';');
-                if (unit.Count >= 2 && (pause >= .42 || punctuation)) break;
-                if (unit.Count >= 4 && index < words.Count && !IsConnector(words[index].Word)) break;
+                var punctuation = word.Word.TrimEnd().EndsWithAny('.', '!', '?', ':', ';', ',');
+                if (unit.Count >= 2 && (pause >= .22 || punctuation)) break;
+                if (unit.Count >= 3 && index < words.Count && !IsConnector(words[index].Word)) break;
             }
-            if (unit.Count == 1 && units.Count > 0 && units[^1].Count < 5 && !IsConnector(unit[0].Word)) units[^1].Add(unit[0]);
-            else units.Add(unit);
+
+            if (unit.Count == 1 && units.Count > 0 && units[^1].Count < 4 && IsConnector(unit[0].Word))
+                units[^1].Add(unit[0]);
+            else
+                units.Add(unit);
         }
 
         for (var index = 0; index < units.Count - 1; index++)
         {
-            var current = units[index]; var next = units[index + 1];
-            if (current.Count > 2 && next.Count < 5 && IsConnector(current[^1].Word)) { next.Insert(0, current[^1]); current.RemoveAt(current.Count - 1); }
-            if (next.Count == 1 && current.Count < 5) { current.Add(next[0]); units.RemoveAt(index + 1); index--; }
+            var current = units[index];
+            var next = units[index + 1];
+            if (current.Count > 2 && IsConnector(current[^1].Word) && next.Count < 4)
+            {
+                next.Insert(0, current[^1]);
+                current.RemoveAt(current.Count - 1);
+            }
         }
-        if (units.Count > 1 && units[0].Count == 1 && units[1].Count < 5)
-        {
-            units[1].Insert(0, units[0][0]); units.RemoveAt(0);
-        }
-        return units;
+        return units.Where(unit => unit.Count > 0).ToList();
     }
 
     public static string Plain(string text, int width)
     {
-        var limit = width >= 1600 ? 42 : 23;
-        var maxWordsPerLine = width >= 1600 ? 6 : 4;
+        var limit = width >= 1600 ? 38 : 21;
+        var maxWordsPerLine = width >= 1600 ? 5 : 4;
         var length = 0;
         var wordsOnLine = 0;
+        var lineCount = 1;
         var parts = new List<string>();
 
         foreach (var raw in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
         {
             var word = Escape(raw);
-            var needsBreak = wordsOnLine > 0 &&
+            var wouldOverflow = wordsOnLine > 0 &&
                 (wordsOnLine >= maxWordsPerLine || length + 1 + word.Length > limit);
+            var needsBreak = wouldOverflow && lineCount < 2;
             var separator = needsBreak ? "\\N" : wordsOnLine > 0 ? " " : "";
             if (needsBreak)
             {
                 length = 0;
                 wordsOnLine = 0;
+                lineCount++;
             }
 
             parts.Add(separator + word);
@@ -172,7 +182,7 @@ public static class SubtitleFormatter
             "conclusion" => "&H00B7E3A1&",
             _ => "&H0000B7FF&"
         };
-        var scale = kind == "climax" ? "\\fscx108\\fscy108" : kind == "hook" ? "\\fscx104\\fscy104" : "";
+        var scale = kind == "climax" ? "\\fscx106\\fscy106" : kind == "hook" ? "\\fscx103\\fscy103" : "";
         return $"{{\\kf{duration}\\b1\\1c{color}{scale}}}{text}{{\\rImpacto}}";
     }
 
