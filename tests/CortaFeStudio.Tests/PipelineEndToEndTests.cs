@@ -39,6 +39,13 @@ public sealed class PipelineEndToEndTests : IDisposable
         var video = streams.Single(stream => stream.GetProperty("codec_type").GetString() == "video"); var audio = streams.Single(stream => stream.GetProperty("codec_type").GetString() == "audio");
         Assert.Equal("h264", video.GetProperty("codec_name").GetString()); Assert.Equal(1080, video.GetProperty("width").GetInt32()); Assert.Equal(1920, video.GetProperty("height").GetInt32()); Assert.Equal("aac", audio.GetProperty("codec_name").GetString());
         Assert.NotNull(clip.QualityReport); var blocked = string.Join(" | ", clip.QualityReport!.Checks.Where(check => check.Status == QualityStatus.Blocked).Select(check => $"{check.Code}:{check.Detail}")); Assert.True(clip.QualityReport.Status != QualityStatus.Blocked, blocked); Assert.True(clip.QualityReport.Score >= 80);
+
+        var previewName = await pipeline.RenderPreviewAsync(project, clip);
+        var preview = store.ResolveAsset(project.Id, previewName); Assert.NotNull(preview);
+        var previewProbe = await tools.CaptureAsync(tools.Find("ffprobe"), ["-v", "error", "-show_entries", "stream=codec_type,codec_name", "-of", "json", preview!], directory);
+        using var previewDocument = JsonDocument.Parse(previewProbe); var previewStreams = previewDocument.RootElement.GetProperty("streams").EnumerateArray().ToList();
+        Assert.Contains(previewStreams, stream => stream.GetProperty("codec_type").GetString() == "video");
+        Assert.Contains(previewStreams, stream => stream.GetProperty("codec_type").GetString() == "audio" && stream.GetProperty("codec_name").GetString() == "aac");
     }
 
     private static List<TranscriptSegment> Transcript() => Enumerable.Range(0, 12).Select(index => new TranscriptSegment { Start = index * .5, End = index * .5 + .42, Text = $"palavra {index}", Words = [new TranscriptWord { Start = index * .5, End = index * .5 + .42, Word = $"palavra{index}" }] }).ToList();
