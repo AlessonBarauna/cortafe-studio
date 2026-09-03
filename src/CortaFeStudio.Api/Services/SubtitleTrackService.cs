@@ -10,6 +10,10 @@ public static class SubtitleTrackService
     {
         if (clip.SubtitleTrack is not null)
         {
+            var wasEnabled = clip.SubtitleTrack.Enabled;
+            var previousStyle = clip.SubtitleTrack.Style;
+            var previousPositionX = clip.SubtitleTrack.PositionX;
+
             if (clip.SubtitleTrack.Confidence <= 0)
             {
                 var existingWords = RelativeWords(clip, transcript);
@@ -22,9 +26,9 @@ public static class SubtitleTrackService
                 if (HasOversizedAutomaticBlocks(clip.SubtitleTrack))
                 {
                     var replacement = Create(clip, transcript);
-                    replacement.Enabled = clip.SubtitleTrack.Enabled;
-                    replacement.Style = clip.SubtitleTrack.Style;
-                    replacement.PositionX = clip.SubtitleTrack.PositionX;
+                    replacement.Enabled = wasEnabled;
+                    replacement.Style = previousStyle;
+                    replacement.PositionX = previousPositionX;
                     replacement.PositionY = 72;
                     clip.SubtitleTrack = replacement;
                 }
