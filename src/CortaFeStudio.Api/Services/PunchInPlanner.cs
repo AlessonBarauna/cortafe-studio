@@ -20,39 +20,60 @@ public static class PunchInPlanner
         var duration = clip.End - clip.Start;
         if (duration < 18 || string.IsNullOrWhiteSpace(clip.Transcript)) return [];
 
-        var words = clip.Transcript.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (words.Length < 12) return [];
-
         var intensity = AiEditingDirectorService.EditingIntensity(clip);
         var maximumMoments = intensity >= .82 ? 4 : intensity >= .62 ? 3 : 2;
-        var minimumDistance = intensity >= .82 ? 6d : intensity >= .62 ? 8d : 10d;
+        var minimumDistance = intensity >= .82 ? 5.5 : intensity >= .62 ? 7.5 : 9.5;
         var baseScale = intensity >= .82 ? 1.052 : intensity >= .62 ? 1.044 : 1.034;
-        var strongScale = intensity >= .82 ? 1.075 : intensity >= .62 ? 1.062 : 1.048;
+        var strongScale = intensity >= .82 ? 1.078 : intensity >= .62 ? 1.064 : 1.05;
 
-        var candidates = new List<(double Relative, int Score)>();
-        for (var i = 0; i < words.Length; i++)
-        {
-            var window = string.Join(' ', words.Skip(Math.Max(0, i - 2)).Take(5));
-            var score = ImpactScore(window);
-            if (score < 5) continue;
-            var relative = i / (double)Math.Max(1, words.Length - 1) * duration;
-            if (relative <= duration - 2) candidates.Add((relative, score));
-        }
+        // V2: prioriza momentos semânticos do trecho. Se o detector não encontrar
+        // nada confiável, mantém o algoritmo antigo por palavras-chave como fallback.
+        var editorial = EditorialMomentDetector.Detect(clip.Transcript, duration)
+            .OrderByDescending(moment => MomentPriority(moment.Kind) + moment.Strength)
+            .ThenBy(moment => moment.Start)
+            .ToList();
 
         var selected = new List<PunchInMoment>();
-        var opening = candidates.Where(c => c.Relative <= 8).OrderByDescending(c => c.Score).FirstOrDefault();
-        if (opening.Score > 0)
-            AddMoment(selected, opening.Relative, opening.Score >= 12 ? strongScale : baseScale, duration, intensity);
-
-        foreach (var candidate in candidates.OrderByDescending(c => c.Score).ThenBy(c => c.Relative))
+        foreach (var moment in editorial)
         {
             if (selected.Count >= maximumMoments) break;
-            if (selected.Any(existing => Math.Abs(existing.Start - candidate.Relative) < minimumDistance)) continue;
-            AddMoment(selected, candidate.Relative, candidate.Score >= 12 ? strongScale : baseScale, duration, intensity);
+            if (selected.Any(existing => Math.Abs(existing.Start - moment.Start) < minimumDistance)) continue;
+            var scale = moment.Kind switch
+            {
+                "climax" => strongScale,
+                "hook" => Math.Max(baseScale, strongScale - .006),
+                "scripture" => baseScale,
+                "conclusion" => Math.Max(1.03, baseScale - .006),
+                _ => baseScale
+            };
+            AddMoment(selected, moment.Start, scale, duration, intensity, MomentDuration(moment.Kind, intensity));
         }
 
-        // Um corte muito forte sem palavra-chave explícita ainda merece uma respiração visual
-        // no primeiro terço, evitando vídeos editorialmente bons mas visualmente estáticos.
+        if (selected.Count < Math.Min(2, maximumMoments))
+        {
+            var words = clip.Transcript.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var candidates = new List<(double Relative, int Score)>();
+            for (var i = 0; i < words.Length; i++)
+            {
+                var window = string.Join(' ', words.Skip(Math.Max(0, i - 2)).Take(5));
+                var score = ImpactScore(window);
+                if (score < 5) continue;
+                var relative = i / (double)Math.Max(1, words.Length - 1) * duration;
+                if (relative <= duration - 2) candidates.Add((relative, score));
+            }
+
+            var opening = candidates.Where(c => c.Relative <= 8).OrderByDescending(c => c.Score).FirstOrDefault();
+            if (opening.Score > 0 && selected.All(existing => Math.Abs(existing.Start - opening.Relative) >= minimumDistance))
+                AddMoment(selected, opening.Relative, opening.Score >= 12 ? strongScale : baseScale, duration, intensity);
+
+            foreach (var candidate in candidates.OrderByDescending(c => c.Score).ThenBy(c => c.Relative))
+            {
+                if (selected.Count >= maximumMoments) break;
+                if (selected.Any(existing => Math.Abs(existing.Start - candidate.Relative) < minimumDistance)) continue;
+                AddMoment(selected, candidate.Relative, candidate.Score >= 12 ? strongScale : baseScale, duration, intensity);
+            }
+        }
+
         if (selected.Count == 0 && intensity >= .72 && duration >= 28)
             AddMoment(selected, Math.Min(6, duration * .16), baseScale, duration, intensity);
 
@@ -70,10 +91,28 @@ public static class PunchInPlanner
         return score;
     }
 
-    private static void AddMoment(List<PunchInMoment> target, double start, double scale, double duration, double intensity)
+    private static double MomentPriority(string kind) => kind switch
+    {
+        "climax" => 4,
+        "hook" => 3,
+        "scripture" => 2,
+        "conclusion" => 1,
+        _ => 0
+    };
+
+    private static double MomentDuration(string kind, double intensity) => kind switch
+    {
+        "scripture" => intensity >= .75 ? 1.8 : 2.1,
+        "conclusion" => 1.7,
+        "climax" => intensity >= .82 ? 1.25 : 1.4,
+        "hook" => 1.35,
+        _ => intensity >= .82 ? 1.35 : intensity >= .62 ? 1.5 : 1.65
+    };
+
+    private static void AddMoment(List<PunchInMoment> target, double start, double scale, double duration, double intensity, double? requestedDuration = null)
     {
         var safeStart = Math.Clamp(start + .08, .25, Math.Max(.25, duration - 1.7));
-        var momentDuration = intensity >= .82 ? 1.35 : intensity >= .62 ? 1.5 : 1.65;
+        var momentDuration = requestedDuration ?? (intensity >= .82 ? 1.35 : intensity >= .62 ? 1.5 : 1.65);
         var end = Math.Min(duration - .15, safeStart + momentDuration);
         if (end - safeStart < .8) return;
         target.Add(new PunchInMoment(safeStart, end, scale));
