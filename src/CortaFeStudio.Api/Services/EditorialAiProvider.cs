@@ -284,10 +284,10 @@ internal sealed class HeuristicEditorialAiProvider : IEditorialAiProvider
         var direct = Count(lower, " você ", " voce ", " seu ", " sua ", " nunca ", " precisa ", " verdade ", " problema ");
         var opening = lower[..Math.Min(lower.Length, 100)];
         var contextPenalty = Count(opening, "como eu disse", "continuando", "isso aqui", "esse ponto", "voltando");
-        var standalone = Math.Clamp(55 + sentences * 4 - contextPenalty * 20, 0, 100);
-        var share = Math.Clamp(45 + direct * 8 + emotional * 4 + (clip.Score - 50) * .35, 0, 100);
-        var emotionalValue = Math.Clamp(35 + emotional * 9, 0, 100);
-        var score = Math.Clamp(clip.Score * .55 + standalone * .18 + share * .17 + emotionalValue * .10, 0, 100);
+        var standalone = Math.Clamp(55d + sentences * 4d - contextPenalty * 20d, 0d, 100d);
+        var share = Math.Clamp(45d + direct * 8d + emotional * 4d + (clip.Score - 50d) * .35d, 0d, 100d);
+        var emotionalValue = Math.Clamp(35d + emotional * 9d, 0d, 100d);
+        var score = Math.Clamp(clip.Score * .55d + standalone * .18d + share * .17d + emotionalValue * .10d, 0d, 100d);
         return new SemanticClipEvaluation
         {
             ClipId = clip.Id,
