@@ -28,6 +28,8 @@ builder.Services.AddSingleton<EditorialLearningService>();
 builder.Services.AddSingleton<PerformanceLearningService>();
 builder.Services.AddSingleton<ProjectQueue>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ProjectQueue>());
+builder.Services.AddSingleton<AutopilotService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<AutopilotService>());
 builder.Services.AddHttpClient();
 builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "storage", "keys")))
@@ -93,6 +95,17 @@ api.MapPut("/projects/{id}/library", async (string id, LibraryProjectUpdate requ
     var project = store.Get(id); if (project is null) return Results.NotFound(); project.Favorite = request.Favorite ?? project.Favorite; project.Pinned = request.Pinned ?? project.Pinned; await store.SaveAsync(project); return Results.Ok(project);
 });
 api.MapGet("/queue", (ProjectQueue queue) => queue.Status());
+api.MapGet("/autopilot", (AutopilotService autopilot) => autopilot.Snapshot());
+api.MapPut("/autopilot", async (AutopilotConfigurationUpdate request, AutopilotService autopilot, CancellationToken ct) =>
+{
+    try { return Results.Ok(await autopilot.UpdateAsync(request, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+api.MapPost("/autopilot/check", async (bool? importCurrent, AutopilotService autopilot, CancellationToken ct) =>
+{
+    try { return Results.Ok(await autopilot.CheckNowAsync(importCurrent ?? false, ct)); }
+    catch (Exception ex) when (ex is not OperationCanceledException) { return Results.BadRequest(new { error = ex.Message }); }
+});
 api.MapGet("/failures", (ProjectStore store) => store.ListAll()
     .Where(project => project.Status == ProjectStatus.Failed || project.FailureHistory.Count > 0)
     .Select(project => new { project.Id, project.Name, project.Status, project.Stage, project.Error, project.FailureCode, project.Attempt, project.NextRetryAt, project.LastCheckpoint, failures = project.FailureHistory.OrderByDescending(item => item.At) })
@@ -143,9 +156,8 @@ api.MapDelete("/projects/{id}", async (string id, ProjectStore store) =>
 
 api.MapPost("/projects/url", async (UrlProjectRequest request, ProjectStore store, ProjectQueue queue, StorageCapacityService capacity) =>
 {
-    if (!Uri.TryCreate(request.Url, UriKind.Absolute, out var uri) ||
-        !new[] { "youtube.com", "www.youtube.com", "youtu.be", "m.youtube.com" }.Contains(uri.Host.ToLowerInvariant()))
-        return Results.BadRequest(new { error = "Informe um link válido do YouTube." });
+    if (!IsSupportedRemoteUrl(request.Url))
+        return Results.BadRequest(new { error = "Informe um link válido do YouTube, Twitch ou Kick." });
     try { capacity.EnsureNewProject(); }
     catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
     var project = await store.CreateAsync(request.Name, SourceKind.YouTube, request.Url, request.Options);
@@ -156,9 +168,9 @@ api.MapPost("/projects/url", async (UrlProjectRequest request, ProjectStore stor
 api.MapPost("/projects/url-batch", async (UrlBatchProjectRequest request, ProjectStore store, ProjectQueue queue, StorageCapacityService capacity) =>
 {
     var urls = request.Urls.Where(url => !string.IsNullOrWhiteSpace(url)).Distinct().ToList();
-    if (urls.Count == 0) return Results.BadRequest(new { error = "Informe pelo menos um link do YouTube." });
+    if (urls.Count == 0) return Results.BadRequest(new { error = "Informe pelo menos um link." });
     if (urls.Count > 20) return Results.BadRequest(new { error = "Envie no máximo 20 links por lote." });
-    if (urls.Any(url => !IsYouTubeUrl(url))) return Results.BadRequest(new { error = "O lote contém um link que não pertence ao YouTube." });
+    if (urls.Any(url => !IsSupportedRemoteUrl(url))) return Results.BadRequest(new { error = "O lote contém um link fora de YouTube, Twitch ou Kick." });
     try { capacity.EnsureNewProject(urls.Count); }
     catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
     var projects = new List<VideoProject>();
@@ -584,6 +596,12 @@ static string GetContentType(string path) => Path.GetExtension(path).ToLowerInva
 };
 static bool IsYouTubeUrl(string url) => Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
     new[] { "youtube.com", "www.youtube.com", "youtu.be", "m.youtube.com" }.Contains(uri.Host.ToLowerInvariant());
+static bool IsSupportedRemoteUrl(string url)
+{
+    if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) return false;
+    var host = uri.Host.ToLowerInvariant();
+    return IsYouTubeUrl(url) || host is "twitch.tv" or "www.twitch.tv" or "kick.com" or "www.kick.com";
+}
 public record PinRequest(string Pin);
 public record BackupRequest(string Password);
 
