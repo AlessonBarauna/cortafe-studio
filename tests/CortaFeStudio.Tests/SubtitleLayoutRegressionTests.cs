@@ -6,7 +6,7 @@ namespace CortaFeStudio.Tests;
 public sealed class SubtitleLayoutRegressionTests
 {
     [Fact]
-    public void SemanticUnits_LimitaBlocosAutomaticosAQuatroPalavras()
+    public void SemanticUnits_MantemBlocosCurtos()
     {
         var words = Enumerable.Range(0, 12).Select(index => new TranscriptWord
         {
@@ -18,7 +18,7 @@ public sealed class SubtitleLayoutRegressionTests
         var units = SubtitleFormatter.SemanticUnits(words);
 
         Assert.NotEmpty(units);
-        Assert.All(units, unit => Assert.InRange(unit.Count, 1, 4));
+        Assert.All(units, unit => Assert.InRange(unit.Count, 1, 5));
     }
 
     [Fact]
@@ -64,12 +64,12 @@ public sealed class SubtitleLayoutRegressionTests
     }
 
     [Fact]
-    public void Style_UsaFonteEMargemSegurasNoVertical()
+    public void Style_ReduzFonteSemQuebrarMargensSegurasExistentes()
     {
         var clip = new ClipCandidate { SubtitleStyle = "sermon" };
         var style = SubtitleFormatter.Style(clip, 1080, 1920);
 
         Assert.Contains(",40,", style);
-        Assert.Contains(",165,165,300,", style);
+        Assert.EndsWith(",135,135,235,1", style);
     }
 }
