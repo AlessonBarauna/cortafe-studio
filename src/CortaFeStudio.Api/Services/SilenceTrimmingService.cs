@@ -8,6 +8,7 @@ public sealed class SilenceTrimmingService
     public const double MinimumFinalDuration = 60;
     public const double MinimumPauseToReduce = 1.2;
     public const double PreservedPause = .7;
+    public const double MinimumTechnicalDuration = 1;
 
     public SilenceTrimPlan Plan(ClipCandidate clip, IReadOnlyList<TranscriptSegment> transcript)
     {
@@ -111,7 +112,21 @@ public sealed class SilenceTrimmingService
             })
             .Where(cut => cut.End - cut.Start >= .05)
             .ToList();
-        return MergeCuts(normalized);
+        return LimitRemovedDuration(MergeCuts(normalized), Math.Max(0, duration - MinimumTechnicalDuration));
+    }
+
+    private static List<SilenceCut> LimitRemovedDuration(IEnumerable<SilenceCut> cuts, double budget)
+    {
+        var limited = new List<SilenceCut>();
+        foreach (var cut in cuts.OrderBy(item => item.Start))
+        {
+            if (budget <= .001) break;
+            var duration = Math.Min(cut.Duration, budget);
+            if (duration < .05) break;
+            limited.Add(new SilenceCut { Start = cut.Start, End = cut.Start + duration });
+            budget -= duration;
+        }
+        return limited;
     }
 
     private static List<SilenceCut> MergeCuts(IEnumerable<SilenceCut> source)
