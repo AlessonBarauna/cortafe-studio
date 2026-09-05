@@ -24,7 +24,7 @@
   renderProject=function(project){
     renderBase(project);
     if(project.status!=='ready')return;
-    requestAnimationFrame(()=>requestAnimationFrame(()=>install(project)));
+    setTimeout(()=>install(project,0),140);
   };
 
   function normalize(value){return String(value||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim();}
@@ -46,9 +46,7 @@
   function classify(text,start,duration){
     if(!text)return 'pregacao';
     const scores={pregacao:1,louvor:0,avisos:0,oferta:0,oracao:0,testemunho:0,recepcao:0};
-    for(const [category,terms] of Object.entries(signals)){
-      for(const term of terms)if(contains(text,term))scores[category]+=term.length>14?3:2;
-    }
+    for(const [category,terms] of Object.entries(signals))for(const term of terms)if(contains(text,term))scores[category]+=term.length>14?3:2;
     if(start<Math.min(360,duration*.09))scores.recepcao+=1.2;
     if(text.includes('[musica]'))scores.louvor+=5;
     if(/\b(joao|mateus|marcos|lucas|romanos|salmos?|proverbios|corintios|efesios|filipenses|hebreus|genesis)\b/.test(text)&&/\b\d{1,3}\b/.test(text))scores.pregacao+=4;
@@ -58,93 +56,65 @@
 
   function merge(windows){
     const result=[];
-    for(const item of windows){
-      const previous=result.at(-1);
-      if(previous&&previous.category===item.category){previous.end=item.end;previous.text=`${previous.text} ${item.text}`.trim();}
-      else result.push({...item});
-    }
+    for(const item of windows){const previous=result.at(-1);if(previous&&previous.category===item.category){previous.end=item.end;previous.text=`${previous.text} ${item.text}`.trim();}else result.push({...item});}
     return result;
   }
 
   function smooth(source,duration){
     let items=source.map(item=>({...item}));
-    for(let i=1;i<items.length-1;i++){
-      const current=items[i],previous=items[i-1],next=items[i+1];
-      if(current.end-current.start<=WINDOW_SECONDS*1.1&&previous.category===next.category&&current.category!==previous.category)current.category=previous.category;
-    }
+    for(let i=1;i<items.length-1;i++){const current=items[i],previous=items[i-1],next=items[i+1];if(current.end-current.start<=WINDOW_SECONDS*1.1&&previous.category===next.category&&current.category!==previous.category)current.category=previous.category;}
     items=merge(items);
     return items.map(item=>({...item,start:+Math.max(0,item.start).toFixed(2),end:+Math.min(duration,item.end).toFixed(2)}));
   }
 
   function clipCategory(clip,map){
     let best='pregacao',bestOverlap=-1;
-    for(const section of map){
-      const overlap=Math.max(0,Math.min(Number(clip.end),section.end)-Math.max(Number(clip.start),section.start));
-      if(overlap>bestOverlap){bestOverlap=overlap;best=section.category;}
-    }
+    for(const section of map){const overlap=Math.max(0,Math.min(Number(clip.end),section.end)-Math.max(Number(clip.start),section.start));if(overlap>bestOverlap){bestOverlap=overlap;best=section.category;}}
     return best;
   }
 
-  function install(project){
+  function install(project,attempt=0){
     const view=document.querySelector('#projectView');if(!view)return;
-    const map=analyze(project);project._serviceMap=map;
-    annotateClips(project,map);
+    const insights=view.querySelector('.cc-editor-insights-body');
+    if(!insights){if(attempt<8)setTimeout(()=>install(project,attempt+1),90);return;}
+    const map=analyze(project);project._serviceMap=map;annotateClips(project,map);
     let panel=view.querySelector('.service-map-panel');
-    if(!panel){panel=document.createElement('section');panel.className='service-map-panel';const insights=view.querySelector('.cc-editor-insights-body');const target=insights||view.querySelector('.cc-workspace-v2')||view;target.prepend(panel);}
-    panel.innerHTML=panelHtml(project,map);
-    bindPanel(project,panel,map);
-    applyFilter(project,panel.dataset.filter||'all');
+    if(!panel){panel=document.createElement('section');panel.className='service-map-panel';insights.prepend(panel);}
+    panel.innerHTML=panelHtml(project,map);bindPanel(project,panel,map);applyFilter(project,panel.dataset.filter||'all');
   }
 
   function panelHtml(project,map){
-    const duration=Math.max(1,Number(project.duration)||1);
-    const present=[...new Set(map.map(item=>item.category))];
+    const duration=Math.max(1,Number(project.duration)||1),present=[...new Set(map.map(item=>item.category))];
     const totals=Object.fromEntries(present.map(cat=>[cat,map.filter(i=>i.category===cat).reduce((sum,i)=>sum+i.end-i.start,0)]));
     return `<header class="service-map-head"><div><span class="eyebrow">SERVICE MAP · IA LOCAL</span><h3>Estrutura do culto</h3><small>Separa pregação, louvor, avisos, oferta, oração e testemunhos antes da seleção editorial.</small></div><button type="button" class="btn btn-outline-light btn-sm" data-service-refresh>Reanalisar</button></header><div class="service-map-track">${map.map(section=>`<button type="button" class="service-map-section cat-${section.category}" data-service-seek="${section.start}" style="left:${section.start/duration*100}%;width:${Math.max(.5,(section.end-section.start)/duration*100)}%" title="${categories[section.category].label} · ${time(section.start)}–${time(section.end)}"><span>${categories[section.category].icon}</span></button>`).join('')}</div><div class="service-map-legend">${present.map(cat=>`<button type="button" data-service-filter="${cat}"><span>${categories[cat].icon}</span><b>${categories[cat].label}</b><small>${time(totals[cat])}</small></button>`).join('')}<button type="button" class="active" data-service-filter="all"><b>Todos</b><small>${project.clips.length} cortes</small></button></div><div class="service-map-state" data-service-state>Filtro atual: todos os momentos.</div>`;
   }
 
   function annotateClips(project,map){
     for(const clip of project.clips){
-      const category=clipCategory(clip,map);clip._serviceCategory=category;
-      const info=categories[category];
+      const category=clipCategory(clip,map);clip._serviceCategory=category;const info=categories[category];
       document.querySelectorAll(`.clip-card[data-clip="${clip.id}"],.cc-asset[data-cc-clip="${clip.id}"]`).forEach(element=>{
-        element.dataset.serviceCategory=category;
-        let badge=element.querySelector('.service-category-badge');
-        if(!badge){badge=document.createElement('small');badge.className='service-category-badge';const host=element.classList.contains('cc-asset')?element.querySelector('span:nth-child(2)'):element.querySelector('.clip-score,header,.card-body')||element;host?.append(badge);}
-        if(badge)badge.textContent=`${info.icon} ${info.label}`;
+        element.dataset.serviceCategory=category;let badge=element.querySelector('.service-category-badge');
+        if(!badge){badge=document.createElement('small');badge.className='service-category-badge';const host=element.classList.contains('cc-asset')?element.querySelector('span:nth-child(2)'):element.querySelector('.clip-score,header,.card-body')||element;host?.append(badge);}if(badge)badge.textContent=`${info.icon} ${info.label}`;
       });
     }
   }
 
   function bindPanel(project,panel,map){
     panel.querySelectorAll('[data-service-seek]').forEach(button=>button.onclick=()=>seekSource(project,+button.dataset.serviceSeek));
-    panel.querySelectorAll('[data-service-filter]').forEach(button=>button.onclick=()=>{
-      panel.querySelectorAll('[data-service-filter]').forEach(item=>item.classList.toggle('active',item===button));
-      panel.dataset.filter=button.dataset.serviceFilter;applyFilter(project,button.dataset.serviceFilter);
-    });
+    panel.querySelectorAll('[data-service-filter]').forEach(button=>button.onclick=()=>{panel.querySelectorAll('[data-service-filter]').forEach(item=>item.classList.toggle('active',item===button));panel.dataset.filter=button.dataset.serviceFilter;applyFilter(project,button.dataset.serviceFilter);});
     panel.querySelector('[data-service-refresh]').onclick=()=>install(project);
   }
 
   function applyFilter(project,filter){
-    const panel=document.querySelector('.service-map-panel');
-    let visible=0;
-    project.clips.forEach(clip=>{
-      const show=filter==='all'||clip._serviceCategory===filter;
-      document.querySelectorAll(`.cc-asset[data-cc-clip="${clip.id}"]`).forEach(el=>el.classList.toggle('service-filter-hidden',!show));
-      const option=document.querySelector(`#ccClipPicker option[value="${clip.id}"]`);if(option)option.hidden=!show;
-      if(show)visible++;
-    });
-    const current=project.clips.find(c=>c.id===(document.querySelector('#ccClipPicker')?.value));
-    if(filter!=='all'&&current&&current._serviceCategory!==filter){const first=project.clips.find(c=>c._serviceCategory===filter);if(first)selectClip(project,first.id);}
+    const panel=document.querySelector('.service-map-panel');let visible=0;
+    project.clips.forEach(clip=>{const show=filter==='all'||clip._serviceCategory===filter;document.querySelectorAll(`.cc-asset[data-cc-clip="${clip.id}"]`).forEach(el=>el.classList.toggle('service-filter-hidden',!show));const option=document.querySelector(`#ccClipPicker option[value="${clip.id}"]`);if(option)option.hidden=!show;if(show)visible++;});
+    const currentClip=project.clips.find(c=>c.id===(document.querySelector('#ccClipPicker')?.value));if(filter!=='all'&&currentClip&&currentClip._serviceCategory!==filter){const first=project.clips.find(c=>c._serviceCategory===filter);if(first)selectClip(project,first.id);}
     const state=panel?.querySelector('[data-service-state]');if(state)state.textContent=filter==='all'?`Todos os momentos · ${visible} cortes.`:`${categories[filter]?.label||filter} · ${visible} ${visible===1?'corte':'cortes'} encontrados.`;
   }
 
   function seekSource(project,seconds){
     if(typeof switchEditorTab==='function')switchEditorTab('source');
-    setTimeout(()=>{
-      const video=document.querySelector('#preview video');if(!video)return;
-      video.currentTime=Math.max(0,seconds);video.play().catch(()=>{});
-    },120);
+    setTimeout(()=>{const video=document.querySelector('#preview video');if(!video)return;video.currentTime=Math.max(0,seconds);video.play().catch(()=>{});},120);
   }
 
   function injectStyles(){
