@@ -170,6 +170,14 @@ public sealed class SubtitleTrack
     public bool LiteralTranscript { get; set; } = true;
     public bool RequiresReview { get; set; } = true;
     public List<SubtitleBlock> Blocks { get; set; } = [];
+    public List<TranscriptCut> VideoCuts { get; set; } = [];
+}
+public sealed class TranscriptCut
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..10];
+    public double Start { get; set; }
+    public double End { get; set; }
+    public string Text { get; set; } = "";
 }
 public sealed class SubtitleBlock
 {
