@@ -23,7 +23,7 @@
 
   async function analyze(project,clip){
     const data=await insights(clip.editorialProfile||project.options?.contentType||null),fit=channelFit(clip,data);
-    const attention=window.AmadoJesusAttentionAi?.metrics?.(clip)?.total??Number(clip.score)||50;
+    const attention=window.AmadoJesusAttentionAi?.metrics?.(clip)?.total ?? (Number(clip.score)||50);
     const faithful=clip._faithful?.faithful??window.AmadoJesusFaithfulAi?.analyze?.(project,clip)?.faithful??75;
     const predicted=clamp(attention*.38+faithful*.32+fit.score*.30);
     return {fit:fit.score,predicted,attention:clamp(attention),faithful:clamp(faithful),learning:fit.learning,reasons:fit.reasons,insights:data};
