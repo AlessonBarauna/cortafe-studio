@@ -76,7 +76,7 @@ public sealed class TranscriptEditingTests
     }
 
     [Fact]
-    public void Plan_RecortaValoresForaDaDuracaoDoClip()
+    public void Plan_RecortaValoresForaDaDuracaoSemEliminarTodoOVideo()
     {
         var clip = new ClipCandidate
         {
@@ -93,7 +93,7 @@ public sealed class TranscriptEditingTests
 
         Assert.Single(plan.Cuts);
         Assert.Equal(30, plan.Cuts[0].Start, 3);
-        Assert.Equal(40, plan.Cuts[0].End, 3);
-        Assert.Equal(0, plan.FinalDuration, 3);
+        Assert.Equal(39, plan.Cuts[0].End, 3);
+        Assert.Equal(1, plan.FinalDuration, 3);
     }
 }
