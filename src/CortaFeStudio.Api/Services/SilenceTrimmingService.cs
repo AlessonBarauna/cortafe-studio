@@ -122,7 +122,7 @@ public sealed class SilenceTrimmingService
         foreach (var cut in ordered.Skip(1))
         {
             var last = merged[^1];
-            if (cut.Start <= last.End + .02) last.End = Math.Max(last.End, cut.End);
+            if (cut.Start < last.End - .001) last.End = Math.Max(last.End, cut.End);
             else merged.Add(new SilenceCut { Start = cut.Start, End = cut.End });
         }
         return merged;
