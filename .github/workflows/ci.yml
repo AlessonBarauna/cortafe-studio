@@ -17,41 +17,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Garantir FFmpeg para o teste de renderização
+      - name: Configurar FFmpeg
+        uses: AnimMouse/setup-ffmpeg@v1
+        with:
+          version: 8.1
+      - name: Preparar FFmpeg para os testes
         shell: pwsh
         run: |
-          $ffmpeg = Get-Command ffmpeg.exe -ErrorAction SilentlyContinue
-          $ffprobe = Get-Command ffprobe.exe -ErrorAction SilentlyContinue
-
-          if (-not $ffmpeg -or -not $ffprobe) {
-            choco install ffmpeg --no-progress -y
-          }
-
-          $searchRoots = @('C:\ProgramData\chocolatey\lib', 'C:\tools') | Where-Object { Test-Path $_ }
-          $ffmpegPath = (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue)?.Source
-          $ffprobePath = (Get-Command ffprobe.exe -ErrorAction SilentlyContinue)?.Source
-
-          if (-not $ffmpegPath -or -not $ffprobePath) {
-            $realFfmpeg = Get-ChildItem -Path $searchRoots -Filter ffmpeg.exe -File -Recurse -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -notmatch '\\chocolatey\\bin\\' } |
-              Select-Object -First 1
-
-            if (-not $realFfmpeg) {
-              throw 'ffmpeg.exe não foi encontrado após a instalação do Chocolatey.'
-            }
-
-            $ffmpegPath = $realFfmpeg.FullName
-            $ffprobeCandidate = Join-Path $realFfmpeg.DirectoryName 'ffprobe.exe'
-            if (-not (Test-Path $ffprobeCandidate)) {
-              throw "ffprobe.exe não foi encontrado ao lado de $ffmpegPath"
-            }
-            $ffprobePath = $ffprobeCandidate
-          }
+          $ffmpeg = (Get-Command ffmpeg.exe -ErrorAction Stop).Source
+          $ffprobe = (Get-Command ffprobe.exe -ErrorAction Stop).Source
 
           $toolsDir = Join-Path $env:GITHUB_WORKSPACE 'src\CortaFeStudio.Api\tools'
           New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
-          Copy-Item $ffmpegPath (Join-Path $toolsDir 'ffmpeg.exe') -Force
-          Copy-Item $ffprobePath (Join-Path $toolsDir 'ffprobe.exe') -Force
+
+          Copy-Item $ffmpeg (Join-Path $toolsDir 'ffmpeg.exe') -Force
+          Copy-Item $ffprobe (Join-Path $toolsDir 'ffprobe.exe') -Force
 
           & (Join-Path $toolsDir 'ffmpeg.exe') -version | Select-Object -First 1
           & (Join-Path $toolsDir 'ffprobe.exe') -version | Select-Object -First 1
