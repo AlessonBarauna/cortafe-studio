@@ -9,8 +9,8 @@ public sealed class YouTubeAudioExtractionService(ProjectStore store, ToolServic
 
     public async Task ProcessAsync(VideoProject project, CancellationToken ct = default)
     {
-        if (project.SourceKind != SourceKind.YouTube)
-            throw new InvalidOperationException("A extração direta de áudio está disponível para links do YouTube.");
+        if (project.SourceKind != SourceKind.YouTube || !IsYouTubeUrl(project.Source))
+            throw new InvalidOperationException("A extração direta de áudio aceita somente links do YouTube.");
 
         var format = NormalizeFormat(project.Options.AudioFormat);
         var quality = NormalizeQuality(project.Options.AudioQuality);
@@ -72,12 +72,14 @@ public sealed class YouTubeAudioExtractionService(ProjectStore store, ToolServic
         bool organizeByChannel,
         bool organizeByPlaylist)
     {
+        if (!IsYouTubeUrl(url)) throw new ArgumentException("Informe um link válido do YouTube.", nameof(url));
         format = NormalizeFormat(format);
         quality = NormalizeQuality(quality);
 
         var args = common.ToList();
         args.AddRange(["--retries", "15", "--fragment-retries", "15", "--extractor-retries", "5", "--retry-sleep", "linear=1::3"]);
         args.Add(playlist ? "--yes-playlist" : "--no-playlist");
+        if (playlist) args.AddRange(["--playlist-end", "200"]);
         args.AddRange(["--ffmpeg-location", ffmpeg, "-x", "--audio-format", format]);
 
         if (format == "mp3")
@@ -109,6 +111,13 @@ public sealed class YouTubeAudioExtractionService(ProjectStore store, ToolServic
         var music = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
         if (string.IsNullOrWhiteSpace(music)) music = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         return Path.Combine(music, "AmadoJesus", "YouTube");
+    }
+
+    public static bool IsYouTubeUrl(string? value)
+    {
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) return false;
+        var host = uri.Host.TrimStart('.').ToLowerInvariant();
+        return host is "youtube.com" or "www.youtube.com" or "m.youtube.com" or "music.youtube.com" or "youtu.be" || host.EndsWith(".youtube.com", StringComparison.Ordinal);
     }
 
     public static string NormalizeFormat(string? value) => Formats.Contains(value ?? "") ? value!.ToLowerInvariant() : "mp3";
