@@ -4,46 +4,37 @@
 
   let worshipLoader = null;
 
-  function ensureWorshipFmLoaded() {
-    if (typeof window.worshipFmCenter === 'function') return Promise.resolve();
+  async function ensureWorshipFmLoaded() {
+    if (typeof window.worshipFmCenter === 'function') return;
     if (worshipLoader) return worshipLoader;
 
-    worshipLoader = new Promise((resolve, reject) => {
-      const existing = document.querySelector('script[data-worship-fm-script]');
-      const script = existing || document.createElement('script');
-      let settled = false;
+    worshipLoader = (async () => {
+      const response = await fetch(`/worship-fm.js?v=${Date.now()}`, {
+        cache: 'no-store',
+        credentials: 'same-origin'
+      });
 
-      const finish = () => {
-        if (settled) return;
-        settled = true;
-        if (typeof window.worshipFmCenter === 'function') resolve();
-        else reject(new Error('O arquivo worship-fm.js carregou, mas o workspace não foi registrado.'));
-      };
-
-      const fail = () => {
-        if (settled) return;
-        settled = true;
-        reject(new Error('Não foi possível carregar /worship-fm.js.'));
-      };
-
-      script.addEventListener('load', finish, { once: true });
-      script.addEventListener('error', fail, { once: true });
-
-      if (!existing) {
-        script.src = '/worship-fm.js?v=20260910.2';
-        script.async = false;
-        script.dataset.worshipFmScript = '1';
-        document.body.appendChild(script);
-      } else if (typeof window.worshipFmCenter === 'function') {
-        finish();
+      if (!response.ok) {
+        throw new Error(`Falha HTTP ${response.status} ao carregar /worship-fm.js.`);
       }
 
-      window.setTimeout(() => {
-        if (settled) return;
-        if (typeof window.worshipFmCenter === 'function') finish();
-        else fail();
-      }, 5000);
-    }).catch(error => {
+      const source = await response.text();
+      if (!source || source.length < 100) {
+        throw new Error('O servidor retornou um worship-fm.js vazio ou inválido.');
+      }
+
+      const old = document.querySelector('script[data-worship-fm-inline]');
+      old?.remove();
+
+      const script = document.createElement('script');
+      script.dataset.worshipFmInline = '1';
+      script.textContent = `${source}\n//# sourceURL=/worship-fm.js`;
+      document.body.appendChild(script);
+
+      if (typeof window.worshipFmCenter !== 'function') {
+        throw new Error('worship-fm.js foi recebido, mas o workspace não foi registrado. Verifique o console do navegador.');
+      }
+    })().catch(error => {
       worshipLoader = null;
       throw error;
     });
@@ -88,7 +79,6 @@
 
     try {
       await ensureWorshipFmLoaded();
-      if (typeof window.worshipFmCenter !== 'function') throw new Error('Workspace Worship FM indisponível.');
       window.worshipFmCenter();
     } catch (error) {
       console.error('[Worship FM]', error);
