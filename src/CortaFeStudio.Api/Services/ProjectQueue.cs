@@ -3,11 +3,12 @@ using CortaFeStudio.Api.Models;
 
 namespace CortaFeStudio.Api.Services;
 
-public sealed class ProjectQueue(ProjectStore store, MediaPipeline pipeline, YouTubeAudioExtractionService audioExtraction, ILogger<ProjectQueue> logger) : BackgroundService
+public sealed class ProjectQueue(ProjectStore store, MediaPipeline pipeline, ToolService tools, ILogger<ProjectQueue> logger) : BackgroundService
 {
     private readonly Channel<string> _queue = Channel.CreateBounded<string>(new BoundedChannelOptions(100) { SingleReader = true, FullMode = BoundedChannelFullMode.Wait });
     private readonly HashSet<string> _scheduled = [];
     private readonly object _sync = new();
+    private readonly YouTubeAudioExtractionService _audioExtraction = new(store, tools);
     private string? _active;
     private CancellationTokenSource? _activeCancellation;
 
@@ -48,7 +49,7 @@ public sealed class ProjectQueue(ProjectStore store, MediaPipeline pipeline, You
             {
                 project.Attempt++; project.StartedAt = DateTime.UtcNow; project.Error = null; project.FailureCode = null; project.NextRetryAt = null;
                 if (string.Equals(project.Options.ProcessingMode, "audioOnly", StringComparison.OrdinalIgnoreCase))
-                    await audioExtraction.ProcessAsync(project, projectCancellation.Token);
+                    await _audioExtraction.ProcessAsync(project, projectCancellation.Token);
                 else
                     await pipeline.ProcessAsync(project, projectCancellation.Token);
                 await store.SaveAsync(project);
