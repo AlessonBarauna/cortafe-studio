@@ -245,19 +245,22 @@ public sealed class WorshipFmService(ToolService tools)
         return Math.Round((jaccard * 0.45) + (coverage * 0.55), 3);
     }
 
-    public static string BuildChannelInfo(string stationName) => $"""[PROPERTIES]
-Channel name={CleanStationName(stationName)}
-
-Track scan protection=0
-Track variants=0
-Play mode=0
-Atmospheric tracks=0
-Play area X=0
-Play area Y=0
-Play area Radius=0
-Channel volume=100
-Logo TXD ID=NONE
-""";
+    public static string BuildChannelInfo(string stationName) => string.Join(Environment.NewLine,
+    [
+        "[PROPERTIES]",
+        $"Channel name={CleanStationName(stationName)}",
+        "",
+        "Track scan protection=0",
+        "Track variants=0",
+        "Play mode=0",
+        "Atmospheric tracks=0",
+        "Play area X=0",
+        "Play area Y=0",
+        "Play area Radius=0",
+        "Channel volume=100",
+        "Logo TXD ID=NONE",
+        ""
+    ]);
 
     private static List<string> Tokens(string normalized) => normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries)
         .Where(token => token.Length > 1 && !MatchStopWords.Contains(token)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
@@ -300,8 +303,11 @@ Logo TXD ID=NONE
         var clean = CleanStationName(stationName);
         if (Regex.IsMatch(info, @"(?im)^\s*Channel name\s*=.*$"))
             return Regex.Replace(info, @"(?im)^\s*Channel name\s*=.*$", $"Channel name={clean}");
-        if (Regex.IsMatch(info, @"(?im)^\s*\[PROPERTIES\]\s*$"))
-            return Regex.Replace(info, @"(?im)^\s*\[PROPERTIES\]\s*$", $"[PROPERTIES]{Environment.NewLine}Channel name={clean}", 1);
+
+        var properties = new Regex(@"^\s*\[PROPERTIES\]\s*$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+        if (properties.IsMatch(info))
+            return properties.Replace(info, $"[PROPERTIES]{Environment.NewLine}Channel name={clean}", 1);
+
         return BuildChannelInfo(clean);
     }
 
