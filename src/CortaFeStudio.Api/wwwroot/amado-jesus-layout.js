@@ -2,10 +2,54 @@
   const app = document.querySelector('#app');
   if (!app) return;
 
-  const worshipScript = document.createElement('script');
-  worshipScript.src = '/worship-fm.js?v=20260910.1';
-  worshipScript.defer = true;
-  document.head.append(worshipScript);
+  let worshipLoader = null;
+
+  function ensureWorshipFmLoaded() {
+    if (typeof window.worshipFmCenter === 'function') return Promise.resolve();
+    if (worshipLoader) return worshipLoader;
+
+    worshipLoader = new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[data-worship-fm-script]');
+      const script = existing || document.createElement('script');
+      let settled = false;
+
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        if (typeof window.worshipFmCenter === 'function') resolve();
+        else reject(new Error('O arquivo worship-fm.js carregou, mas o workspace não foi registrado.'));
+      };
+
+      const fail = () => {
+        if (settled) return;
+        settled = true;
+        reject(new Error('Não foi possível carregar /worship-fm.js.'));
+      };
+
+      script.addEventListener('load', finish, { once: true });
+      script.addEventListener('error', fail, { once: true });
+
+      if (!existing) {
+        script.src = '/worship-fm.js?v=20260910.2';
+        script.async = false;
+        script.dataset.worshipFmScript = '1';
+        document.body.appendChild(script);
+      } else if (typeof window.worshipFmCenter === 'function') {
+        finish();
+      }
+
+      window.setTimeout(() => {
+        if (settled) return;
+        if (typeof window.worshipFmCenter === 'function') finish();
+        else fail();
+      }, 5000);
+    }).catch(error => {
+      worshipLoader = null;
+      throw error;
+    });
+
+    return worshipLoader;
+  }
 
   const sidebar = document.createElement('aside');
   sidebar.className = 'aj-sidebar';
@@ -38,13 +82,25 @@
     sidebar.querySelectorAll('[data-aj-route]').forEach(button => button.classList.toggle('active', button.dataset.ajRoute === route));
   }
 
-  function openWorshipFm() {
+  async function openWorshipFm() {
     setActive('worship');
-    const run = () => {
-      if (typeof window.worshipFmCenter === 'function') window.worshipFmCenter();
-      else setTimeout(run, 80);
-    };
-    run();
+    app.innerHTML = '<div class="processing-stage py-5">Carregando Worship FM…</div>';
+
+    try {
+      await ensureWorshipFmLoaded();
+      if (typeof window.worshipFmCenter !== 'function') throw new Error('Workspace Worship FM indisponível.');
+      window.worshipFmCenter();
+    } catch (error) {
+      console.error('[Worship FM]', error);
+      app.innerHTML = `
+        <section class="studio-panel p-4">
+          <span class="eyebrow">WORSHIP FM</span>
+          <h2>Não foi possível abrir o workspace.</h2>
+          <p class="text-secondary">${String(error?.message || error)}</p>
+          <button class="btn btn-gold" type="button" data-worship-retry>Tentar novamente</button>
+        </section>`;
+      app.querySelector('[data-worship-retry]')?.addEventListener('click', openWorshipFm);
+    }
   }
 
   function decorateHome() {
