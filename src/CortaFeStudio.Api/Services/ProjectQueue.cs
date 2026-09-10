@@ -3,7 +3,7 @@ using CortaFeStudio.Api.Models;
 
 namespace CortaFeStudio.Api.Services;
 
-public sealed class ProjectQueue(ProjectStore store, MediaPipeline pipeline, ILogger<ProjectQueue> logger) : BackgroundService
+public sealed class ProjectQueue(ProjectStore store, MediaPipeline pipeline, YouTubeAudioExtractionService audioExtraction, ILogger<ProjectQueue> logger) : BackgroundService
 {
     private readonly Channel<string> _queue = Channel.CreateBounded<string>(new BoundedChannelOptions(100) { SingleReader = true, FullMode = BoundedChannelFullMode.Wait });
     private readonly HashSet<string> _scheduled = [];
@@ -47,7 +47,11 @@ public sealed class ProjectQueue(ProjectStore store, MediaPipeline pipeline, ILo
             try
             {
                 project.Attempt++; project.StartedAt = DateTime.UtcNow; project.Error = null; project.FailureCode = null; project.NextRetryAt = null;
-                await pipeline.ProcessAsync(project, projectCancellation.Token); await store.SaveAsync(project);
+                if (string.Equals(project.Options.ProcessingMode, "audioOnly", StringComparison.OrdinalIgnoreCase))
+                    await audioExtraction.ProcessAsync(project, projectCancellation.Token);
+                else
+                    await pipeline.ProcessAsync(project, projectCancellation.Token);
+                await store.SaveAsync(project);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { project.Status = ProjectStatus.Queued; project.Stage = "Aguardando retomada"; await store.SaveAsync(project); }
             catch (OperationCanceledException) { project.Status = ProjectStatus.Cancelled; project.Stage = "Processamento cancelado"; project.Error = null; await store.SaveAsync(project); }
