@@ -40,6 +40,7 @@ public sealed class VideoProject
     public bool Favorite { get; set; }
     public bool Pinned { get; set; }
     public DateTime? DataPurgedAt { get; set; }
+    public List<string> AudioOutputFiles { get; set; } = [];
 }
 
 public sealed class ProjectFailureAttempt
@@ -64,6 +65,13 @@ public sealed class ProjectOptions
     public string WhisperModel { get; set; } = "base";
     public string? Topic { get; set; }
     public bool DeleteSourceAfterProcessing { get; set; }
+    public string ProcessingMode { get; set; } = "clips";
+    public string AudioFormat { get; set; } = "mp3";
+    public string AudioQuality { get; set; } = "high";
+    public string? AudioOutputDirectory { get; set; }
+    public bool AudioOrganizeByChannel { get; set; } = true;
+    public bool AudioDownloadPlaylist { get; set; }
+    public bool AudioOrganizeByPlaylist { get; set; } = true;
     public static ProjectOptions FromForm(IFormCollection f) => new()
     {
         ContentType = f["contentType"].FirstOrDefault() ?? "pregacao",
