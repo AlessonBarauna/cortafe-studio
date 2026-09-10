@@ -2,6 +2,11 @@
   const app = document.querySelector('#app');
   if (!app) return;
 
+  const worshipScript = document.createElement('script');
+  worshipScript.src = '/worship-fm.js?v=20260910.1';
+  worshipScript.defer = true;
+  document.head.append(worshipScript);
+
   const sidebar = document.createElement('aside');
   sidebar.className = 'aj-sidebar';
   sidebar.innerHTML = `
@@ -12,6 +17,7 @@
       <span class="aj-menu-label">Workspace</span>
       <button data-aj-route="home"><i>⌂</i><span>Início</span></button>
       <button data-aj-route="new"><i>＋</i><span>Novo projeto</span></button>
+      <button data-aj-route="worship"><i>♫</i><span>Worship FM</span></button>
       <span class="aj-menu-label">Gerenciar</span>
       <button data-aj-route="social"><i>↗</i><span>Publicar no TikTok</span></button>
       <button data-aj-route="diagnostics"><i>◇</i><span>Diagnóstico</span></button>
@@ -19,11 +25,26 @@
     <div class="aj-sidebar-card"><span>FLUXO ATIVO</span><strong>TikTok Studio</strong><small>Crie, revise e exporte seus cortes em um só lugar.</small></div>`;
   document.body.insertBefore(sidebar, document.body.firstChild);
 
-  const routes = { home: () => home(), new: () => newProject(), social: () => socialCenter(), diagnostics: () => diagnosticsCenter() };
+  const routes = {
+    home: () => home(),
+    new: () => newProject(),
+    worship: () => openWorshipFm(),
+    social: () => socialCenter(),
+    diagnostics: () => diagnosticsCenter()
+  };
   sidebar.querySelectorAll('[data-aj-route]').forEach(button => button.addEventListener('click', () => routes[button.dataset.ajRoute]?.()));
 
   function setActive(route) {
     sidebar.querySelectorAll('[data-aj-route]').forEach(button => button.classList.toggle('active', button.dataset.ajRoute === route));
+  }
+
+  function openWorshipFm() {
+    setActive('worship');
+    const run = () => {
+      if (typeof window.worshipFmCenter === 'function') window.worshipFmCenter();
+      else setTimeout(run, 80);
+    };
+    run();
   }
 
   function decorateHome() {
@@ -67,6 +88,7 @@
   const originalDiagnostics = window.diagnosticsCenter;
   window.diagnosticsCenter = async function () { setActive('diagnostics'); return originalDiagnostics(); };
 
+  window.openWorshipFm = openWorshipFm;
   setActive('home');
   setTimeout(decorateHome, 0);
 })();
