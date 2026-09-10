@@ -17,9 +17,24 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Garantir FFmpeg para o teste de renderização
+      - name: Configurar FFmpeg
+        uses: AnimMouse/setup-ffmpeg@v1
+        with:
+          version: 8.1
+      - name: Preparar FFmpeg para os testes
         shell: pwsh
-        run: if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { choco install ffmpeg --no-progress -y }
+        run: |
+          $ffmpeg = (Get-Command ffmpeg.exe -ErrorAction Stop).Source
+          $ffprobe = (Get-Command ffprobe.exe -ErrorAction Stop).Source
+
+          $toolsDir = Join-Path $env:GITHUB_WORKSPACE 'src\CortaFeStudio.Api\tools'
+          New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
+
+          Copy-Item $ffmpeg (Join-Path $toolsDir 'ffmpeg.exe') -Force
+          Copy-Item $ffprobe (Join-Path $toolsDir 'ffprobe.exe') -Force
+
+          & (Join-Path $toolsDir 'ffmpeg.exe') -version | Select-Object -First 1
+          & (Join-Path $toolsDir 'ffprobe.exe') -version | Select-Object -First 1
       - run: dotnet restore CortaFeStudio.sln --configfile NuGet.Config
       - run: dotnet build CortaFeStudio.sln -c Release --no-restore
       - name: Executar testes automatizados
