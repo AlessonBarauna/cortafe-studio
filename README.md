@@ -25,6 +25,7 @@ Estúdio local para transformar pregações, ministrações, podcasts e aulas em
 - Prévia rápida em 360p, cache de renderização, cancelamento individual e controle de lotes.
 - Fluxo TikTok com estados por corte e pacote organizado para programação no TikTok Studio.
 - Biblioteca avançada com pesquisa em transcrições, filtros, favoritos, fixação, tamanho e limpeza em lote.
+- Cortafé FX: legenda cinética, gancho em texto grande, ilustrações temáticas, câmera e sons procedurais ([`scripts/fx`](src/CortaFeStudio.Api/scripts/fx/README.md)).
 
 O fluxo completo de operação está documentado em [`docs/fluxo-profissional.md`](docs/fluxo-profissional.md).
 

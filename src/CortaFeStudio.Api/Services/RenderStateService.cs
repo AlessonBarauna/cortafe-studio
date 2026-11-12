@@ -13,7 +13,7 @@ public static class RenderStateService
         {
             clip.Start, clip.End, clip.Title, clip.CropFocus, clip.CropX, clip.FramingTrack, clip.TransitionStyle,
             clip.LayoutMode, clip.SplitLeftX, clip.SplitRightX, clip.OutputPreset, clip.SubtitleStyle, clip.SubtitleTrack,
-            clip.BrandFrameEnabled, clip.BrandTheme, clip.WatermarkEnabled, clip.WatermarkText, clip.WatermarkOpacity, clip.PlaybackSpeed, clip.SilenceTrimmingEnabled
+            clip.BrandFrameEnabled, clip.BrandTheme, clip.WatermarkEnabled, clip.WatermarkText, clip.WatermarkOpacity, clip.PlaybackSpeed, clip.SilenceTrimmingEnabled, clip.AnimatedFx
         };
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(state))))[..16];
     }
