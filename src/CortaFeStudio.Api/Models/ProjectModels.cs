@@ -120,6 +120,7 @@ public sealed class ClipCandidate
     public VisualDirectionAnalysis VisualDirection { get; set; } = new();
     public string TransitionStyle { get; set; } = "smooth";
     public string SubtitleStyle { get; set; } = "impact";
+    public bool AnimatedFx { get; set; } = true;
     public SubtitleTrack? SubtitleTrack { get; set; }
     public bool BrandFrameEnabled { get; set; } = true;
     public string BrandTheme { get; set; } = "amado-jesus";

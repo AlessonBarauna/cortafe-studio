@@ -7,6 +7,8 @@ namespace CortaFeStudio.Api.Services;
 
 public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpClientFactory http, LongVideoEditorialAnalyzer editorial, AudioAnalyzer audioAnalyzer, VideoEnhancementService videoEnhancement, HardwareEncoderDetector encoderDetector, QualityGateService qualityGate, ProductionWorkLimiter workLimiter, StorageCapacityService storageCapacity, SilenceTrimmingService silenceTrimming, FramingService framingService, ILogger<MediaPipeline> logger)
 {
+    private readonly CortaFeFxService fx = new(tools);
+
     public async Task ProcessAsync(VideoProject p, CancellationToken ct)
     {
         var dir = store.ProjectDirectory(p.Id);
@@ -256,6 +258,8 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
             await File.WriteAllTextAsync(ass, BuildAss(p.Transcript, clip, trimPlan), Encoding.UTF8, ct);
         }
         var output = $"clip-{clip.Id}.mp4";
+        var useFx = clip.AnimatedFx && subtitleTrack.Enabled && !trimPlan.Applied && p.Options.ContentType != "louvor" && clip.OutputPreset == "vertical" && await fx.IsAvailableAsync(ct);
+        var renderTarget = useFx ? $"fxbase-{clip.Id}.mp4" : output;
         var framing = RenderFilterFactory.Framing(clip);
         var watermarkFile = Path.Combine(dir, $"watermark-{clip.Id}.txt");
         await File.WriteAllTextAsync(watermarkFile, clip.WatermarkText ?? "AJ  |  AMADO JESUS", Encoding.UTF8, ct);
@@ -263,7 +267,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         var branding = RenderFilterFactory.Branding(clip, EscapeFilterPath(watermarkFile), watermarkFont);
         var videoAnalysis = await videoEnhancement.AnalyzeAsync(Path.Combine(dir, p.LocalMedia!), clip.Start, clip.End - clip.Start, ct);
         var enhancement = VideoEnhancementService.CreateProfile(videoAnalysis);
-        var filter = SilenceTrimmingService.VideoPrefix(trimPlan, clip.Start) + ComposeVideoFilter(enhancement.Filter, framing, ass, branding, RenderFilterFactory.CreativeLook(clip), speed);
+        var filter = SilenceTrimmingService.VideoPrefix(trimPlan, clip.Start) + ComposeVideoFilter(enhancement.Filter, framing, useFx ? null : ass, useFx ? null : branding, RenderFilterFactory.CreativeLook(clip), speed);
         logger.LogInformation("[Video] project={ProjectId} clip={ClipId} enhancement={Enhancement} luma={Luma} saturation={Saturation}", p.Id, clip.Id, enhancement.Kind, videoAnalysis.LumaAverage, videoAnalysis.SaturationAverage);
         var audioAnalysis = await audioAnalyzer.AnalyzeAsync(Path.Combine(dir, p.LocalMedia!), clip.Start, clip.End - clip.Start, p.Options.ContentType, ct);
         var audio = AudioFilterFactory.Create(audioAnalysis, trimPlan.FinalDuration, speed);
@@ -276,6 +280,24 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
             logger.LogWarning(ex, "[Encoder] {Codec} falhou durante o render; repetindo com libx264", encoder.Codec);
             encoderDetector.Invalidate(); await RenderWithEncoderAsync(HardwareEncoderDetector.Cpu);
         }
+        if (useFx)
+        {
+            var baseFile = Path.Combine(dir, renderTarget);
+            try
+            {
+                var wordsFile = Path.Combine(dir, $"fx-words-{clip.Id}.json");
+                await File.WriteAllTextAsync(wordsFile, CortaFeFxService.WordsJson(p.Transcript, clip, speed), ct);
+                await fx.ApplyAsync(baseFile, wordsFile, Path.Combine(dir, output), dir, clip.WatermarkEnabled ? clip.WatermarkText : null, clip.WatermarkOpacity, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "[CortaFeFx] Animação indisponível para o corte {ClipId}; usando o render clássico", clip.Id);
+                renderTarget = output;
+                filter = SilenceTrimmingService.VideoPrefix(trimPlan, clip.Start) + ComposeVideoFilter(enhancement.Filter, framing, ass, branding, RenderFilterFactory.CreativeLook(clip), speed);
+                await RenderWithEncoderAsync(encoder.HardwareAccelerated ? HardwareEncoderDetector.Cpu : encoder);
+            }
+            finally { try { File.Delete(baseFile); } catch (IOException) { } }
+        }
         clip.VideoPath = output;
         clip.LastRenderFingerprint = RenderStateService.Fingerprint(clip);
         clip.RenderOutdated = false;
@@ -285,7 +307,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         {
             var arguments = new List<string> { "-y", "-ss", F(clip.Start), "-to", F(clip.End), "-i", Path.Combine(dir, p.LocalMedia!), "-vf", filter, "-af", audioFilter, "-c:v", profile.Codec };
             arguments.AddRange(profile.Arguments);
-            arguments.AddRange(["-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.2", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", Path.Combine(dir, output)]);
+            arguments.AddRange(["-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.2", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", Path.Combine(dir, renderTarget)]);
             logger.LogInformation("[Encoder] project={ProjectId} clip={ClipId} codec={Codec}", p.Id, clip.Id, profile.Codec);
             await tools.RunAsync(tools.Find("ffmpeg"), arguments, dir, ct);
         }
