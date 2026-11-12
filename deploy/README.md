@@ -59,3 +59,8 @@ docker run --rm -v cortafe_cortafe-storage:/d -v $PWD:/b alpine tar czf /b/corta
 
 - Sem GPU, a transcrição usa CPU: prefira os modelos `base` ou `small` (o `large-v3` fica muito lento).
 - Redes sociais (YouTube, Instagram, TikTok): os endereços de retorno (OAuth) precisam apontar para um endereço que você consiga abrir no navegador, como `http://localhost:5088` com o túnel ligado. Instagram e TikTok exigem URL pública HTTPS, o que este modo (só VPN) não oferece.
+
+## IA local e limpeza de áudio
+
+- **Ollama** roda em um segundo container (`cortafe-ollama`) e gera títulos, ganchos e legendas. O modelo `qwen2.5:3b` (~2 GB) é baixado pelo script de instalação; para baixar à mão: `docker compose -p cortafe exec ollama ollama pull qwen2.5:3b`. Ele só ocupa memória enquanto gera texto e descarrega depois de alguns minutos parado. Sem o modelo, o Cortafé usa os títulos padrão.
+- **Redução de ruído de voz (RNNoise)** entra no áudio de pregação e podcast durante o render (louvor fica de fora, para não afetar o canto). O modelo é baixado na construção da imagem.

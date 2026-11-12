@@ -33,6 +33,9 @@ fi
 echo "CORTAFE_BIND=${BIND}" > .env
 docker compose -p cortafe up -d --build
 
+echo "Baixando o modelo de IA local (qwen2.5:3b, ~2 GB; só na primeira vez)..."
+docker compose -p cortafe exec -T ollama ollama pull qwen2.5:3b
+
 echo
 echo "Cortafé Studio no ar. Acesse: http://${BIND}:${PORT}"
 echo "Na primeira vez, configure o PIN do estúdio."

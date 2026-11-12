@@ -23,16 +23,16 @@ public static class EditorialAiProviderFactory
 
 internal sealed class OllamaEditorialAiProvider : IEditorialAiProvider
 {
-    private const string Endpoint = "http://localhost:11434/api/generate";
+    private static string Endpoint => OllamaEndpoint.Generate;
     private const string Model = "qwen2.5:3b";
-    private static readonly HttpClient Client = new() { Timeout = TimeSpan.FromSeconds(40) };
+    private static readonly HttpClient Client = new() { Timeout = TimeSpan.FromSeconds(120) };
     public string Name => "ollama-qwen2.5:3b";
 
     public bool IsAvailable()
     {
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, "http://localhost:11434/api/tags");
+            using var request = new HttpRequestMessage(HttpMethod.Get, OllamaEndpoint.Tags);
             using var response = Client.Send(request);
             return response.IsSuccessStatusCode;
         }

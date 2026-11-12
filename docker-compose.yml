@@ -3,11 +3,26 @@ services:
     build: .
     container_name: cortafe-studio
     restart: unless-stopped
+    depends_on:
+      - ollama
+    environment:
+      OLLAMA_URL: http://ollama:11434
     ports:
       # Por padrão só o próprio servidor enxerga a porta (acesse por túnel SSH).
       # Para liberar na VPN, defina CORTAFE_BIND com o IP do servidor na VPN (ex.: 100.64.0.5).
       - "${CORTAFE_BIND:-127.0.0.1}:5088:5088"
     volumes:
       - cortafe-storage:/app/storage
+  ollama:
+    # IA local para títulos, ganchos e legendas. O modelo carrega sob demanda e descarrega após alguns minutos parado.
+    image: ollama/ollama
+    container_name: cortafe-ollama
+    restart: unless-stopped
+    environment:
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+    volumes:
+      - cortafe-ollama:/root/.ollama
 volumes:
   cortafe-storage:
+  cortafe-ollama:
