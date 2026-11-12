@@ -7,6 +7,16 @@ import numpy as np
 import skia
 
 W, H = 1080, 1920
+CAPTION_STYLES = {  # upper, cor base, cor da palavra ativa, contorno, tamanho, inclinação
+    "impact": (True, (255, 255, 255), (255, 196, 46), 0.15, 1.0, 0.0),
+    "sermon": (False, (255, 255, 255), (255, 236, 200), 0.10, 0.92, 0.0),
+    "bold": (True, (255, 255, 255), (255, 255, 255), 0.22, 1.12, 0.0),
+    "clean": (False, (255, 255, 255), (255, 255, 255), 0.06, 0.85, 0.0),
+    "minimal": (False, (235, 235, 235), (235, 235, 235), 0.05, 0.72, 0.0),
+    "podcast": (False, (255, 255, 255), (120, 200, 255), 0.10, 0.85, 0.0),
+    "motivational": (True, (255, 196, 46), (255, 255, 255), 0.15, 1.0, 0.0),
+    "worship": (False, (255, 244, 220), (255, 214, 140), 0.08, 0.9, 0.18),
+}
 GOLD = (255, 196, 46)
 HOT = (255, 92, 64)
 WHITE = (255, 255, 255)
@@ -31,7 +41,8 @@ def col(rgb, a=1.0):
 
 
 class Painter:
-    def __init__(self, words, phrase_idx, emphasis, hook, themes, duration, punches, watermark="", watermark_opacity=0.8, caption_x=50.0, caption_y=72.7):
+    def __init__(self, words, phrase_idx, emphasis, hook, themes, duration, punches, watermark="", watermark_opacity=0.8, caption_x=50.0, caption_y=72.7, caption_style="impact"):
+        self.cstyle = CAPTION_STYLES.get(caption_style, CAPTION_STYLES["impact"])
         self.cap_cx = W * min(95.0, max(5.0, caption_x)) / 100.0
         self.cap_cy = H * min(95.0, max(5.0, caption_y)) / 100.0
         self.words, self.dur = words, duration
@@ -71,7 +82,7 @@ class Painter:
     def width(self, s, size):
         return self.font(size).measureText(s)
 
-    def draw_text(self, c, s, cx, base, size, fill, alpha=1.0, scale=1.0, rot=0.0, glow=None, split=0.0, stroke=0.15):
+    def draw_text(self, c, s, cx, base, size, fill, alpha=1.0, scale=1.0, rot=0.0, glow=None, split=0.0, stroke=0.15, skew=0.0):
         if alpha <= 0.01 or scale <= 0.01:
             return
         font = self.font(size)
@@ -81,6 +92,8 @@ class Painter:
         if rot:
             c.rotate(math.degrees(rot))
         c.scale(scale, scale)
+        if skew:
+            c.skew(-skew, 0)
         x = -w / 2
 
         def paint(color, a, style=None, sw=0, blur=0):
@@ -210,8 +223,9 @@ class Painter:
             toks = []
             for i in idx:
                 w = self.words[i]
-                s = w["w"].rstrip(".,;:").upper()
-                size = 132 if i in self.emph else 104
+                s = w["w"].rstrip(".,;:")
+                s = s.upper() if self.cstyle[0] else s
+                size = (132 if i in self.emph else 104) * self.cstyle[4]
                 toks.append({"i": i, "s": s, "size": size})
             maxw = 960
             rows, row, rw = [], [], 0
@@ -247,11 +261,12 @@ class Painter:
                     scale = (1.9 - 0.9 * pop) if emph else (1.32 - 0.32 * pop)
                     scale = max(1.0, scale) if dt > 0.3 else scale
                     scale = min(scale, 1000.0 / max(1.0, tk["w"] * k))
-                    color = GOLD if (emph or active) else WHITE
+                    color = self.cstyle[2] if (emph or active) else self.cstyle[1]
                     split = 15 * math.exp(-dt * 9) if emph and dt < 0.4 else 0
                     rot = (0.05 * math.sin(dt * 60) * math.exp(-dt * 8)) if emph else 0
                     self.draw_text(c, tk["s"], cx, y, tk["size"] * k, color, alpha=fade * clamp(dt / 0.05 + 0.4),
-                                   scale=scale, rot=rot, glow=HOT if emph else None, split=split)
+                                   scale=scale, rot=rot, glow=HOT if emph else None, split=split,
+                                   stroke=self.cstyle[3], skew=self.cstyle[5])
 
     def hook_layer(self, c, t):
         if not self.hook:

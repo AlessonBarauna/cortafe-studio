@@ -92,6 +92,7 @@ def main():
     ap.add_argument("--watermark", default="", help="texto fixo da marca d'água (não acompanha a câmera)")
     ap.add_argument("--watermark-opacity", type=float, default=0.8)
     ap.add_argument("--caption-x", type=float, default=50.0, help="centro horizontal da legenda (%% da largura)")
+    ap.add_argument("--caption-style", default="impact", help="impact, sermon, bold, clean, minimal, podcast, motivational ou worship")
     ap.add_argument("--caption-y", type=float, default=72.7, help="centro vertical da legenda (%% da altura)")
     args = ap.parse_args()
     global FFMPEG, FFPROBE
@@ -123,7 +124,7 @@ def main():
     total = int(duration * FPS)
     snaps = {round(float(s) * FPS) for s in args.snap.split(",") if s.strip()}
     os.makedirs(args.snapdir, exist_ok=True)
-    painter = fv.Painter(words, phrases, emphasis, hook, themes, duration, punches, args.watermark, args.watermark_opacity, args.caption_x, args.caption_y)
+    painter = fv.Painter(words, phrases, emphasis, hook, themes, duration, punches, args.watermark, args.watermark_opacity, args.caption_x, args.caption_y, args.caption_style)
 
     dec = subprocess.Popen([FFMPEG, "-loglevel", "error", "-i", args.video, "-t", str(duration),
                             "-vf", f"fps={FPS},scale={fv.W}:{fv.H}:force_original_aspect_ratio=increase,crop={fv.W}:{fv.H}",

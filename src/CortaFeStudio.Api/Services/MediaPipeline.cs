@@ -287,7 +287,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
             {
                 var wordsFile = Path.Combine(dir, $"fx-words-{clip.Id}.json");
                 await File.WriteAllTextAsync(wordsFile, CortaFeFxService.WordsJson(p.Transcript, clip, speed), ct);
-                await fx.ApplyAsync(baseFile, wordsFile, Path.Combine(dir, output), dir, clip.WatermarkEnabled ? clip.WatermarkText : null, clip.WatermarkOpacity, ct, clip.FxSfx, clip.FxHook, clip.FxThemes, subtitleTrack.PositionX, subtitleTrack.PositionY);
+                await fx.ApplyAsync(baseFile, wordsFile, Path.Combine(dir, output), dir, clip.WatermarkEnabled ? clip.WatermarkText : null, clip.WatermarkOpacity, ct, clip.FxSfx, clip.FxHook, clip.FxThemes, subtitleTrack.PositionX, subtitleTrack.PositionY, subtitleTrack.Style);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
