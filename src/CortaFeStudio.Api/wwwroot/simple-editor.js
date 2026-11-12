@@ -222,7 +222,7 @@
     if (!blk && blocks.length) blk = blocks.reduce((best, b) => Math.abs((b.start + b.end) / 2 - rel) < Math.abs((best.start + best.end) / 2 - rel) ? b : best, blocks[0]);
     if (!dragging) cap.textContent = blk ? blk.text : 'Sua legenda aparece aqui';
     const fxLook = c.animatedFx && (c.outputPreset || 'vertical') === 'vertical';
-    cap.className = `sx-cap ${fxLook ? 'st-fx' : 'st-' + (track.style || 'impact')}${dragging ? ' drag' : ''}`;
+    cap.className = `sx-cap st-${track.style || 'impact'}${fxLook ? ' fxpop' : ''}${dragging ? ' drag' : ''}`;
     cap.style.top = `${clamp(track.positionY ?? 72, 8, 92)}%`;
     cap.style.left = `${clamp(track.positionX ?? 50, 15, 85)}%`;
   }
@@ -337,7 +337,6 @@
       if (!track) h = '<p class="sx-empty">Carregando legendas…</p>';
       else h = `${sw('capOn', 'Legendas no vídeo', track.enabled)}
         <h4>Estilo</h4><div class="sx-styles">${STYLES.map(([v, l]) => `<button class="${track.style === v ? 'on' : ''}" data-set="capStyle" data-v="${v}"><span class="sample st-${v}">Aa</span>${l}</button>`).join('')}</div>
-        ${c.animatedFx && (c.outputPreset || 'vertical') === 'vertical' ? '<div class="sx-note">A <b>Animação FX</b> está ligada: a legenda final tem palavras que pulam. Para usar o estilo clássico escolhido abaixo, <button data-act="fxoff">desligue a animação</button>.</div>' : ''}
         <h4>Posição · arraste a legenda na tela</h4>${chips('capPos', [[20, 'Topo'], [50, 'Meio'], [80, 'Baixo']], Math.abs(track.positionY - 20) < 15 ? 20 : Math.abs(track.positionY - 50) < 15 ? 50 : 80)}
         <h4>Texto (${(track.blocks || []).length})</h4>
         <div class="sx-blocks">${(track.blocks || []).map((b, i) => `<div class="sx-block"><small>${fmt(b.start)}</small><textarea rows="2" data-blk="${i}">${esc(b.text)}</textarea></div>`).join('') || '<p class="sx-empty">Sem blocos de legenda.</p>'}</div>`;
