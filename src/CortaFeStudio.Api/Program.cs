@@ -290,6 +290,7 @@ api.MapPut("/projects/{id}/clips/{clipId}", async (string id, string clipId, Cli
         clip.WatermarkOpacity = update.WatermarkOpacity is null ? clip.WatermarkOpacity : Math.Clamp(update.WatermarkOpacity.Value, .1, 1);
         clip.PlaybackSpeed = p.Options.ContentType == "louvor" ? 1 : update.PlaybackSpeed is 1.25 or 1.5 ? update.PlaybackSpeed.Value : 1;
         clip.SilenceTrimmingEnabled = update.SilenceTrimmingEnabled ?? clip.SilenceTrimmingEnabled;
+        clip.AnimatedFx = update.AnimatedFx ?? clip.AnimatedFx;
         if (update.TransitionStyle is "smooth" or "editorial" or "dynamic") clip.TransitionStyle = update.TransitionStyle;
         RenderStateService.MarkIfChanged(clip, previousFingerprint);
     });
