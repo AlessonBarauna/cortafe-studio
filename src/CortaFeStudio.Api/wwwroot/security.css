@@ -1,0 +1,13 @@
+.pin-overlay{position:fixed;inset:0;z-index:2000;display:grid;place-items:center;background:rgba(9,8,13,.9);backdrop-filter:blur(14px)}
+.pin-card{width:min(420px,92vw);background:var(--panel,#14121c);border:1px solid var(--line,rgba(255,255,255,.11));border-top:3px solid var(--gold,#f0b44d);padding:2rem;display:grid;gap:.9rem}
+.pin-eyebrow{font-size:.69rem;letter-spacing:.24em;color:var(--gold,#f0b44d);font-weight:700}
+.pin-card h2{margin:0;font-size:2rem;letter-spacing:-.04em}
+.pin-card p{margin:0;color:var(--muted,#9d99aa);font-size:.95rem}
+.pin-card input{background:#0d0c12;border:1px solid var(--line,rgba(255,255,255,.11));color:var(--paper,#f2eee6);padding:.9rem 1rem;font-size:1.3rem;letter-spacing:.35em;text-align:center;outline:0}
+.pin-card input:focus{border-color:var(--gold,#f0b44d)}
+.pin-error{min-height:1.2rem;color:#ff8a7a;font-size:.88rem}
+.pin-actions{display:flex;gap:.6rem}
+.pin-go{flex:1;background:var(--gold,#f0b44d);color:#181019;border:0;font-weight:700;padding:.9rem;text-transform:uppercase;letter-spacing:.08em}
+.pin-go:hover{background:#ffd073}
+.pin-cancel{background:0;border:1px solid var(--line,rgba(255,255,255,.11));color:var(--paper,#f2eee6);padding:.9rem 1.1rem}
+.pin-needed{border-color:var(--gold,#f0b44d)!important;color:var(--gold,#f0b44d)!important}
