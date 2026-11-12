@@ -55,9 +55,10 @@ builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Ad
 
 var app = builder.Build();
 app.UseExceptionHandler();
+var allowPrivateNetwork = builder.Configuration["CORTAFE_ALLOW_PRIVATE_NETWORK"] == "1";
 app.Use(async (context, next) =>
 {
-    if (!IPAddress.IsLoopback(context.Connection.RemoteIpAddress ?? IPAddress.Loopback)) { context.Response.StatusCode = 403; await context.Response.WriteAsJsonAsync(new { error = "O Amado Jesus Studio aceita acesso somente deste computador." }); return; }
+    if (!RemoteAccessPolicy.IsAllowed(context.Connection.RemoteIpAddress, allowPrivateNetwork)) { context.Response.StatusCode = 403; await context.Response.WriteAsJsonAsync(new { error = "O Amado Jesus Studio aceita acesso somente deste computador ou da rede privada configurada." }); return; }
     var security = context.RequestServices.GetRequiredService<LocalSecurityService>(); var path = context.Request.Path;
     if (security.Enabled && path.StartsWithSegments("/api") && !path.StartsWithSegments("/api/security") && !security.ValidSession(context.Request.Cookies["cortafe-session"])) { context.Response.StatusCode = 401; await context.Response.WriteAsJsonAsync(new { error = "Sessão local expirada." }); return; }
     await next();

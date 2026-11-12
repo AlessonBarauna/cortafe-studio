@@ -1,0 +1,7 @@
+**/bin
+**/obj
+**/storage
+**/tools
+.git
+dist
+tiktok-site
