@@ -25,6 +25,8 @@ RUN pip install --no-cache-dir faster-whisper "opencv-python-headless==4.10.0.84
 WORKDIR /app
 COPY --from=build /app ./
 COPY src/CortaFeStudio.Api/scripts ./scripts
+# Modelo RNNoise (redução de ruído de voz, usado pelo filtro arnndn do FFmpeg)
+RUN mkdir -p /app/tools/models && curl -fsSL https://raw.githubusercontent.com/GregorR/rnnoise-models/master/beguiling-drafter-2018-08-30/bd.rnnn -o /app/tools/models/rnnoise.rnnn
 
 ENV ASPNETCORE_URLS=http://+:5088 \
     CORTAFE_ALLOW_PRIVATE_NETWORK=1 \

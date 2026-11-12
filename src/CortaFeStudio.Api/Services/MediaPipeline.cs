@@ -271,7 +271,7 @@ public sealed class MediaPipeline(ProjectStore store, ToolService tools, IHttpCl
         logger.LogInformation("[Video] project={ProjectId} clip={ClipId} enhancement={Enhancement} luma={Luma} saturation={Saturation}", p.Id, clip.Id, enhancement.Kind, videoAnalysis.LumaAverage, videoAnalysis.SaturationAverage);
         var audioAnalysis = await audioAnalyzer.AnalyzeAsync(Path.Combine(dir, p.LocalMedia!), clip.Start, clip.End - clip.Start, p.Options.ContentType, ct);
         var audio = AudioFilterFactory.Create(audioAnalysis, trimPlan.FinalDuration, speed);
-        var audioFilter = SilenceTrimmingService.AudioPrefix(trimPlan, clip.Start) + audio.Filter;
+        var audioFilter = SilenceTrimmingService.AudioPrefix(trimPlan, clip.Start) + AudioDenoise.Filter(AudioDenoise.ResolveModel(tools.Root), p.Options.ContentType) + audio.Filter;
         logger.LogInformation("[Audio] project={ProjectId} clip={ClipId} profile={Profile} meanDb={MeanDb} peakDb={PeakDb}", p.Id, clip.Id, audio.Profile, audioAnalysis.MeanVolumeDb, audioAnalysis.PeakVolumeDb);
         var encoder = await encoderDetector.DetectAsync(ct);
         try { await RenderWithEncoderAsync(encoder); }

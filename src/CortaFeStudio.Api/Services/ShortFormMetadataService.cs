@@ -57,7 +57,7 @@ public static class ShortFormMetadataService
             using var response = await http
                 .CreateClient()
                 .PostAsync(
-                    "http://localhost:11434/api/generate",
+                    OllamaEndpoint.Generate,
                     content,
                     ct);
 
