@@ -49,10 +49,10 @@ docker compose restart             # reiniciar
 git pull && docker compose up -d --build   # atualizar para uma versão nova
 ```
 
-Projetos, banco, PIN e chaves ficam no volume `cortafe-storage` e sobrevivem a atualizações. Backup do volume:
+Projetos, banco, PIN e chaves ficam no volume `cortafe_cortafe-storage` (o Docker acrescenta o nome do projeto) e sobrevivem a atualizações. Backup do volume:
 
 ```bash
-docker run --rm -v cortafe-storage:/d -v $PWD:/b alpine tar czf /b/cortafe-storage.tgz -C /d .
+docker run --rm -v cortafe_cortafe-storage:/d -v $PWD:/b alpine tar czf /b/cortafe-storage.tgz -C /d .
 ```
 
 ## Observações
