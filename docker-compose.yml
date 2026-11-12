@@ -1,0 +1,13 @@
+services:
+  cortafe:
+    build: .
+    container_name: cortafe-studio
+    restart: unless-stopped
+    ports:
+      # Por padrão só o próprio servidor enxerga a porta (acesse por túnel SSH).
+      # Para liberar na VPN, defina CORTAFE_BIND com o IP do servidor na VPN (ex.: 100.64.0.5).
+      - "${CORTAFE_BIND:-127.0.0.1}:5088:5088"
+    volumes:
+      - cortafe-storage:/app/storage
+volumes:
+  cortafe-storage:
