@@ -7,3 +7,4 @@ python-*-amd64.exe
 *.user
 dist/
 .artifacts*/
+.env

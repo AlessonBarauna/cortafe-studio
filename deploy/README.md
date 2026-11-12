@@ -1,5 +1,9 @@
 # Cortafé Studio no servidor (Linux + Docker)
 
+## Atalho
+
+No servidor: `curl -fsSL https://raw.githubusercontent.com/AlessonBarauna/cortafe-studio/main/deploy/instalar-servidor.sh | bash`. O script confere Docker e porta, publica no IP do Tailscale (se houver) e sobe o app sem mexer em outros containers. Rode o mesmo comando de novo para atualizar. Os passos manuais estão abaixo.
+
 ## 1. Preparar o servidor (uma vez)
 
 ```bash
