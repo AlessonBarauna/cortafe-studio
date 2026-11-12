@@ -14,7 +14,18 @@ public sealed class ToolService(IWebHostEnvironment env)
             if (File.Exists(embeddedPython)) return embeddedPython;
         }
         var local = Path.Combine(Root, "tools", exe);
-        return File.Exists(local) ? local : exe;
+        if (File.Exists(local)) return local;
+        // Em Linux/Docker, o yt-dlp precisa do caminho completo do ffmpeg (--ffmpeg-location) para juntar vídeo e áudio.
+        foreach (var directory in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            try
+            {
+                var candidate = Path.Combine(directory, exe);
+                if (File.Exists(candidate)) return candidate;
+            }
+            catch (ArgumentException) { /* entrada inválida no PATH */ }
+        }
+        return exe;
     }
 
     public List<string> YouTubeArguments()
