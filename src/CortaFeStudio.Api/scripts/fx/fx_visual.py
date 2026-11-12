@@ -31,7 +31,9 @@ def col(rgb, a=1.0):
 
 
 class Painter:
-    def __init__(self, words, phrase_idx, emphasis, hook, themes, duration, punches, watermark="", watermark_opacity=0.8):
+    def __init__(self, words, phrase_idx, emphasis, hook, themes, duration, punches, watermark="", watermark_opacity=0.8, caption_x=50.0, caption_y=72.7):
+        self.cap_cx = W * min(95.0, max(5.0, caption_x)) / 100.0
+        self.cap_cy = H * min(95.0, max(5.0, caption_y)) / 100.0
         self.words, self.dur = words, duration
         self.watermark, self.watermark_opacity = watermark.strip(), watermark_opacity
         self.emph = set(emphasis)
@@ -227,10 +229,10 @@ class Painter:
             k = min(1.0, maxw / max(r[1] for r in rows))
             heights = [max(tk["size"] for tk in r[0]) * k * 1.16 for r in rows]
             block = sum(heights)
-            y = 1395 - block / 2
+            y = self.cap_cy - block / 2
             for (row, rw), hh in zip(rows, heights):
                 y += hh
-                x = (W - rw * k) / 2
+                x = min(max(self.cap_cx - rw * k / 2, 24), W - 24 - rw * k)
                 for tk in row:
                     w = self.words[tk["i"]]
                     x += tk["gap"] * k

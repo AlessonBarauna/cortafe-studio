@@ -13,6 +13,10 @@
   const SPEEDS = [[1, '1×'], [1.25, '1,25×'], [1.5, '1,5×']];
   const TOOLS = [['cortar', '✂', 'Cortar'], ['legendas', 'CC', 'Legendas'], ['texto', 'T', 'Texto'], ['efeitos', '✦', 'Efeitos'], ['marca', '◈', 'Marca']];
   const MIN_LEN = 5;
+  const FILTERS = [['none', 'Original', ''], ['vivid', 'Vívido', 'saturate(1.35) contrast(1.08)'], ['cinema', 'Cinema', 'contrast(1.12) saturate(.9) sepia(.15) hue-rotate(-8deg)'],
+    ['bw', 'P&B', 'grayscale(1) contrast(1.12)'], ['warm', 'Quente', 'sepia(.25) saturate(1.1)'], ['cool', 'Frio', 'hue-rotate(12deg) saturate(1.05) brightness(1.02)'],
+    ['drama', 'Drama', 'contrast(1.25) saturate(1.1) brightness(.97)'], ['soft', 'Suave', 'contrast(.94) saturate(.92) brightness(1.03) blur(.4px)']];
+  const filterCss = n => (FILTERS.find(f => f[0] === n) || FILTERS[0])[2];
 
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const fmt = t => { t = Math.max(0, t || 0); return `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`; };
@@ -41,7 +45,8 @@
         cropX: c.cropX, layoutMode: c.layoutMode, outputPreset: c.outputPreset, brandFrameEnabled: c.brandFrameEnabled,
         brandTheme: c.brandTheme, watermarkEnabled: c.watermarkEnabled, watermarkText: c.watermarkText,
         watermarkOpacity: c.watermarkOpacity, playbackSpeed: c.playbackSpeed || 1,
-        silenceTrimmingEnabled: c.silenceTrimmingEnabled, transitionStyle: c.transitionStyle, animatedFx: c.animatedFx
+        silenceTrimmingEnabled: c.silenceTrimmingEnabled, transitionStyle: c.transitionStyle, animatedFx: c.animatedFx,
+        fxSfx: c.fxSfx, fxHook: c.fxHook, fxThemes: c.fxThemes, colorFilter: c.colorFilter || 'none'
       };
       const id = c.id;
       queue = queue.then(async () => {
@@ -109,6 +114,7 @@
     else if (act === 'play') togglePlay();
     else if (act === 'approve') { const c = clip(); save({ approved: !c.approved }); fetch(`/api/projects/${P.id}/clips/${c.id}/feedback`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ feedback: c.approved ? 'approved' : 'rejected' }) }).catch(() => {}); paintActions(); paintClips(); }
     else if (act === 'render') renderOne(clipId);
+    else if (act === 'fxoff') { save({ animatedFx: false }); applyLook(); paintPanel(); }
     else if (act === 'toggleView') { showRendered = !showRendered; paintStage(); paintActions(); }
   }
 
@@ -175,9 +181,9 @@
     ph.dataset.layout = src.rendered ? 'fill' : (c.layoutMode || 'fill');
     ph.style.backgroundImage = c.coverPath ? `url('${asset(c.coverPath)}')` : '';
     ph.innerHTML = `<video playsinline preload="metadata" ${src.rendered ? '' : ''} src="${src.url}"></video>
-      <div class="sx-brand" id="sxBrand"></div><div class="sx-cap" id="sxCap"></div><div class="sx-badge" id="sxBadge"></div>
+      <div class="sx-brand" id="sxBrand"></div><div class="sx-cap" id="sxCap"></div><div class="sx-guide" id="sxGuide"><i></i><i></i></div><div class="sx-badge" id="sxBadge"></div>
       <button class="sx-play" data-act="play" aria-label="Reproduzir">▶</button>`;
-    video = $('video', ph);
+    video = $('video', ph); bindCaptionDrag();
     video.addEventListener('loadedmetadata', () => {
       dur = (src.rendered ? P.duration : video.duration) || P.duration || video.duration || 0;
       if (!src.rendered) { video.currentTime = c.start; }
@@ -195,6 +201,7 @@
     const c = clip(); if (!c || !root) return;
     const ph = $('#sxPhone'), rendered = !!(c.videoPath && !c.renderOutdated && showRendered);
     ph.dataset.layout = rendered ? 'fill' : (c.layoutMode || 'fill');
+    if (video) video.style.filter = rendered ? '' : filterCss(c.colorFilter);
     if (video) video.style.objectPosition = rendered ? '50% 50%' : `${clamp((c.cropX ?? .5) * 100, 0, 100)}% 50%`;
     const b = $('#sxBrand');
     b.className = 'sx-brand' + (!rendered && c.brandFrameEnabled ? ' frame theme-' + (c.brandTheme || 'amado-jesus') : '');
@@ -209,12 +216,42 @@
     const c = clip(), cap = $('#sxCap'); if (!c || !cap) return;
     const track = tracks[c.id], rendered = c.videoPath && !c.renderOutdated && showRendered;
     if (rendered || !track || !track.enabled) { cap.textContent = ''; cap.className = 'sx-cap'; return; }
-    const rel = t - c.start;
-    const blk = (track.blocks || []).find(b => b.enabled !== false && rel >= b.start && rel <= b.end);
-    cap.textContent = blk ? blk.text : '';
-    cap.className = `sx-cap st-${track.style || 'impact'}`;
-    cap.style.top = `${clamp(track.positionY ?? 80, 8, 92)}%`;
+    const rel = t - c.start, blocks = (track.blocks || []).filter(b => b.enabled !== false);
+    // Sempre mostra uma legenda: a do momento atual ou, se não houver, a mais próxima (assim o estilo aparece na hora).
+    let blk = blocks.find(b => rel >= b.start && rel <= b.end);
+    if (!blk && blocks.length) blk = blocks.reduce((best, b) => Math.abs((b.start + b.end) / 2 - rel) < Math.abs((best.start + best.end) / 2 - rel) ? b : best, blocks[0]);
+    if (!dragging) cap.textContent = blk ? blk.text : 'Sua legenda aparece aqui';
+    const fxLook = c.animatedFx && (c.outputPreset || 'vertical') === 'vertical';
+    cap.className = `sx-cap ${fxLook ? 'st-fx' : 'st-' + (track.style || 'impact')}${dragging ? ' drag' : ''}`;
+    cap.style.top = `${clamp(track.positionY ?? 72, 8, 92)}%`;
+    cap.style.left = `${clamp(track.positionX ?? 50, 15, 85)}%`;
   }
+
+  let dragging = false;
+  function bindCaptionDrag() {
+    const cap = $('#sxCap'), ph = $('#sxPhone');
+    cap.onpointerdown = e => {
+      const c = clip(), track = tracks[c && c.id]; if (!track) return;
+      e.preventDefault(); e.stopPropagation(); dragging = true; moved = false;
+      cap.setPointerCapture(e.pointerId); if (video) video.pause();
+      const guide = $('#sxGuide'); guide.className = 'sx-guide on';
+      cap.onpointermove = ev => {
+        const r = ph.getBoundingClientRect();
+        let x = clamp((ev.clientX - r.left) / r.width * 100, 15, 85), y = clamp((ev.clientY - r.top) / r.height * 100, 8, 92);
+        const sx = Math.abs(x - 50) < 3, sy = Math.abs(y - 50) < 3;
+        if (sx) x = 50; if (sy) y = 50;
+        guide.className = 'sx-guide on' + (sx ? ' vx' : '') + (sy ? ' hy' : '');
+        track.positionX = Math.round(x * 10) / 10; track.positionY = Math.round(y * 10) / 10; moved = true;
+        paintCaption(video ? video.currentTime : c.start);
+      };
+      cap.onpointerup = () => {
+        cap.onpointermove = cap.onpointerup = null; dragging = false; guide.className = 'sx-guide';
+        if (moved) { saveTrack(c.id); if (tool === 'legendas') paintPanel(); } else { tool = 'legendas'; paintTabs(); paintPanel(); }
+        paintCaption(video ? video.currentTime : c.start);
+      };
+    };
+  }
+  let moved = false;
 
   function tick() {
     cancelAnimationFrame(raf);
@@ -300,7 +337,8 @@
       if (!track) h = '<p class="sx-empty">Carregando legendas…</p>';
       else h = `${sw('capOn', 'Legendas no vídeo', track.enabled)}
         <h4>Estilo</h4><div class="sx-styles">${STYLES.map(([v, l]) => `<button class="${track.style === v ? 'on' : ''}" data-set="capStyle" data-v="${v}"><span class="sample st-${v}">Aa</span>${l}</button>`).join('')}</div>
-        <h4>Posição</h4>${chips('capPos', [[20, 'Topo'], [50, 'Meio'], [80, 'Baixo']], Math.abs(track.positionY - 20) < 15 ? 20 : Math.abs(track.positionY - 50) < 15 ? 50 : 80)}
+        ${c.animatedFx && (c.outputPreset || 'vertical') === 'vertical' ? '<div class="sx-note">A <b>Animação FX</b> está ligada: a legenda final tem palavras que pulam. Para usar o estilo clássico escolhido abaixo, <button data-act="fxoff">desligue a animação</button>.</div>' : ''}
+        <h4>Posição · arraste a legenda na tela</h4>${chips('capPos', [[20, 'Topo'], [50, 'Meio'], [80, 'Baixo']], Math.abs(track.positionY - 20) < 15 ? 20 : Math.abs(track.positionY - 50) < 15 ? 50 : 80)}
         <h4>Texto (${(track.blocks || []).length})</h4>
         <div class="sx-blocks">${(track.blocks || []).map((b, i) => `<div class="sx-block"><small>${fmt(b.start)}</small><textarea rows="2" data-blk="${i}">${esc(b.text)}</textarea></div>`).join('') || '<p class="sx-empty">Sem blocos de legenda.</p>'}</div>`;
     } else if (tool === 'texto') {
@@ -308,7 +346,9 @@
         <label class="sx-field"><span>Texto da capa</span><input data-txt="coverText" value="${esc(c.coverText)}" maxlength="90"></label>
         <label class="sx-field"><span>Legenda do post</span><textarea rows="5" data-txt="caption" maxlength="2200">${esc(c.caption)}</textarea></label>`;
     } else if (tool === 'efeitos') {
-      h = `${sw('fx', 'Animação Cortafé FX', c.animatedFx, 'Zoom, palavras que pulam, luz e som nos momentos fortes. Só em 9:16.')}
+      h = `<h4>Filtros de cor</h4><div class="sx-filters">${FILTERS.map(([v, l, css]) => `<button class="${(c.colorFilter || 'none') === v ? 'on' : ''}" data-set="filter" data-v="${v}"><span style="${c.coverPath ? `background-image:url('${asset(c.coverPath)}');` : ''}filter:${css || 'none'}"></span>${l}</button>`).join('')}</div>
+        <h4>Animação</h4>${sw('fx', 'Animação Cortafé FX', c.animatedFx, 'Zoom, palavras que pulam, luz e som nos momentos fortes. Só em 9:16.')}
+        ${c.animatedFx ? sw('fxHook', 'Texto de gancho no início', c.fxHook !== false) + sw('fxSfx', 'Sons e efeitos sonoros', c.fxSfx !== false) + sw('fxThemes', 'Luz, cruz, fogo e tempestade', c.fxThemes !== false, 'Efeitos visuais conforme o assunto') : ''}
         <h4>Enquadramento</h4>${chips('layout', LAYOUTS, c.layoutMode || 'fill')}
         ${(c.layoutMode || 'fill') === 'fill' ? `<label class="sx-field"><span>Posição horizontal</span><input type="range" min="0" max="100" value="${Math.round((c.cropX ?? .5) * 100)}" data-range="cropX"></label>` : ''}
         <h4>Formato</h4>${chips('format', FORMATS.map(f => [f[0], f[1]]), c.outputPreset || 'vertical')}
@@ -334,6 +374,7 @@
       const k = b.dataset.set, v = b.dataset.v;
       if (k === 'speed') { save({ playbackSpeed: parseFloat(v) }); if (video) video.playbackRate = parseFloat(v); paintTrim(); }
       else if (k === 'layout') save({ layoutMode: v });
+      else if (k === 'filter') save({ colorFilter: v });
       else if (k === 'format') save({ outputPreset: v });
       else if (k === 'transition') save({ transitionStyle: v });
       else if (k === 'theme') save({ brandTheme: v });
@@ -344,7 +385,10 @@
     $$('[data-sw]', el).forEach(i => i.onchange = () => {
       const k = i.dataset.sw, on = i.checked;
       if (k === 'silence') save({ silenceTrimmingEnabled: on });
-      else if (k === 'fx') save({ animatedFx: on });
+      else if (k === 'fx') { save({ animatedFx: on }); applyLook(); paintPanel(); return; }
+      else if (k === 'fxHook') save({ fxHook: on });
+      else if (k === 'fxSfx') save({ fxSfx: on });
+      else if (k === 'fxThemes') save({ fxThemes: on });
       else if (k === 'frame') save({ brandFrameEnabled: on });
       else if (k === 'wm') save({ watermarkEnabled: on });
       else if (k === 'capOn' && track) { track.enabled = on; saveTrack(c.id); }

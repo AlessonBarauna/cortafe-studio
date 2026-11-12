@@ -94,7 +94,29 @@ public static class RenderFilterFactory
         return string.Join(',', filters);
     }
 
+    /// <summary>Filtros de cor escolhidos pelo editor (nome -> filtro ffmpeg; "none" não altera nada).</summary>
+    public static readonly IReadOnlyDictionary<string, string> ColorGrades = new Dictionary<string, string>
+    {
+        ["none"] = "",
+        ["vivid"] = "eq=saturation=1.35:contrast=1.08",
+        ["cinema"] = "colorbalance=rs=-0.05:bs=0.08:rh=0.06:bh=-0.04,eq=contrast=1.12:saturation=0.9",
+        ["bw"] = "hue=s=0,eq=contrast=1.12",
+        ["warm"] = "colorbalance=rs=0.08:bs=-0.08,eq=saturation=1.08",
+        ["cool"] = "colorbalance=rs=-0.06:bs=0.08,eq=saturation=1.05",
+        ["drama"] = "eq=contrast=1.25:saturation=1.1:brightness=-0.03,vignette=PI/5",
+        ["soft"] = "eq=contrast=0.94:saturation=0.92:brightness=0.03,gblur=sigma=0.6"
+    };
+
+    public static string ColorGrade(string? name) => name is not null && ColorGrades.TryGetValue(name, out var grade) ? grade : "";
+
     public static string CreativeLook(ClipCandidate clip)
+    {
+        var look = CreativeLookWithTransitions(clip);
+        var grade = ColorGrade(clip.ColorFilter);
+        return grade.Length == 0 ? look : $"{look},{grade}";
+    }
+
+    private static string CreativeLookWithTransitions(ClipCandidate clip)
     {
         var duration = Math.Max(0, clip.End - clip.Start);
         var filters = new List<string> { CreativeLook(duration) };
