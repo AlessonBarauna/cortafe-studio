@@ -285,7 +285,7 @@ public sealed class UrlBatchProjectRequest
     public string? Name { get; set; }
     public ProjectOptions? Options { get; set; }
 }
-public record ClipUpdate(double? Start, double? End, string? Title, string? CoverText, string? Caption, bool? Approved, string? CropFocus, string? SubtitleStyle, string? CoverAccent, string? CoverPosition, double? CoverTimestamp, string? EditedTranscript, double? CropX, string? LayoutMode, string? OutputPreset, bool? BrandFrameEnabled = null, string? BrandTheme = null, bool? WatermarkEnabled = null, string? WatermarkText = null, double? WatermarkOpacity = null, double? PlaybackSpeed = null, bool? SilenceTrimmingEnabled = null, string? TransitionStyle = null, double? SplitLeftX = null, double? SplitRightX = null);
+public record ClipUpdate(double? Start, double? End, string? Title, string? CoverText, string? Caption, bool? Approved, string? CropFocus, string? SubtitleStyle, string? CoverAccent, string? CoverPosition, double? CoverTimestamp, string? EditedTranscript, double? CropX, string? LayoutMode, string? OutputPreset, bool? BrandFrameEnabled = null, string? BrandTheme = null, bool? WatermarkEnabled = null, string? WatermarkText = null, double? WatermarkOpacity = null, double? PlaybackSpeed = null, bool? SilenceTrimmingEnabled = null, string? TransitionStyle = null, double? SplitLeftX = null, double? SplitRightX = null, bool? AnimatedFx = null);
 public record ManualClipRequest(double Start, double End);
 public record SplitClipRequest(double At);
 public record FramingTrackUpdate(List<FramingKeyframe> Keyframes);

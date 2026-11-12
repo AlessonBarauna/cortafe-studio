@@ -21,7 +21,7 @@
   function analyze(project,clip){
     const text=norm(clip.editedTranscript||clip.transcript||'');
     const first=text.split(/[.!?]/).find(Boolean)?.trim()||text.slice(0,120);
-    const attention=window.AmadoJesusAttentionAi?.metrics?.(clip)?.total??Number(clip.score)||50;
+    const attention=(window.AmadoJesusAttentionAi?.metrics?.(clip)?.total??Number(clip.score))||50;
     const sermon=window.AmadoJesusSermonIntelligence?.analyze?.(clip)||null;
     const bible=window.AmadoJesusBibleIntelligence?.clipReferences?.(clip)||[];
     const service=clip._serviceCategory||window.AmadoJesusServiceMap?.categoryForClip?.(clip)||'pregacao';
