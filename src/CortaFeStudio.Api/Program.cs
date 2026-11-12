@@ -60,7 +60,8 @@ app.Use(async (context, next) =>
 {
     if (!RemoteAccessPolicy.IsAllowed(context.Connection.RemoteIpAddress, allowPrivateNetwork)) { context.Response.StatusCode = 403; await context.Response.WriteAsJsonAsync(new { error = "O Amado Jesus Studio aceita acesso somente deste computador ou da rede privada configurada." }); return; }
     var security = context.RequestServices.GetRequiredService<LocalSecurityService>(); var path = context.Request.Path;
-    if (security.Enabled && path.StartsWithSegments("/api") && !path.StartsWithSegments("/api/security") && !security.ValidSession(context.Request.Cookies["cortafe-session"])) { context.Response.StatusCode = 401; await context.Response.WriteAsJsonAsync(new { error = "Sessão local expirada." }); return; }
+    var openPath = path.StartsWithSegments("/api/security/status") || path.StartsWithSegments("/api/security/login");
+    if (security.Enabled && path.StartsWithSegments("/api") && !openPath && !security.ValidSession(context.Request.Cookies["cortafe-session"])) { context.Response.StatusCode = 401; await context.Response.WriteAsJsonAsync(new { error = "Sessão local expirada." }); return; }
     await next();
 });
 app.UseDefaultFiles();
