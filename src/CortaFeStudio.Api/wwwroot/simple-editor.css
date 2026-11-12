@@ -51,7 +51,7 @@ body.sx-open{overflow:hidden}
 .sx-brand.frame.theme-podcast{box-shadow:inset 0 0 0 5px #8157ff,inset 0 0 40px rgba(129,87,255,.3)}
 .sx-brand.frame.theme-worship{box-shadow:inset 0 0 0 5px #f0f0f0,inset 0 0 40px rgba(255,255,255,.2)}
 .sx-brand span{position:absolute;right:12px;bottom:14px;font-size:12px;font-weight:700;color:#fff;text-shadow:0 1px 4px #000}
-.sx-cap{position:absolute;left:6%;right:6%;z-index:4;transform:translateY(-50%);text-align:center;pointer-events:none;font-weight:800;font-size:clamp(14px,2.4vh,26px);line-height:1.2;color:#fff;text-shadow:0 2px 6px #000}
+.sx-cap{position:absolute;width:88%;z-index:4;transform:translate(-50%,-50%);text-align:center;pointer-events:auto;cursor:grab;touch-action:none;user-select:none;padding:4px 6px;border-radius:8px;font-weight:800;font-size:clamp(14px,2.4vh,26px);line-height:1.2;color:#fff;text-shadow:0 2px 6px #000}
 .sx-cap:empty{display:none}
 .st-impact{text-transform:uppercase;font-weight:900;-webkit-text-stroke:1px #000;color:#ffe14a;letter-spacing:.02em}
 .st-sermon{background:rgba(0,0,0,.62);padding:6px 10px;border-radius:8px;font-weight:700}
@@ -135,3 +135,15 @@ body.sx-open{overflow:hidden}
   .sx-side{display:flex}
   .sx-styles{grid-template-columns:repeat(4,1fr)}
 }
+
+.sx-cap:hover,.sx-cap.drag{outline:2px dashed rgba(240,180,77,.9);outline-offset:2px}.sx-cap.drag{cursor:grabbing}
+.st-fx{text-transform:uppercase;font-weight:900;font-size:1.3em;color:#fff;-webkit-text-stroke:2px #000;letter-spacing:.02em;text-shadow:0 0 14px rgba(240,180,77,.75),0 3px 8px #000}
+.sx-guide{position:absolute;inset:0;z-index:2;pointer-events:none;opacity:0;transition:opacity .15s}.sx-guide.on{opacity:1}
+.sx-guide i{position:absolute;background:rgba(255,255,255,.28)}.sx-guide i:nth-child(1){left:50%;top:0;bottom:0;width:1px}.sx-guide i:nth-child(2){top:50%;left:0;right:0;height:1px}
+.sx-guide.vx i:nth-child(1),.sx-guide.hy i:nth-child(2){background:#f0b44d}
+.sx-note{background:#1e1a14;border:1px solid rgba(240,180,77,.4);border-radius:12px;padding:10px 12px;font-size:12px;color:#d9cfb8;margin-bottom:12px;line-height:1.45}
+.sx-note button{background:none;border:0;color:#f0b44d;font-weight:800;text-decoration:underline;padding:0;cursor:pointer;font-size:12px}
+.sx-filters{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.sx-filters button{display:flex;flex-direction:column;align-items:center;gap:6px;border:2px solid transparent;border-radius:12px;background:#1c1927;color:#cfcbd9;padding:6px 2px 8px;font-size:11px;font-weight:700;cursor:pointer}
+.sx-filters button.on{border-color:#f0b44d;color:#fff}
+.sx-filters span{width:100%;aspect-ratio:3/4;border-radius:8px;background:#6a4a9a linear-gradient(135deg,#e8553d,#f0b44d 40%,#3da5d9 75%,#5b3fa8) center/cover}

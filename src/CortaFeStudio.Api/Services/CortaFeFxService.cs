@@ -24,9 +24,13 @@ public sealed class CortaFeFxService(ToolService tools)
         return available;
     }
 
-    public Task ApplyAsync(string video, string wordsFile, string output, string workDir, string? watermark, double watermarkOpacity, CancellationToken ct = default)
+    public Task ApplyAsync(string video, string wordsFile, string output, string workDir, string? watermark, double watermarkOpacity, CancellationToken ct = default, bool sfx = true, bool hook = true, bool themes = true, double captionX = 50, double captionY = 72.7)
     {
         var args = new List<string> { "-I", ScriptPath, "--video", video, "--words", wordsFile, "--out", output, "--ffmpeg", tools.Find("ffmpeg"), "--ffprobe", tools.Find("ffprobe") };
+        if (!sfx) args.Add("--no-sfx");
+        if (!hook) args.Add("--no-hook");
+        if (!themes) args.Add("--no-themes");
+        args.AddRange(["--caption-x", Math.Clamp(captionX, 5, 95).ToString("0.##", CultureInfo.InvariantCulture), "--caption-y", Math.Clamp(captionY, 5, 95).ToString("0.##", CultureInfo.InvariantCulture)]);
         if (!string.IsNullOrWhiteSpace(watermark))
             args.AddRange(["--watermark", watermark, "--watermark-opacity", Math.Clamp(watermarkOpacity, .1, 1).ToString("0.##", CultureInfo.InvariantCulture)]);
         return tools.RunAsync(tools.Find("python"), args, workDir, ct);

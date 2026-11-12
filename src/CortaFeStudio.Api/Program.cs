@@ -291,6 +291,10 @@ api.MapPut("/projects/{id}/clips/{clipId}", async (string id, string clipId, Cli
         clip.PlaybackSpeed = p.Options.ContentType == "louvor" ? 1 : update.PlaybackSpeed is 1.25 or 1.5 ? update.PlaybackSpeed.Value : 1;
         clip.SilenceTrimmingEnabled = update.SilenceTrimmingEnabled ?? clip.SilenceTrimmingEnabled;
         clip.AnimatedFx = update.AnimatedFx ?? clip.AnimatedFx;
+        clip.FxSfx = update.FxSfx ?? clip.FxSfx;
+        clip.FxHook = update.FxHook ?? clip.FxHook;
+        clip.FxThemes = update.FxThemes ?? clip.FxThemes;
+        if (update.ColorFilter is not null && RenderFilterFactory.ColorGrades.ContainsKey(update.ColorFilter)) clip.ColorFilter = update.ColorFilter;
         if (update.TransitionStyle is "smooth" or "editorial" or "dynamic") clip.TransitionStyle = update.TransitionStyle;
         RenderStateService.MarkIfChanged(clip, previousFingerprint);
     });

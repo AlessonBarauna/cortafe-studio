@@ -121,6 +121,10 @@ public sealed class ClipCandidate
     public string TransitionStyle { get; set; } = "smooth";
     public string SubtitleStyle { get; set; } = "impact";
     public bool AnimatedFx { get; set; } = true;
+    public bool FxSfx { get; set; } = true;
+    public bool FxHook { get; set; } = true;
+    public bool FxThemes { get; set; } = true;
+    public string ColorFilter { get; set; } = "none";
     public SubtitleTrack? SubtitleTrack { get; set; }
     public bool BrandFrameEnabled { get; set; } = true;
     public string BrandTheme { get; set; } = "amado-jesus";
@@ -285,7 +289,7 @@ public sealed class UrlBatchProjectRequest
     public string? Name { get; set; }
     public ProjectOptions? Options { get; set; }
 }
-public record ClipUpdate(double? Start, double? End, string? Title, string? CoverText, string? Caption, bool? Approved, string? CropFocus, string? SubtitleStyle, string? CoverAccent, string? CoverPosition, double? CoverTimestamp, string? EditedTranscript, double? CropX, string? LayoutMode, string? OutputPreset, bool? BrandFrameEnabled = null, string? BrandTheme = null, bool? WatermarkEnabled = null, string? WatermarkText = null, double? WatermarkOpacity = null, double? PlaybackSpeed = null, bool? SilenceTrimmingEnabled = null, string? TransitionStyle = null, double? SplitLeftX = null, double? SplitRightX = null, bool? AnimatedFx = null);
+public record ClipUpdate(double? Start, double? End, string? Title, string? CoverText, string? Caption, bool? Approved, string? CropFocus, string? SubtitleStyle, string? CoverAccent, string? CoverPosition, double? CoverTimestamp, string? EditedTranscript, double? CropX, string? LayoutMode, string? OutputPreset, bool? BrandFrameEnabled = null, string? BrandTheme = null, bool? WatermarkEnabled = null, string? WatermarkText = null, double? WatermarkOpacity = null, double? PlaybackSpeed = null, bool? SilenceTrimmingEnabled = null, string? TransitionStyle = null, double? SplitLeftX = null, double? SplitRightX = null, bool? AnimatedFx = null, bool? FxSfx = null, bool? FxHook = null, bool? FxThemes = null, string? ColorFilter = null);
 public record ManualClipRequest(double Start, double End);
 public record SplitClipRequest(double At);
 public record FramingTrackUpdate(List<FramingKeyframe> Keyframes);
